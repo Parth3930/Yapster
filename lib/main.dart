@@ -37,7 +37,6 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
-    final supabaseService = Get.find<SupabaseService>();
 
     return Obx(() => GetMaterialApp(
       title: 'Yapster',
@@ -46,7 +45,7 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeController.themeMode,
-      initialRoute: supabaseService.isAuthenticated.value ? Routes.HOME : Routes.LOGIN,
+      initialRoute: Routes.SPLASH,
       getPages: AppPages.routes,
     ));
   }

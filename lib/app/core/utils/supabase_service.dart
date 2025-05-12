@@ -22,6 +22,7 @@ class SupabaseService extends GetxService {
 
   Future<SupabaseService> init() async {
     try {
+      debugPrint('Initializing Supabase service');
       // Load .env file
       await dotenv.load(fileName: ".env");
 
@@ -41,10 +42,12 @@ class SupabaseService extends GetxService {
       }
 
       client = Supabase.instance.client;
+      debugPrint('Supabase client initialized');
 
       // Check if user is already logged in
       currentUser.value = client.auth.currentUser;
       isAuthenticated.value = currentUser.value != null;
+      debugPrint('Initial auth state - isAuthenticated: ${isAuthenticated.value}');
 
       if (isAuthenticated.value) {
         await _loadUserProfile();
@@ -54,14 +57,17 @@ class SupabaseService extends GetxService {
       client.auth.onAuthStateChange.listen((data) {
         final AuthChangeEvent event = data.event;
         final Session? session = data.session;
+        debugPrint('Auth state changed - Event: $event');
 
         if (event == AuthChangeEvent.signedIn) {
           currentUser.value = session?.user;
           isAuthenticated.value = true;
+          debugPrint('User signed in - isAuthenticated: ${isAuthenticated.value}');
           _loadUserProfile();
         } else if (event == AuthChangeEvent.signedOut) {
           currentUser.value = null;
           isAuthenticated.value = false;
+          debugPrint('User signed out - isAuthenticated: ${isAuthenticated.value}');
           _clearUserProfile();
         }
       });
@@ -169,7 +175,11 @@ class SupabaseService extends GetxService {
   // Check if the current user has a username in the database
   Future<bool> checkUserHasUsername() async {
     try {
-      if (currentUser.value == null) return false;
+      debugPrint('Checking if user has username');
+      if (currentUser.value == null) {
+        debugPrint('No current user found');
+        return false;
+      }
 
       // Check if username exists in profiles table
       final response = await client
@@ -178,12 +188,19 @@ class SupabaseService extends GetxService {
           .eq('user_id', currentUser.value!.id)
           .maybeSingle();
       
+      debugPrint('Username check response: $response');
+      
       // If no record found or username is empty, return false
-      if (response == null) return false;
+      if (response == null) {
+        debugPrint('No username record found');
+        return false;
+      }
       
       // If we get a response with a non-empty username, return true
-      return response['username'] != null &&
+      final hasUsername = response['username'] != null &&
           response['username'].toString().isNotEmpty;
+      debugPrint('Has username: $hasUsername');
+      return hasUsername;
     } catch (e) {
       // If there's an error, return false
       debugPrint('Error checking username: $e');
