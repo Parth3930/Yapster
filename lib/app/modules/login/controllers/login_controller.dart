@@ -14,18 +14,25 @@ class LoginController extends GetxController {
     super.onInit();
     // Check if user is already authenticated
     if (_supabaseService.isAuthenticated.value) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Get.offAllNamed(Routes.HOME);
-      });
+      _checkUserAndNavigate();
     }
 
     // Listen for authentication state changes
     ever(_supabaseService.isAuthenticated, (isAuthenticated) {
       if (isAuthenticated) {
-        // Use post-frame callback to avoid setState during build
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          Get.offAllNamed(Routes.HOME);
-        });
+        _checkUserAndNavigate();
+      }
+    });
+  }
+
+  // Check if user has a username and navigate accordingly
+  Future<void> _checkUserAndNavigate() async {
+    final hasUsername = await _supabaseService.checkUserHasUsername();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (hasUsername) {
+        Get.offAllNamed(Routes.HOME);
+      } else {
+        Get.offAllNamed(Routes.ACCOUNT_SETUP);
       }
     });
   }

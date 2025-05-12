@@ -5,11 +5,11 @@ import 'package:yapster/app/core/theme/theme_controller.dart';
 import 'package:yapster/app/core/values/colors.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/global_widgets/custom_input.dart';
-import 'package:yapster/app/modules/sign-up/controllers/sign_up_controller.dart';
+import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
 import '../../../global_widgets/loading_widget.dart';
 
-class SignUpView extends GetView<SignUpController> {
-  const SignUpView({super.key});
+class AccountSetupView extends GetView<AccountSetupController> {
+  const AccountSetupView({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +36,7 @@ class SignUpView extends GetView<SignUpController> {
               children: [
                 Center(
                   child: Text(
-                    "Create Yap ID",
+                    "Setup Account",
                     style: TextStyle(
                       fontSize: 50,
                       fontFamily: GoogleFonts.dongle().fontFamily,
@@ -99,7 +99,11 @@ class SignUpView extends GetView<SignUpController> {
                                 themeController.isDarkMode
                                     ? AppColors.textWhite
                                     : AppColors.textDark,
-                            onPressed: () {},
+                            isLoading: controller.isLoading.value,
+                            onPressed:
+                                controller.isLoading.value
+                                    ? () {}
+                                    : () => controller.saveAccountData(),
                           ),
                         ],
                       ),

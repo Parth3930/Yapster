@@ -32,8 +32,6 @@ class SupabaseService extends GetxService {
         debugPrint(
           'Error: SUPABASE_URL or SUPABASE_ANON_KEY not found in .env file',
         );
-        // You might want to throw an error here or handle it differently
-        // For now, we'll use default values as a fallback, similar to String.fromEnvironment
         await Supabase.initialize(
           url: supabaseUrl ?? '',
           anonKey: supabaseAnonKey ?? '',
@@ -76,7 +74,7 @@ class SupabaseService extends GetxService {
   }
 
   Future<void> signInWithGoogle() async {
-    final googleClientID = dotenv.env['GOOGLE_CLIENT_ID'];
+    final googleClientID = dotenv.env['GOOGLE_WEB_CLIENT_ID'];
 
     try {
       isLoading.value = true;
@@ -114,6 +112,15 @@ class SupabaseService extends GetxService {
       userPhotoUrl.value = googleUser.photoUrl ?? '';
 
       await _saveUserProfile();
+
+      // Check if user has a username in the database
+      final hasUsername = await checkUserHasUsername();
+
+      // Navigate based on whether user has a username
+      if (!hasUsername) {
+        Get.offAllNamed(Routes.ACCOUNT_SETUP);
+      }
+      // If user has username, navigation to home is handled by the listener in controller
     } catch (e) {
       debugPrint('Error signing in with Google: $e');
       Get.snackbar('Error', 'Failed to sign in with Google');
@@ -157,5 +164,48 @@ class SupabaseService extends GetxService {
     _storageService.remove('user_name');
     _storageService.remove('user_email');
     _storageService.remove('user_photo_url');
+  }
+
+  // Check if the current user has a username in the database
+  Future<bool> checkUserHasUsername() async {
+    try {
+      if (currentUser.value == null) return false;
+
+      // Check if username exists in profiles table
+      final response = await client
+          .from('profiles')
+          .select('username')
+          .eq('user_id', currentUser.value!.id)
+          .maybeSingle();
+      
+      // If no record found or username is empty, return false
+      if (response == null) return false;
+      
+      // If we get a response with a non-empty username, return true
+      return response['username'] != null &&
+          response['username'].toString().isNotEmpty;
+    } catch (e) {
+      // If there's an error, return false
+      debugPrint('Error checking username: $e');
+      return false;
+    }
+  }
+
+  // Save username to the database
+  Future<bool> saveUsername(String username) async {
+    try {
+      if (currentUser.value == null) return false;
+
+      // Update or insert the username in the profiles table
+      await client.from('profiles').upsert({
+        'user_id': currentUser.value!.id,
+        'username': username,
+      });
+
+      return true;
+    } catch (e) {
+      debugPrint('Error saving username: $e');
+      return false;
+    }
   }
 }

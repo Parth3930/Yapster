@@ -12,7 +12,7 @@ class LoadingWidget extends StatelessWidget {
   final Color? textColor;
 
   const LoadingWidget({
-    Key? key,
+    super.key,
     this.message,
     this.color,
     this.size = 40.0,
@@ -20,7 +20,7 @@ class LoadingWidget extends StatelessWidget {
     this.isOverlay = false,
     this.overlayColor,
     this.textColor,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

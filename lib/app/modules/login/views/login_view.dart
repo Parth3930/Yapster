@@ -102,10 +102,7 @@ class LoginView extends GetView<LoginController> {
                       onPressed:
                           controller.isLoading.value
                               ? () {}
-                              : () => {
-                                // Navigate to the sign-up page
-                                Get.toNamed('/sign-up'),
-                              },
+                              : () => controller.signInWithGoogle(),
                       width: 270,
                       height: 55,
                       textColor: Colors.white,

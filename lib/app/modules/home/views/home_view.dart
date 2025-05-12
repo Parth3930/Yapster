@@ -14,7 +14,9 @@ class HomeView extends GetView<HomeController> {
 
     return Obx(() => Scaffold(
       appBar: CustomAppBar(
-        title: 'Yapster',
+        title: controller.username.value.isNotEmpty 
+            ? controller.username.value
+            : "Welcome",
         showBackButton: false,
         actions: [
           IconButton(
