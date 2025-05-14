@@ -3,89 +3,68 @@ import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'storage_service.dart';
 import '../../routes/app_pages.dart';
 
 class SupabaseService extends GetxService {
+  /// Singleton accessor for the SupabaseService instance
   static SupabaseService get to => Get.find<SupabaseService>();
-  final StorageService _storageService = Get.find<StorageService>();
 
+  /// Supabase client instance, initialized in the `init` method
   late final SupabaseClient client;
+
+  /// Reactive variable for the current authenticated user
   final Rx<User?> currentUser = Rx<User?>(null);
+
+  /// Reactive variable indicating authentication status
   final RxBool isAuthenticated = false.obs;
+
+  /// Reactive variable indicating loading state
   final RxBool isLoading = false.obs;
 
-  // User profile data
+  /// Reactive variable indicating if Supabase is initialized
+  final RxBool isInitialized = false.obs;
+
+  /// Reactive variables for user profile data
   final RxString userName = ''.obs;
   final RxString userEmail = ''.obs;
-  final RxString userPhotoUrl = ''.obs;
+  final RxString userAvatarUrl = ''.obs;
+  final RxString userPhotoUrl = ''.obs; // Google profile photo URL
 
+  /// Initializes the Supabase service by loading environment variables and setting up the Supabase client
   Future<SupabaseService> init() async {
     try {
       debugPrint('Initializing Supabase service');
-      // Load .env file
+      // Load environment variables from .env file
       await dotenv.load(fileName: ".env");
 
       final supabaseUrl = dotenv.env['SUPABASE_URL'];
       final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
       if (supabaseUrl == null || supabaseAnonKey == null) {
-        debugPrint(
-          'Error: SUPABASE_URL or SUPABASE_ANON_KEY not found in .env file',
+        throw Exception(
+          'SUPABASE_URL or SUPABASE_ANON_KEY not found in .env file',
         );
-        await Supabase.initialize(
-          url: supabaseUrl ?? '',
-          anonKey: supabaseAnonKey ?? '',
-        );
-      } else {
-        await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
       }
 
+      // Initialize Supabase with URL and anonymous key
+      await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
       client = Supabase.instance.client;
-      debugPrint('Supabase client initialized');
-
-      // Check if user is already logged in
-      currentUser.value = client.auth.currentUser;
-      isAuthenticated.value = currentUser.value != null;
-      debugPrint(
-        'Initial auth state - isAuthenticated: ${isAuthenticated.value}',
-      );
-
-      if (isAuthenticated.value) {
-        await _loadUserProfile();
-      }
-
-      // Listen for auth state changes
-      client.auth.onAuthStateChange.listen((data) {
-        final AuthChangeEvent event = data.event;
-        final Session? session = data.session;
-        debugPrint('Auth state changed - Event: $event');
-
-        if (event == AuthChangeEvent.signedIn) {
-          currentUser.value = session?.user;
-          isAuthenticated.value = true;
-          debugPrint(
-            'User signed in - isAuthenticated: ${isAuthenticated.value}',
-          );
-          _loadUserProfile();
-        } else if (event == AuthChangeEvent.signedOut) {
-          currentUser.value = null;
-          isAuthenticated.value = false;
-          debugPrint(
-            'User signed out - isAuthenticated: ${isAuthenticated.value}',
-          );
-          _clearUserProfile();
-        }
-      });
-
+      _fetchCurrentUserData();
+      isInitialized.value = true;
       return this;
     } catch (e) {
       debugPrint('Error initializing Supabase: $e');
-      return this;
+      rethrow; //
     }
   }
 
+  /// Signs in the user with Google authentication
   Future<void> signInWithGoogle() async {
+    if (!isInitialized.value) {
+      debugPrint('Cannot sign in: Supabase not initialized');
+      return;
+    }
+    
     final googleClientID = dotenv.env['GOOGLE_WEB_CLIENT_ID'];
 
     try {
@@ -117,22 +96,17 @@ class SupabaseService extends GetxService {
       // Update user data
       currentUser.value = response.user;
       isAuthenticated.value = true;
-
-      // Save user profile data
+      
+      // Save Google profile data
       userName.value = googleUser.displayName ?? '';
       userEmail.value = googleUser.email;
       userPhotoUrl.value = googleUser.photoUrl ?? '';
+      
+      debugPrint('Google sign-in successful: ${googleUser.displayName}');
+      debugPrint('Google photo URL: ${googleUser.photoUrl}');
 
-      await _saveUserProfile();
-
-      // Check if user has a username in the database
-      final hasUsername = await checkUserHasUsername();
-
-      // Navigate based on whether user has a username
-      if (!hasUsername) {
-        Get.offAllNamed(Routes.ACCOUNT_USERNAME_SETUP);
-      }
-      // If user has username, navigation to home is handled by the listener in controller
+      // create new user in profiles table or update if exists
+      await client.from('profiles').upsert({'user_id': response.user?.id});
     } catch (e) {
       debugPrint('Error signing in with Google: $e');
       Get.snackbar('Error', 'Failed to sign in with Google');
@@ -141,6 +115,7 @@ class SupabaseService extends GetxService {
     }
   }
 
+  /// Signs out the current user and clears profile data
   Future<void> signOut() async {
     try {
       isLoading.value = true;
@@ -148,7 +123,7 @@ class SupabaseService extends GetxService {
       _clearUserProfile();
       isAuthenticated.value = false;
       currentUser.value = null;
-      Get.offAllNamed(Routes.LOGIN);
+      Get.offAllNamed(Routes.LOGIN); // Navigate to login screen
     } catch (e) {
       debugPrint('Error signing out: $e');
       Get.snackbar('Error', 'Failed to sign out');
@@ -157,80 +132,68 @@ class SupabaseService extends GetxService {
     }
   }
 
-  Future<void> _saveUserProfile() async {
-    await _storageService.saveString('user_name', userName.value);
-    await _storageService.saveString('user_email', userEmail.value);
-    await _storageService.saveString('user_photo_url', userPhotoUrl.value);
-  }
-
-  Future<void> _loadUserProfile() async {
-    userName.value = _storageService.getString('user_name') ?? '';
-    userEmail.value = _storageService.getString('user_email') ?? '';
-    userPhotoUrl.value = _storageService.getString('user_photo_url') ?? '';
-  }
-
+  /// Clears user profile reactive variables
   void _clearUserProfile() {
     userName.value = '';
     userEmail.value = '';
+    userAvatarUrl.value = '';
     userPhotoUrl.value = '';
-    _storageService.remove('user_name');
-    _storageService.remove('user_email');
-    _storageService.remove('user_photo_url');
   }
 
-  // Check if the current user has a username in the database
-  Future<bool> checkUserHasUsername() async {
-    try {
-      debugPrint('Checking if user has username');
-      if (currentUser.value == null) {
-        debugPrint('No current user found');
-        return false;
-      }
-
-      // Check if username exists in profiles table
-      final response =
-          await client
-              .from('profiles')
-              .select('username')
-              .eq('user_id', currentUser.value!.id)
-              .maybeSingle();
-
-      debugPrint('Username check response: $response');
-
-      // If no record found or username is empty, return false
-      if (response == null) {
-        debugPrint('No username record found');
-        return false;
-      }
-
-      // If we get a response with a non-empty username, return true
-      final hasUsername =
-          response['username'] != null &&
-          response['username'].toString().isNotEmpty;
-      debugPrint('Has username: $hasUsername');
-      return hasUsername;
-    } catch (e) {
-      // If there's an error, return false
-      debugPrint('Error checking username: $e');
-      return false;
+  /// Fetches the current user's data if already authenticated
+  void _fetchCurrentUserData() {
+    final user = client.auth.currentUser;
+    if (user != null) {
+      currentUser.value = user;
+      isAuthenticated.value = true;
+      // Also fetch profile data from the database
+      fetchUserData().then((_) {
+        debugPrint('Initial profile data loaded in _fetchCurrentUserData');
+      }).catchError((e) {
+        debugPrint('Error fetching initial profile data: $e');
+      });
     }
   }
 
-  // Save username to the database
-  Future<bool> saveUsername(String username) async {
+  /// Fetches user profile data from the Supabase database
+  Future<Map<String, dynamic>> fetchUserData() async {
     try {
-      if (currentUser.value == null) return false;
+      isLoading.value = true;
+      
+      // Check if user is authenticated
+      final user = client.auth.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+      
+      isAuthenticated.value = true;
+      currentUser.value = user;
 
-      // Update or insert the username in the profiles table
-      await client.from('profiles').upsert({
-        'user_id': currentUser.value!.id,
-        'username': username,
-      });
+      // Fetch user profile data from the 'profiles' table
+      final userData =
+          await client
+              .from('profiles')
+              .select()
+              .eq('user_id', user.id)
+              .single();
 
-      return true;
+      debugPrint('Fetched user profile data: $userData');
+
+      if (userData.isNotEmpty) {
+        // Make sure we're using the correct field names from the database
+        userName.value = userData['username'] ?? '';
+        userAvatarUrl.value = userData['avatar'] ?? '';
+        
+      } else {
+        debugPrint('No profile data found for user ${user.id}');
+      }
+
+      return userData;
     } catch (e) {
-      debugPrint('Error saving username: $e');
-      return false;
+      debugPrint('Error fetching user data: $e');
+      return {'isAuthenticated': false, 'error': e.toString()};
+    } finally {
+      isLoading.value = false;
     }
   }
 }

@@ -103,7 +103,7 @@ class AccountUsernameSetupView extends GetView<AccountSetupController> {
                             onPressed:
                                 controller.isLoading.value
                                     ? () {}
-                                    : () => controller.saveAccountData(),
+                                    : () => controller.saveUsername(),
                           ),
                         ],
                       ),

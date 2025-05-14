@@ -18,17 +18,10 @@ void main() async {
 
 // Initialize services before app starts
 Future<void> initServices() async {
-  // Initialize storage service
-  await Get.putAsync(() => StorageService().init());
-
-  // Initialize API service
-  Get.put(ApiService());
-
-  // Initialize theme controller
-  Get.put(ThemeController());
-
-  // Initialize Supabase service
   await Get.putAsync(() => SupabaseService().init());
+  await Get.putAsync(() => StorageService().init());
+  Get.put(ApiService());
+  Get.put(ThemeController());
 }
 
 class MyApp extends StatelessWidget {
@@ -38,15 +31,17 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
 
-    return Obx(() => GetMaterialApp(
-      title: 'Yapster',
-      debugShowCheckedModeBanner: false,
-      defaultTransition: Transition.fade,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: themeController.themeMode,
-      initialRoute: Routes.SPLASH,
-      getPages: AppPages.routes,
-    ));
+    return Obx(
+      () => GetMaterialApp(
+        title: 'Yapster',
+        debugShowCheckedModeBanner: false,
+        defaultTransition: Transition.fade,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: themeController.themeMode,
+        initialRoute: Routes.SPLASH,
+        getPages: AppPages.routes,
+      ),
+    );
   }
 }
