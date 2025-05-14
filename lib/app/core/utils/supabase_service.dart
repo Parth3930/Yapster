@@ -3,52 +3,57 @@ import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:yapster/app/data/providers/account_data_provider.dart';
 import '../../routes/app_pages.dart';
 
 class SupabaseService extends GetxService {
-  /// Singleton accessor for the SupabaseService instance
   static SupabaseService get to => Get.find<SupabaseService>();
+  AccountDataProvider get _accountDataProvider =>
+      Get.find<AccountDataProvider>();
 
-  /// Supabase client instance, initialized in the `init` method
   late final SupabaseClient client;
 
-  /// Reactive variable for the current authenticated user
   final Rx<User?> currentUser = Rx<User?>(null);
-
-  /// Reactive variable indicating authentication status
   final RxBool isAuthenticated = false.obs;
-
-  /// Reactive variable indicating loading state
   final RxBool isLoading = false.obs;
-
-  /// Reactive variable indicating if Supabase is initialized
   final RxBool isInitialized = false.obs;
-
-  /// Reactive variables for user profile data
-  final RxString userName = ''.obs;
-  final RxString userEmail = ''.obs;
-  final RxString userAvatarUrl = ''.obs;
-  final RxString userPhotoUrl = ''.obs; // Google profile photo URL
 
   /// Initializes the Supabase service by loading environment variables and setting up the Supabase client
   Future<SupabaseService> init() async {
     try {
+      if (isInitialized.value) {
+        debugPrint('Supabase already initialized');
+        return this;
+      }
+
       debugPrint('Initializing Supabase service');
-      // Load environment variables from .env file
+      // Load .env file
       await dotenv.load(fileName: ".env");
 
       final supabaseUrl = dotenv.env['SUPABASE_URL'];
       final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-      if (supabaseUrl == null || supabaseAnonKey == null) {
-        throw Exception(
-          'SUPABASE_URL or SUPABASE_ANON_KEY not found in .env file',
-        );
+      // Check if Supabase is already initialized to avoid the assertion error
+      try {
+        client = Supabase.instance.client;
+        debugPrint('Supabase was already initialized, using existing instance');
+        isInitialized.value = true;
+      } catch (e) {
+        // If not initialized, initialize it
+        if (supabaseUrl == null || supabaseAnonKey == null) {
+          debugPrint(
+            'Error: SUPABASE_URL or SUPABASE_ANON_KEY not found in .env file',
+          );
+          await Supabase.initialize(
+            url: supabaseUrl ?? '',
+            anonKey: supabaseAnonKey ?? '',
+          );
+        } else {
+          await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+        }
+        client = Supabase.instance.client;
       }
 
-      // Initialize Supabase with URL and anonymous key
-      await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
-      client = Supabase.instance.client;
       _fetchCurrentUserData();
       isInitialized.value = true;
       return this;
@@ -64,7 +69,7 @@ class SupabaseService extends GetxService {
       debugPrint('Cannot sign in: Supabase not initialized');
       return;
     }
-    
+
     final googleClientID = dotenv.env['GOOGLE_WEB_CLIENT_ID'];
 
     try {
@@ -96,14 +101,6 @@ class SupabaseService extends GetxService {
       // Update user data
       currentUser.value = response.user;
       isAuthenticated.value = true;
-      
-      // Save Google profile data
-      userName.value = googleUser.displayName ?? '';
-      userEmail.value = googleUser.email;
-      userPhotoUrl.value = googleUser.photoUrl ?? '';
-      
-      debugPrint('Google sign-in successful: ${googleUser.displayName}');
-      debugPrint('Google photo URL: ${googleUser.photoUrl}');
 
       // create new user in profiles table or update if exists
       await client.from('profiles').upsert({'user_id': response.user?.id});
@@ -134,10 +131,9 @@ class SupabaseService extends GetxService {
 
   /// Clears user profile reactive variables
   void _clearUserProfile() {
-    userName.value = '';
-    userEmail.value = '';
-    userAvatarUrl.value = '';
-    userPhotoUrl.value = '';
+    _accountDataProvider.username.value = '';
+    _accountDataProvider.email.value = '';
+    _accountDataProvider.avatar.value = '';
   }
 
   /// Fetches the current user's data if already authenticated
@@ -147,11 +143,13 @@ class SupabaseService extends GetxService {
       currentUser.value = user;
       isAuthenticated.value = true;
       // Also fetch profile data from the database
-      fetchUserData().then((_) {
-        debugPrint('Initial profile data loaded in _fetchCurrentUserData');
-      }).catchError((e) {
-        debugPrint('Error fetching initial profile data: $e');
-      });
+      fetchUserData()
+          .then((_) {
+            debugPrint('Initial profile data loaded in _fetchCurrentUserData');
+          })
+          .catchError((e) {
+            debugPrint('Error fetching initial profile data: $e');
+          });
     }
   }
 
@@ -159,13 +157,13 @@ class SupabaseService extends GetxService {
   Future<Map<String, dynamic>> fetchUserData() async {
     try {
       isLoading.value = true;
-      
+
       // Check if user is authenticated
       final user = client.auth.currentUser;
       if (user == null) {
         throw Exception('User not authenticated');
       }
-      
+
       isAuthenticated.value = true;
       currentUser.value = user;
 
@@ -180,10 +178,13 @@ class SupabaseService extends GetxService {
       debugPrint('Fetched user profile data: $userData');
 
       if (userData.isNotEmpty) {
-        // Make sure we're using the correct field names from the database
-        userName.value = userData['username'] ?? '';
-        userAvatarUrl.value = userData['avatar'] ?? '';
-        
+        _accountDataProvider.username.value = userData['username'] ?? '';
+        _accountDataProvider.avatar.value = userData['avatar'] ?? '';
+        _accountDataProvider.email.value = client.auth.currentUser?.email ?? '';
+        _accountDataProvider.googleAvatar.value =
+            client.auth.currentUser?.userMetadata!['avatar_url'] ?? "";
+
+        //
       } else {
         debugPrint('No profile data found for user ${user.id}');
       }

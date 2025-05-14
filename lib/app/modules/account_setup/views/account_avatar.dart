@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/core/theme/theme_controller.dart';
-import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/core/values/colors.dart';
+import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
 
@@ -13,7 +13,7 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
   @override
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
-    final supabaseService = Get.find<SupabaseService>();
+    final accountDataProvider = Get.find<AccountDataProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -21,7 +21,7 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
         actions: [
           TextButton(
             onPressed: () {
-              Get.toNamed("/home");
+              controller.skipedAvatar();
             },
             child: Text(
               "Skip",
@@ -34,26 +34,18 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
         children: [
           const SizedBox(height: 20),
           Center(
-            child: Obx(() {
-              final avatarUrl = supabaseService.userAvatarUrl.string;
-              final photoUrl = supabaseService.userPhotoUrl.string;
-              final hasAvatar = avatarUrl.isNotEmpty;
-              final hasPhoto = photoUrl.isNotEmpty;
-              
-              return CircleAvatar(
-                radius: 50,
-                backgroundColor: Colors.grey[300],
-                backgroundImage: (hasAvatar || hasPhoto) 
-                  ? NetworkImage(hasAvatar ? avatarUrl : photoUrl)
-                  : null,
-                child: (!hasAvatar && !hasPhoto) 
-                  ? Icon(Icons.person, size: 50, color: Colors.grey[700])
-                  : null,
-              );
-            }),
+            child: CircleAvatar(
+              radius: 50,
+              backgroundColor: Colors.grey[300],
+              backgroundImage: NetworkImage(
+                accountDataProvider.avatar.value.isEmpty
+                    ? accountDataProvider.googleAvatar.value
+                    : "",
+              ),
+            ),
           ),
           SizedBox(height: 20),
-          Text(supabaseService.userName.string),
+          Text(accountDataProvider.username.string),
           const Spacer(),
           CustomButton(
             text: "Continue",
@@ -64,7 +56,10 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
                     ? AppColors.textWhite
                     : AppColors.textDark,
             isLoading: controller.isLoading.value,
-            onPressed: controller.isLoading.value ? () {} : () => {},
+            onPressed:
+                controller.isLoading.value
+                    ? () {}
+                    : () => controller.skipedAvatar(),
           ),
           const SizedBox(height: 40),
         ],

@@ -6,6 +6,7 @@ import 'app/core/theme/theme_controller.dart';
 import 'app/core/utils/storage_service.dart';
 import 'app/core/utils/api_service.dart';
 import 'app/core/utils/supabase_service.dart';
+import 'app/data/providers/account_data_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,10 +19,22 @@ void main() async {
 
 // Initialize services before app starts
 Future<void> initServices() async {
-  await Get.putAsync(() => SupabaseService().init());
+  // First initialize storage
   await Get.putAsync(() => StorageService().init());
+  
+  // Then API service
   Get.put(ApiService());
+  
+  // Initialize Supabase
+  await Get.putAsync(() => SupabaseService().init());
+  
+  // Add AccountDataProvider after Supabase is initialized
+  Get.put(AccountDataProvider());
+  
+  // Initialize theme controller
   Get.put(ThemeController());
+  
+  debugPrint('All services initialized');
 }
 
 class MyApp extends StatelessWidget {
