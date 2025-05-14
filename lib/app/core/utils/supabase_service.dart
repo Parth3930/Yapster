@@ -47,7 +47,9 @@ class SupabaseService extends GetxService {
       // Check if user is already logged in
       currentUser.value = client.auth.currentUser;
       isAuthenticated.value = currentUser.value != null;
-      debugPrint('Initial auth state - isAuthenticated: ${isAuthenticated.value}');
+      debugPrint(
+        'Initial auth state - isAuthenticated: ${isAuthenticated.value}',
+      );
 
       if (isAuthenticated.value) {
         await _loadUserProfile();
@@ -62,12 +64,16 @@ class SupabaseService extends GetxService {
         if (event == AuthChangeEvent.signedIn) {
           currentUser.value = session?.user;
           isAuthenticated.value = true;
-          debugPrint('User signed in - isAuthenticated: ${isAuthenticated.value}');
+          debugPrint(
+            'User signed in - isAuthenticated: ${isAuthenticated.value}',
+          );
           _loadUserProfile();
         } else if (event == AuthChangeEvent.signedOut) {
           currentUser.value = null;
           isAuthenticated.value = false;
-          debugPrint('User signed out - isAuthenticated: ${isAuthenticated.value}');
+          debugPrint(
+            'User signed out - isAuthenticated: ${isAuthenticated.value}',
+          );
           _clearUserProfile();
         }
       });
@@ -124,7 +130,7 @@ class SupabaseService extends GetxService {
 
       // Navigate based on whether user has a username
       if (!hasUsername) {
-        Get.offAllNamed(Routes.ACCOUNT_SETUP);
+        Get.offAllNamed(Routes.ACCOUNT_USERNAME_SETUP);
       }
       // If user has username, navigation to home is handled by the listener in controller
     } catch (e) {
@@ -182,22 +188,24 @@ class SupabaseService extends GetxService {
       }
 
       // Check if username exists in profiles table
-      final response = await client
-          .from('profiles')
-          .select('username')
-          .eq('user_id', currentUser.value!.id)
-          .maybeSingle();
-      
+      final response =
+          await client
+              .from('profiles')
+              .select('username')
+              .eq('user_id', currentUser.value!.id)
+              .maybeSingle();
+
       debugPrint('Username check response: $response');
-      
+
       // If no record found or username is empty, return false
       if (response == null) {
         debugPrint('No username record found');
         return false;
       }
-      
+
       // If we get a response with a non-empty username, return true
-      final hasUsername = response['username'] != null &&
+      final hasUsername =
+          response['username'] != null &&
           response['username'].toString().isNotEmpty;
       debugPrint('Has username: $hasUsername');
       return hasUsername;

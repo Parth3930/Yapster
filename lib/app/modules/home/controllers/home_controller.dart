@@ -16,7 +16,7 @@ class HomeController extends GetxController {
     super.onInit();
     _prefs = await SharedPreferences.getInstance();
     _loadCachedUsername();
-    
+
     // Check if user is authenticated
     if (!supabaseService.isAuthenticated.value) {
       // Use post-frame callback to avoid setState during build
@@ -28,18 +28,19 @@ class HomeController extends GetxController {
       final hasUsername = await supabaseService.checkUserHasUsername();
       if (!hasUsername) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          Get.offAllNamed(Routes.ACCOUNT_SETUP);
+          Get.offAllNamed(Routes.ACCOUNT_USERNAME_SETUP);
         });
       } else {
         // Only fetch and cache username if user has one
         if (username.value.isEmpty) {
           try {
-            final response = await supabaseService.client
-                .from('profiles')
-                .select('username')
-                .eq('user_id', supabaseService.currentUser.value!.id)
-                .single();
-            
+            final response =
+                await supabaseService.client
+                    .from('profiles')
+                    .select('username')
+                    .eq('user_id', supabaseService.currentUser.value!.id)
+                    .single();
+
             if (response['username'] != null) {
               await _cacheUsername(response['username']);
             }
@@ -83,18 +84,19 @@ class HomeController extends GetxController {
     final hasUsername = await supabaseService.checkUserHasUsername();
     if (!hasUsername) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Get.offAllNamed(Routes.ACCOUNT_SETUP);
+        Get.offAllNamed(Routes.ACCOUNT_USERNAME_SETUP);
       });
     } else {
       // If we don't have a cached username, fetch it from the profiles table
       if (username.value.isEmpty) {
         try {
-          final response = await supabaseService.client
-              .from('profiles')
-              .select('username')
-              .eq('user_id', supabaseService.currentUser.value!.id)
-              .single();
-          
+          final response =
+              await supabaseService.client
+                  .from('profiles')
+                  .select('username')
+                  .eq('user_id', supabaseService.currentUser.value!.id)
+                  .single();
+
           if (response['username'] != null) {
             await _cacheUsername(response['username']);
           }

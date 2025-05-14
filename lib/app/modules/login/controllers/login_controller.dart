@@ -32,7 +32,7 @@ class LoginController extends GetxController {
       if (hasUsername) {
         Get.offAllNamed(Routes.HOME);
       } else {
-        Get.offAllNamed(Routes.ACCOUNT_SETUP);
+        Get.offAllNamed(Routes.ACCOUNT_USERNAME_SETUP);
       }
     });
   }

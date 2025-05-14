@@ -19,7 +19,7 @@ class SplashController extends GetxController {
     try {
       debugPrint('Starting auth check and navigation');
       isLoading.value = true;
-      
+
       // Add a small delay to show the splash screen
       await Future.delayed(const Duration(seconds: 2));
       debugPrint('Delay completed');
@@ -33,10 +33,10 @@ class SplashController extends GetxController {
       } else {
         final hasUsername = await _supabaseService.checkUserHasUsername();
         debugPrint('Has username: $hasUsername');
-        
+
         if (!hasUsername) {
           debugPrint('No username, navigating to account setup');
-          Get.offAllNamed(Routes.ACCOUNT_SETUP);
+          Get.offAllNamed(Routes.ACCOUNT_USERNAME_SETUP);
         } else {
           debugPrint('Has username, navigating to home');
           Get.offAllNamed(Routes.HOME);
@@ -50,4 +50,4 @@ class SplashController extends GetxController {
       isInitialized.value = true;
     }
   }
-} 
+}

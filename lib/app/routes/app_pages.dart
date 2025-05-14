@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
 import 'package:yapster/app/modules/account_setup/bindings/account_setup_binding.dart';
-import 'package:yapster/app/modules/account_setup/views/account_setup_view.dart';
+import 'package:yapster/app/modules/account_setup/views/account_username_view.dart';
 import '../modules/home/bindings/home_binding.dart';
 import '../modules/home/views/home_view.dart';
 import '../modules/login/bindings/login_binding.dart';
@@ -32,8 +32,8 @@ class AppPages {
       binding: LoginBinding(),
     ),
     GetPage(
-      name: _Paths.ACCOUNT_SETUP,
-      page: () => const AccountSetupView(),
+      name: _Paths.ACCOUNT_USERNAME_SETUP,
+      page: () => const AccountUsernameSetupView(),
       binding: AccountSetupBinding(),
     ),
   ];

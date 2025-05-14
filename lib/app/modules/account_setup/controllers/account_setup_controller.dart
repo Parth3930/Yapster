@@ -20,7 +20,8 @@ class AccountSetupController extends GetxController {
     // Listen for authentication state changes
     ever(_supabaseService.isAuthenticated, (isAuthenticated) {
       // Only proceed if controller is still registered
-      if (isAuthenticated && GetInstance().isRegistered<AccountSetupController>()) {
+      if (isAuthenticated &&
+          GetInstance().isRegistered<AccountSetupController>()) {
         checkAuthAndUsername();
       }
     });
@@ -30,7 +31,7 @@ class AccountSetupController extends GetxController {
   Future<void> checkAuthAndUsername() async {
     // Check if the controller is still mounted before proceeding
     if (!GetInstance().isRegistered<AccountSetupController>()) return;
-    
+
     if (_supabaseService.isAuthenticated.value) {
       final hasUsername = await _supabaseService.checkUserHasUsername();
       if (hasUsername) {

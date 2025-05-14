@@ -8,8 +8,8 @@ import 'package:yapster/app/global_widgets/custom_input.dart';
 import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
 import '../../../global_widgets/loading_widget.dart';
 
-class AccountSetupView extends GetView<AccountSetupController> {
-  const AccountSetupView({super.key});
+class AccountUsernameSetupView extends GetView<AccountSetupController> {
+  const AccountUsernameSetupView({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -5,7 +5,7 @@ abstract class Routes {
   static const SPLASH = _Paths.SPLASH;
   static const HOME = _Paths.HOME;
   static const LOGIN = _Paths.LOGIN;
-  static const ACCOUNT_SETUP = _Paths.ACCOUNT_SETUP;
+  static const ACCOUNT_USERNAME_SETUP = _Paths.ACCOUNT_USERNAME_SETUP;
 }
 
 abstract class _Paths {
@@ -13,5 +13,5 @@ abstract class _Paths {
   static const SPLASH = '/splash';
   static const HOME = '/home';
   static const LOGIN = '/login';
-  static const ACCOUNT_SETUP = '/account-setup';
+  static const ACCOUNT_USERNAME_SETUP = '/account-setup-username';
 }
