@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../core/theme/theme_controller.dart';
 import '../core/values/colors.dart';
 
@@ -7,7 +8,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget>? actions;
   final bool showBackButton;
-  final bool showThemeToggle;
   final Color? backgroundColor;
   final Color? titleColor;
   final double elevation;
@@ -19,7 +19,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.title,
     this.actions,
     this.showBackButton = true,
-    this.showThemeToggle = true,
     this.backgroundColor,
     this.titleColor,
     this.elevation = 0,
@@ -35,19 +34,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
       final bool isDark = themeController.isDarkMode;
       List<Widget> actionWidgets = [];
 
-      // Add theme toggle button if enabled
-      if (showThemeToggle) {
-        actionWidgets.add(
-          IconButton(
-            icon: Icon(
-              isDark ? Icons.light_mode : Icons.dark_mode,
-              color: Colors.white,
-            ),
-            onPressed: () => themeController.toggleTheme(),
-          ),
-        );
-      }
-
       // Add any additional action widgets
       if (actions != null) {
         actionWidgets.addAll(actions!);
@@ -58,10 +44,12 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
           title,
           style: Get.textTheme.titleLarge?.copyWith(
             color: titleColor ?? Colors.white,
-            fontSize: 18,
+            fontSize: 48,
             fontWeight: FontWeight.w600,
+            fontFamily: GoogleFonts.dongle().fontFamily,
           ),
         ),
+        centerTitle: true,
         backgroundColor:
             backgroundColor ??
             (isDark ? AppColors.primaryColorDark : AppColors.primaryColor),
