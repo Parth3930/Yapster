@@ -39,8 +39,7 @@ class SplashController extends GetxController {
       }
 
       // If username exists, check avatar
-      if (_accountDataProvider.avatar.string.isEmpty ||
-          _accountDataProvider.avatar.string != "skiped") {
+      if (_accountDataProvider.avatar.string.isEmpty) {
         debugPrint('No avatar, navigating to avatar setup');
         Get.offAllNamed(Routes.ACCOUNT_AVATAR_SETUP);
         return;

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yapster/app/data/providers/account_data_provider.dart';
 import '../../../core/utils/supabase_service.dart';
 import '../../../routes/app_pages.dart';
 
@@ -7,6 +10,8 @@ class AccountSetupController extends GetxController {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
   final TextEditingController usernameController = TextEditingController();
   final RxBool isLoading = false.obs;
+  final Rx<XFile?> selectedImage = Rx<XFile?>(null);
+  final _accountDataProvider = Get.find<AccountDataProvider>();
 
   // Save account data and navigate to home
   Future<void> saveUsername() async {
@@ -21,7 +26,6 @@ class AccountSetupController extends GetxController {
 
     try {
       isLoading.value = true;
-      // Store the username value before navigation to avoid accessing controller after disposal
       final username = usernameController.text.trim();
       if (_supabaseService.currentUser.value == null) return;
       final currentUser = _supabaseService.currentUser.value;
@@ -31,7 +35,7 @@ class AccountSetupController extends GetxController {
         'user_id': currentUser!.id,
         'username': username,
       });
-      
+
       // Navigate to home after successful save
       Get.offAllNamed(Routes.HOME);
     } catch (e) {
@@ -54,7 +58,7 @@ class AccountSetupController extends GetxController {
         'user_id': _supabaseService.currentUser.value!.id,
         'avatar': "skiped",
       });
-      
+
       // Navigate to home after skipping
       Get.offAllNamed(Routes.HOME);
     } catch (e) {
@@ -66,6 +70,87 @@ class AccountSetupController extends GetxController {
       );
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  Future<void> saveAvatar() async {
+    try {
+      isLoading.value = true;
+
+      // Check if we have a selected image
+      if (selectedImage.value == null) {
+        Get.snackbar(
+          'Error',
+          'No image selected',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+
+      final userId = _supabaseService.currentUser.value?.id;
+      if (userId == null) return;
+
+      // Read image bytes
+      final imageBytes = await selectedImage.value!.readAsBytes();
+
+      // Upload image to Supabase storage
+      await _supabaseService.client.storage
+          .from('profiles')
+          .uploadBinary(
+            "/$userId/avatar",
+            imageBytes,
+            fileOptions: FileOptions(upsert: true),
+          );
+
+      // Get the public URL for the uploaded image
+      final imageUrl = _supabaseService.client.storage
+          .from('profiles')
+          .getPublicUrl("/$userId/avatar");
+
+      // Update the profile record with the avatar URL
+      await _supabaseService.client.from('profiles').upsert({
+        'user_id': userId,
+        'avatar': imageUrl,
+      });
+
+      _accountDataProvider.avatar.value = imageUrl;
+
+      Get.offAllNamed(Routes.HOME);
+    } catch (e) {
+      debugPrint('Error saving avatar: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to save avatar',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> pickImage() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+      if (image != null) {
+        // Store the selected image in our reactive variable
+        selectedImage.value = image;
+      } else {
+        debugPrint('No image selected');
+        Get.snackbar(
+          'Error',
+          'No image selected',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to pick image',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     }
   }
 

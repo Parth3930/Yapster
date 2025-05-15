@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -33,37 +34,70 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
       body: Column(
         children: [
           const SizedBox(height: 20),
-          Center(
-            child: CircleAvatar(
-              radius: 50,
-              backgroundColor: Colors.grey[300],
-              backgroundImage: NetworkImage(
-                accountDataProvider.avatar.value.isEmpty
-                    ? accountDataProvider.googleAvatar.value
-                    : "",
+          Obx(
+            () => Center(
+              child: GestureDetector(
+                onTap: () {
+                  controller.pickImage();
+                },
+                child: CircleAvatar(
+                  radius: 50,
+                  backgroundColor: Colors.grey[300],
+                  // Fix the backgroundImage logic to handle empty values
+                  backgroundImage: _getAvatarImage(
+                    controller,
+                    accountDataProvider,
+                  ),
+                ),
               ),
             ),
           ),
           SizedBox(height: 20),
           Text(accountDataProvider.username.string),
           const Spacer(),
-          CustomButton(
-            text: "Continue",
-            width: 300,
-            backgroundColor: const Color(0xff0060FF),
-            textColor:
-                themeController.isDarkMode
-                    ? AppColors.textWhite
-                    : AppColors.textDark,
-            isLoading: controller.isLoading.value,
-            onPressed:
-                controller.isLoading.value
-                    ? () {}
-                    : () => controller.skipedAvatar(),
+          Obx(
+            () => CustomButton(
+              text: "Continue",
+              width: 300,
+              backgroundColor: const Color(0xff0060FF),
+              textColor:
+                  themeController.isDarkMode
+                      ? AppColors.textWhite
+                      : AppColors.textDark,
+              isLoading: controller.isLoading.value,
+              onPressed:
+                  controller.isLoading.value
+                      ? () {}
+                      : () => controller.saveAvatar(),
+            ),
           ),
           const SizedBox(height: 40),
         ],
       ),
     );
+  }
+
+  // Helper method to get the correct image provider
+  ImageProvider? _getAvatarImage(
+    AccountSetupController controller,
+    AccountDataProvider accountDataProvider,
+  ) {
+    // If there's a selected image, use FileImage
+    if (controller.selectedImage.value != null) {
+      return FileImage(File(controller.selectedImage.value!.path));
+    }
+
+    // Check if there's a valid avatar URL
+    final avatarUrl =
+        accountDataProvider.avatar.value.isNotEmpty
+            ? accountDataProvider.avatar.value
+            : accountDataProvider.googleAvatar.value;
+
+    // Only use NetworkImage if there's a valid URL
+    if (avatarUrl.isNotEmpty && avatarUrl != "skiped") {
+      return NetworkImage(avatarUrl);
+    }
+
+    return null;
   }
 }
