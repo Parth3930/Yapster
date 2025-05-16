@@ -31,19 +31,51 @@ class AccountSetupController extends GetxController {
       final currentUser = _supabaseService.currentUser.value;
 
       // Update or insert the username in the profiles table
-      await _supabaseService.client.from('profiles').upsert({
-        'user_id': currentUser!.id,
-        'username': username,
-      });
-
-      // Navigate to home after successful save
-      Get.offAllNamed(Routes.HOME);
+      // Supabase will handle uniqueness constraints
+      try {
+        await _supabaseService.client.from('profiles').upsert({
+          'user_id': currentUser!.id,
+          'username': username,
+        });
+        
+        // Update local data provider
+        _accountDataProvider.username.value = username;
+        
+        // Navigate to avatar setup after successful username save
+        Get.offAllNamed(Routes.ACCOUNT_AVATAR_SETUP);
+      } catch (dbError) {
+        debugPrint('Database error saving username: $dbError');
+        
+        // Check if it's a uniqueness constraint error
+        if (dbError.toString().contains('unique') || 
+            dbError.toString().contains('duplicate') ||
+            dbError.toString().contains('23505')) {
+          Get.snackbar(
+            'Username Taken',
+            'This username is already in use. Please choose another one.',
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.red[400],
+            colorText: Colors.white,
+            duration: const Duration(seconds: 3),
+          );
+        } else {
+          Get.snackbar(
+            'Error',
+            'Failed to save username. Please try again.',
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.red[400],
+            colorText: Colors.white,
+          );
+        }
+      }
     } catch (e) {
-      debugPrint('Error saving username: $e');
+      debugPrint('Error in username setup: $e');
       Get.snackbar(
         'Error',
-        'An error occurred',
+        'An unexpected error occurred',
         snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red[400],
+        colorText: Colors.white,
       );
     } finally {
       isLoading.value = false;

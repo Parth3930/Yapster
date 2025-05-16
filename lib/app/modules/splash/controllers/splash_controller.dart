@@ -22,14 +22,45 @@ class SplashController extends GetxController {
       debugPrint('Starting auth check and navigation');
       isLoading.value = true;
 
-      // Check authentication first
-      if (!_supabaseService.isAuthenticated.value) {
-        debugPrint('User not authenticated, navigating to login');
+      // Check if Supabase client has a current user
+      final currentUser = _supabaseService.client.auth.currentUser;
+      
+      if (currentUser == null) {
+        debugPrint('No current user found, navigating to login');
+        _supabaseService.isAuthenticated.value = false;
         Get.offAllNamed(Routes.LOGIN);
         return;
       }
 
-      await _supabaseService.fetchUserData();
+      // Try to fetch user profile data
+      try {
+        final userData = await _supabaseService.client
+            .from('profiles')
+            .select()
+            .eq('user_id', currentUser.id)
+            .maybeSingle();
+        
+        // Check if user exists in profiles table
+        if (userData == null) {
+          debugPrint('User not found in profiles table, navigating to login');
+          _supabaseService.isAuthenticated.value = false;
+          await _supabaseService.signOut();
+          Get.offAllNamed(Routes.LOGIN);
+          return;
+        }
+        
+        // User exists in database, update profile data
+        _supabaseService.isAuthenticated.value = true;
+        _accountDataProvider.username.value = userData['username'] ?? '';
+        _accountDataProvider.avatar.value = userData['avatar'] ?? '';
+        _accountDataProvider.email.value = currentUser.email ?? '';
+      } catch (e) {
+        debugPrint('Error fetching profile data: $e');
+        _supabaseService.isAuthenticated.value = false;
+        await _supabaseService.signOut();
+        Get.offAllNamed(Routes.LOGIN);
+        return;
+      }
 
       // If authenticated, check username
       if (_accountDataProvider.username.string.isEmpty) {
@@ -50,6 +81,7 @@ class SplashController extends GetxController {
       Get.offAllNamed(Routes.HOME);
     } catch (e) {
       debugPrint('Error in splash controller: $e');
+      _supabaseService.isAuthenticated.value = false;
       Get.offAllNamed(Routes.LOGIN);
     } finally {
       isLoading.value = false;

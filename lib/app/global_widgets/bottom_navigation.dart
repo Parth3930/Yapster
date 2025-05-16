@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../routes/app_pages.dart';
 
 class BottomNavigation extends StatefulWidget {
   const BottomNavigation({super.key});
@@ -33,7 +35,7 @@ class _BottomNavigationState extends State<BottomNavigation>
     _controllers = List.generate(
       3, // Reduced to 3 (for explore, chat, profile)
       (index) => AnimationController(
-        duration: const Duration(milliseconds: 600),
+        duration: const Duration(milliseconds: 400),
         vsync: this,
       ),
     );
@@ -80,7 +82,7 @@ class _BottomNavigationState extends State<BottomNavigation>
 
     // Initialize simple home animation
     _homeController = AnimationController(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 400),
       vsync: this,
     );
 
@@ -93,20 +95,23 @@ class _BottomNavigationState extends State<BottomNavigation>
       CurvedAnimation(parent: _homeController, curve: Curves.easeInOut),
     );
 
-    // Initialize special controller for add button
+    // Initialize special controller for add button with longer duration for smoother animation
     _addButtonController = AnimationController(
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     );
 
-    // Simple rotation animation for add button
+    // Simple smooth rotation animation for add button
     _addButtonAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _addButtonController, curve: Curves.easeOutBack),
+      CurvedAnimation(
+        parent: _addButtonController,
+        curve: Curves.linear, // Using linear for consistent rotation speed
+      ),
     );
 
     // Initialize explore ripple controller
     _exploreRippleController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 400),
       vsync: this,
     );
 
@@ -128,13 +133,47 @@ class _BottomNavigationState extends State<BottomNavigation>
     super.dispose();
   }
 
+  // Navigate to the appropriate page
+  void _navigateToPage(String route) {
+    // Only navigate if we're not already on that page
+    if (Get.currentRoute != route) {
+      // Special handling for create button is in _buildAddButton
+      if (route == Routes.CREATE) return;
+      
+      // For other routes, start the animation and wait for completion
+      AnimationController controller;
+      
+      switch (route) {
+        case Routes.HOME:
+          controller = _homeController;
+          break;
+        case Routes.EXPLORE:
+          controller = _exploreRippleController;
+          break;
+        case Routes.CHAT:
+          controller = _controllers[1];
+          break;
+        case Routes.PROFILE:
+          controller = _controllers[2];
+          break;
+        default:
+          // Fallback for unknown routes
+          Get.offNamed(route);
+          return;
+      }
+      
+      // Reset and play the animation, then navigate when complete
+      controller.reset();
+      controller.forward().then((_) {
+        Get.offNamed(route);
+      });
+    }
+  }
+
   // Build the home icon with simple scale animation
   Widget _buildHomeIcon() {
     return GestureDetector(
-      onTap: () {
-        _homeController.reset();
-        _homeController.forward();
-      },
+      onTap: () => _navigateToPage(Routes.HOME),
       child: Container(
         width: 40,
         height: 40,
@@ -156,10 +195,7 @@ class _BottomNavigationState extends State<BottomNavigation>
   // Build the explore icon with fixed animation
   Widget _buildExploreIcon() {
     return GestureDetector(
-      onTap: () {
-        _exploreRippleController.reset();
-        _exploreRippleController.forward();
-      },
+      onTap: () => _navigateToPage(Routes.EXPLORE),
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -231,10 +267,7 @@ class _BottomNavigationState extends State<BottomNavigation>
   // Build the chat icon with improved shake animation
   Widget _buildChatIcon() {
     return GestureDetector(
-      onTap: () {
-        _controllers[1].reset();
-        _controllers[1].forward();
-      },
+      onTap: () => _navigateToPage(Routes.CHAT),
       child: AnimatedBuilder(
         animation: _animations[1],
         builder: (context, child) {
@@ -251,10 +284,7 @@ class _BottomNavigationState extends State<BottomNavigation>
   // Build the profile icon with improved squeeze animation
   Widget _buildProfileIcon() {
     return GestureDetector(
-      onTap: () {
-        _controllers[2].reset();
-        _controllers[2].forward();
-      },
+      onTap: () => _navigateToPage(Routes.PROFILE),
       child: AnimatedBuilder(
         animation: _animations[2],
         builder: (context, child) {
@@ -277,6 +307,51 @@ class _BottomNavigationState extends State<BottomNavigation>
     );
   }
 
+  // Build the add button with optimized smooth 360 rotation
+  Widget _buildAddButton() {
+    return GestureDetector(
+      onTap: () {
+        // Special handling for create button to wait for animation completion
+        _addButtonController.reset();
+        _addButtonController.forward().then((_) {
+          Get.offNamed(Routes.CREATE);
+        });
+      },
+      child: RepaintBoundary( // Use RepaintBoundary for better performance
+        child: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: Color(0xff101010),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 5,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: AnimatedBuilder(
+            animation: _addButtonAnimation,
+            builder: (context, child) {
+              return Transform.rotate(
+                angle: _addButtonAnimation.value * 2 * 3.14159,
+                alignment: Alignment.center,
+                transformHitTests: false,
+                filterQuality: FilterQuality.high,
+                child: child,
+              );
+            },
+            child: const Center(
+              child: Icon(Icons.add, size: 30, color: Colors.white),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return BottomAppBar(
@@ -288,41 +363,7 @@ class _BottomNavigationState extends State<BottomNavigation>
             _buildHomeIcon(),
             _buildExploreIcon(),
             // Special handling for add button with improved animation
-            GestureDetector(
-              onTap: () {
-                _addButtonController.reset();
-                _addButtonController.forward();
-              },
-              child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: Color(0xff101010),
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 5,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: AnimatedBuilder(
-                  animation: _addButtonAnimation,
-                  builder: (context, child) {
-                    // Convert normalized value to full rotation
-                    return Transform.rotate(
-                      angle: _addButtonAnimation.value * 2 * 3.14159,
-                      child: Transform.scale(
-                        scale: 1.0 + (_addButtonAnimation.value * 0.2),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Icon(Icons.add, size: 30, color: Colors.white),
-                ),
-              ),
-            ),
+            _buildAddButton(),
             _buildChatIcon(),
             _buildProfileIcon(),
           ],

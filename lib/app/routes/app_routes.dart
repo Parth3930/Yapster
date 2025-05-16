@@ -7,6 +7,10 @@ abstract class Routes {
   static const LOGIN = _Paths.LOGIN;
   static const ACCOUNT_USERNAME_SETUP = _Paths.ACCOUNT_USERNAME_SETUP;
   static const ACCOUNT_AVATAR_SETUP = _Paths.ACCOUNT_AVATAR_SETUP;
+  static const PROFILE = _Paths.PROFILE;
+  static const CHAT = _Paths.CHAT;
+  static const EXPLORE = _Paths.EXPLORE;
+  static const CREATE = _Paths.CREATE;
 }
 
 abstract class _Paths {
@@ -16,4 +20,8 @@ abstract class _Paths {
   static const LOGIN = '/login';
   static const ACCOUNT_USERNAME_SETUP = '/account-setup-username';
   static const ACCOUNT_AVATAR_SETUP = '/account-setup-avatar';
+  static const PROFILE = '/profile';
+  static const CHAT = '/chat';
+  static const EXPLORE = '/explore';
+  static const CREATE = '/create';
 }

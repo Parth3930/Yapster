@@ -33,7 +33,16 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
       ),
       body: Column(
         children: [
-          const SizedBox(height: 20),
+          Center(
+            child: Text(
+              "Add Profile Picture",
+              style: GoogleFonts.roboto(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(height: 30),
           Obx(
             () => Center(
               child: GestureDetector(

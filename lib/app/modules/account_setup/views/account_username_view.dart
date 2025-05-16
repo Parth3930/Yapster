@@ -36,7 +36,7 @@ class AccountUsernameSetupView extends GetView<AccountSetupController> {
               children: [
                 Center(
                   child: Text(
-                    "Setup Account",
+                    "Create Yap ID",
                     style: TextStyle(
                       fontSize: 50,
                       fontFamily: GoogleFonts.dongle().fontFamily,
