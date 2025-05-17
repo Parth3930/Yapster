@@ -37,17 +37,17 @@ class AccountSetupController extends GetxController {
           'user_id': currentUser!.id,
           'username': username,
         });
-        
+
         // Update local data provider
         _accountDataProvider.username.value = username;
-        
+
         // Navigate to avatar setup after successful username save
         Get.offAllNamed(Routes.ACCOUNT_AVATAR_SETUP);
       } catch (dbError) {
         debugPrint('Database error saving username: $dbError');
-        
+
         // Check if it's a uniqueness constraint error
-        if (dbError.toString().contains('unique') || 
+        if (dbError.toString().contains('unique') ||
             dbError.toString().contains('duplicate') ||
             dbError.toString().contains('23505')) {
           Get.snackbar(

@@ -54,6 +54,9 @@ class SupabaseService extends GetxService {
         client = Supabase.instance.client;
       }
 
+      // Initialize account data provider with default structures
+      _accountDataProvider.initializeDefaultStructures();
+
       _fetchCurrentUserData();
       isInitialized.value = true;
       return this;
@@ -102,8 +105,56 @@ class SupabaseService extends GetxService {
       currentUser.value = response.user;
       isAuthenticated.value = true;
 
-      // create new user in profiles table or update if exists
-      await client.from('profiles').upsert({'user_id': response.user?.id});
+      // Check if user already exists in profiles table
+      if (response.user != null) {
+        final userId = response.user!.id;
+        final existingUserData =
+            await client
+                .from('profiles')
+                .select()
+                .eq('user_id', userId)
+                .maybeSingle();
+
+        // Ensure default structures are initialized
+        _accountDataProvider.initializeDefaultStructures();
+
+        if (existingUserData == null) {
+          // New user - initialize with default social data structure
+          await client.from('profiles').upsert({
+            'user_id': userId,
+            'followers': _accountDataProvider.followers.value,
+            'following': _accountDataProvider.following.value,
+            'posts': _accountDataProvider.posts.value,
+          });
+        } else {
+          // Existing user - ensure social data fields exist, but don't overwrite
+          final Map<String, dynamic> updateData = {'user_id': userId};
+
+          // Only add missing fields, don't override existing ones
+          if (existingUserData['followers'] == null) {
+            updateData['followers'] = _accountDataProvider.followers.value;
+          }
+
+          if (existingUserData['following'] == null) {
+            updateData['following'] = _accountDataProvider.following.value;
+          }
+
+          if (existingUserData['posts'] == null) {
+            updateData['posts'] = _accountDataProvider.posts.value;
+          }
+
+          // Only update if there are missing fields
+          if (updateData.length > 1) {
+            await client.from('profiles').upsert(updateData);
+          }
+        }
+
+        // Fetch the updated user data
+        await fetchUserData();
+      } else {
+        debugPrint('Error: No user returned from Supabase authentication');
+        Get.snackbar('Error', 'Authentication failed');
+      }
     } catch (e) {
       debugPrint('Error signing in with Google: $e');
       Get.snackbar('Error', 'Failed to sign in with Google');
@@ -158,6 +209,9 @@ class SupabaseService extends GetxService {
     try {
       isLoading.value = true;
 
+      // Initialize default structures first to ensure they're available
+      _accountDataProvider.initializeDefaultStructures();
+
       // Check if user is authenticated
       final user = client.auth.currentUser;
       if (user == null) {
@@ -177,14 +231,43 @@ class SupabaseService extends GetxService {
 
       debugPrint('Fetched user profile data: $userData');
 
+      // Check if any social data is null and update in database if needed
+      Map<String, dynamic> updateData = {};
+
+      if (userData['followers'] == null) {
+        updateData['followers'] = _accountDataProvider.followers.value;
+      }
+
+      if (userData['following'] == null) {
+        updateData['following'] = _accountDataProvider.following.value;
+      }
+
+      if (userData['posts'] == null) {
+        updateData['posts'] = _accountDataProvider.posts.value;
+      }
+
+      // Update database with default values if any field was null
+      if (updateData.isNotEmpty) {
+        debugPrint('Updating missing fields in database: $updateData');
+        await client.from('profiles').update(updateData).eq('user_id', user.id);
+
+        // Merge updates with userData for local use
+        userData.addAll(updateData);
+      }
+
       if (userData.isNotEmpty) {
         _accountDataProvider.username.value = userData['username'] ?? '';
         _accountDataProvider.avatar.value = userData['avatar'] ?? '';
+        _accountDataProvider.nickname.value = userData['nickname'] ?? '';
+        _accountDataProvider.about.value = userData['about'] ?? '';
         _accountDataProvider.email.value = client.auth.currentUser?.email ?? '';
         _accountDataProvider.googleAvatar.value =
-            client.auth.currentUser?.userMetadata!['avatar_url'] ?? "";
+            client.auth.currentUser?.userMetadata?['avatar_url'] ?? '';
 
-        //
+        // Process social data with proper structure
+        _processFollowersData(userData['followers']);
+        _processFollowingData(userData['following']);
+        _processPostsData(userData['posts']);
       } else {
         debugPrint('No profile data found for user ${user.id}');
       }
@@ -196,5 +279,187 @@ class SupabaseService extends GetxService {
     } finally {
       isLoading.value = false;
     }
+  }
+
+  /// Process followers data ensuring it has the expected structure
+  void _processFollowersData(dynamic followersData) {
+    if (followersData == null) {
+      // Use the already initialized default structure
+      return;
+    }
+
+    try {
+      final Map<String, dynamic> processedData = Map<String, dynamic>.from(
+        followersData,
+      );
+      // Ensure 'count' exists and is an integer
+      if (processedData['count'] == null) {
+        processedData['count'] =
+            processedData['users'] is List
+                ? (processedData['users'] as List).length
+                : 0;
+      }
+
+      // Ensure 'users' exists and is a list of strings
+      if (processedData['users'] == null) {
+        processedData['users'] = <String>[];
+      } else if (processedData['users'] is List) {
+        // Convert any non-string elements to strings
+        processedData['users'] =
+            (processedData['users'] as List)
+                .map((item) => item.toString())
+                .toList();
+      }
+
+      _accountDataProvider.updateFollowers(processedData);
+    } catch (e) {
+      debugPrint('Error processing followers data: $e');
+      // Default structure is already initialized
+    }
+  }
+
+  /// Process following data ensuring it has the expected structure
+  void _processFollowingData(dynamic followingData) {
+    if (followingData == null) {
+      // Use the already initialized default structure
+      return;
+    }
+
+    try {
+      final Map<String, dynamic> processedData = Map<String, dynamic>.from(
+        followingData,
+      );
+      // Ensure 'count' exists and is an integer
+      if (processedData['count'] == null) {
+        processedData['count'] =
+            processedData['users'] is List
+                ? (processedData['users'] as List).length
+                : 0;
+      }
+
+      // Ensure 'users' exists and is a list of strings
+      if (processedData['users'] == null) {
+        processedData['users'] = <String>[];
+      } else if (processedData['users'] is List) {
+        // Convert any non-string elements to strings
+        processedData['users'] =
+            (processedData['users'] as List)
+                .map((item) => item.toString())
+                .toList();
+      }
+
+      _accountDataProvider.updateFollowing(processedData);
+    } catch (e) {
+      debugPrint('Error processing following data: $e');
+      // Default structure is already initialized
+    }
+  }
+
+  /// Process posts data ensuring it has the expected structure
+  void _processPostsData(dynamic postsData) {
+    if (postsData == null) {
+      // Use the already initialized default structure
+      return;
+    }
+
+    try {
+      final Map<String, dynamic> processedData = Map<String, dynamic>.from(
+        postsData,
+      );
+
+      // Check if this is old format data (with 'posts' and 'count' fields)
+      if (processedData['posts'] != null) {
+        // Convert old format to new format (categorized)
+        final List oldPosts = processedData['posts'] as List;
+
+        // Initialize categories if they don't exist
+        if (processedData['threads'] == null) {
+          processedData['threads'] = <Map<String, dynamic>>[];
+        }
+        if (processedData['images'] == null) {
+          processedData['images'] = <Map<String, dynamic>>[];
+        }
+        if (processedData['gifs'] == null) {
+          processedData['gifs'] = <Map<String, dynamic>>[];
+        }
+        if (processedData['stickers'] == null) {
+          processedData['stickers'] = <Map<String, dynamic>>[];
+        }
+
+        // Move old posts to threads category (default)
+        if (oldPosts.isNotEmpty) {
+          final List<Map<String, dynamic>> processedThreads = [];
+
+          for (final item in oldPosts) {
+            if (item is Map<String, dynamic>) {
+              // Ensure each post has an id
+              if (item['id'] == null) {
+                item['id'] = DateTime.now().millisecondsSinceEpoch.toString();
+              }
+              processedThreads.add(item);
+            } else {
+              // Create a new post map with an id
+              processedThreads.add({
+                'id': DateTime.now().millisecondsSinceEpoch.toString(),
+                'content': item.toString(),
+              });
+            }
+          }
+
+          // Merge with existing threads
+          final existingThreads = processedData['threads'] as List? ?? [];
+          processedData['threads'] = [...existingThreads, ...processedThreads];
+        }
+
+        // Remove old format keys
+        processedData.remove('posts');
+        processedData.remove('count');
+      }
+
+      // Ensure all categories exist and are properly formatted
+      _ensurePostCategory(processedData, 'threads');
+      _ensurePostCategory(processedData, 'images');
+      _ensurePostCategory(processedData, 'gifs');
+      _ensurePostCategory(processedData, 'stickers');
+
+      _accountDataProvider.updatePosts(processedData);
+    } catch (e) {
+      debugPrint('Error processing posts data: $e');
+      // Default structure is already initialized
+    }
+  }
+
+  // Helper method to ensure each post category is properly formatted
+  void _ensurePostCategory(Map<String, dynamic> data, String category) {
+    if (data[category] == null) {
+      data[category] = <Map<String, dynamic>>[];
+      return;
+    }
+
+    if (data[category] is! List) {
+      data[category] = <Map<String, dynamic>>[];
+      return;
+    }
+
+    final List<dynamic> rawItems = data[category] as List;
+    final List<Map<String, dynamic>> processedItems = [];
+
+    for (final item in rawItems) {
+      if (item is Map<String, dynamic>) {
+        // Ensure each post has an id
+        if (item['id'] == null) {
+          item['id'] = DateTime.now().millisecondsSinceEpoch.toString();
+        }
+        processedItems.add(item);
+      } else if (item != null) {
+        // Create a new post map with an id for non-null items
+        processedItems.add({
+          'id': DateTime.now().millisecondsSinceEpoch.toString(),
+          'content': item.toString(),
+        });
+      }
+    }
+
+    data[category] = processedItems;
   }
 }

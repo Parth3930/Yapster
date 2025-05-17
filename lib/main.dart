@@ -25,11 +25,11 @@ Future<void> initServices() async {
   // Then API service
   Get.put(ApiService());
   
+  // Initialize AccountDataProvider before SupabaseService
+  Get.put(AccountDataProvider());
+  
   // Initialize Supabase
   await Get.putAsync(() => SupabaseService().init());
-  
-  // Add AccountDataProvider after Supabase is initialized
-  Get.put(AccountDataProvider());
   
   // Initialize theme controller
   Get.put(ThemeController());
