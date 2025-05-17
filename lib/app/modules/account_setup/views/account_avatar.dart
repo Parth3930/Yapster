@@ -49,14 +49,49 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
                 onTap: () {
                   controller.pickImage();
                 },
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundColor: Colors.grey[300],
-                  // Fix the backgroundImage logic to handle empty values
-                  backgroundImage: _getAvatarImage(
-                    controller,
-                    accountDataProvider,
-                  ),
+                child: Stack(
+                  children: [
+                    // Avatar image
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.grey[300],
+                      backgroundImage: controller.selectedImage.value != null
+                          ? FileImage(File(controller.selectedImage.value!.path))
+                          : ((accountDataProvider.avatar.value.isNotEmpty &&
+                              accountDataProvider.avatar.value != "skiped")
+                              ? NetworkImage(accountDataProvider.avatar.value)
+                              : (accountDataProvider.googleAvatar.value.isNotEmpty
+                                ? NetworkImage(accountDataProvider.googleAvatar.value)
+                                : null)) as ImageProvider?,
+                      child: (controller.selectedImage.value == null &&
+                              accountDataProvider.avatar.value.isEmpty &&
+                              accountDataProvider.googleAvatar.value.isEmpty)
+                          ? Icon(Icons.person, size: 50, color: Colors.white)
+                          : null,
+                    ),
+                    // Blue circle with plus icon
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        height: 30,
+                        width: 30,
+                        decoration: BoxDecoration(
+                          color: Color(0xff0060FF),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 2,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.add,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -84,29 +119,5 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
         ],
       ),
     );
-  }
-
-  // Helper method to get the correct image provider
-  ImageProvider? _getAvatarImage(
-    AccountSetupController controller,
-    AccountDataProvider accountDataProvider,
-  ) {
-    // If there's a selected image, use FileImage
-    if (controller.selectedImage.value != null) {
-      return FileImage(File(controller.selectedImage.value!.path));
-    }
-
-    // Check if there's a valid avatar URL
-    final avatarUrl =
-        accountDataProvider.avatar.value.isNotEmpty
-            ? accountDataProvider.avatar.value
-            : accountDataProvider.googleAvatar.value;
-
-    // Only use NetworkImage if there's a valid URL
-    if (avatarUrl.isNotEmpty && avatarUrl != "skiped") {
-      return NetworkImage(avatarUrl);
-    }
-
-    return null;
   }
 }

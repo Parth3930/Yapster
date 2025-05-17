@@ -24,14 +24,40 @@ class ProfileView extends GetView<ProfileController> {
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 45,
-                      backgroundImage: NetworkImage(
-                        accountDataProvider.avatar.string == "" ||
-                                accountDataProvider.avatar.string == "skiped"
-                            ? accountDataProvider.googleAvatar.string
-                            : accountDataProvider.avatar.string,
-                      ),
+                    Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 45,
+                          backgroundImage: NetworkImage(
+                            accountDataProvider.avatar.string == "" ||
+                                    accountDataProvider.avatar.string == "skiped"
+                                ? accountDataProvider.googleAvatar.string
+                                : accountDataProvider.avatar.string,
+                          ),
+                        ),
+                        // Blue circle with plus icon (empty functionality)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            height: 30,
+                            width: 30,
+                            decoration: BoxDecoration(
+                              color: Color(0xff0060FF),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 2,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     SizedBox(width: 15),
                     Column(
@@ -41,8 +67,8 @@ class ProfileView extends GetView<ProfileController> {
                           children: [
                             Text(
                               accountDataProvider.nickname.string == ""
-                                  ? accountDataProvider.username.string
-                                  : "NickName",
+                                  ? "NickName"
+                                  : accountDataProvider.nickname.string,
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -71,9 +97,9 @@ class ProfileView extends GetView<ProfileController> {
                         SizedBox(
                           width: 200,
                           child: Text(
-                            accountDataProvider.about.isEmpty
+                            accountDataProvider.bio.isEmpty
                                 ? "Something About Yourself"
-                                : accountDataProvider.about.string,
+                                : accountDataProvider.bio.string,
                             style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -222,7 +248,7 @@ class ProfileView extends GetView<ProfileController> {
 class PostItem extends StatelessWidget {
   final Map<String, dynamic> post;
 
-  const PostItem({Key? key, required this.post}) : super(key: key);
+  const PostItem({super.key, required this.post});
 
   @override
   Widget build(BuildContext context) {

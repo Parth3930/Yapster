@@ -122,9 +122,9 @@ class SupabaseService extends GetxService {
           // New user - initialize with default social data structure
           await client.from('profiles').upsert({
             'user_id': userId,
-            'followers': _accountDataProvider.followers.value,
-            'following': _accountDataProvider.following.value,
-            'posts': _accountDataProvider.posts.value,
+            'followers': _accountDataProvider.followers,
+            'following': _accountDataProvider.following,
+            'posts': _accountDataProvider.posts,
           });
         } else {
           // Existing user - ensure social data fields exist, but don't overwrite
@@ -132,15 +132,15 @@ class SupabaseService extends GetxService {
 
           // Only add missing fields, don't override existing ones
           if (existingUserData['followers'] == null) {
-            updateData['followers'] = _accountDataProvider.followers.value;
+            updateData['followers'] = _accountDataProvider.followers;
           }
 
           if (existingUserData['following'] == null) {
-            updateData['following'] = _accountDataProvider.following.value;
+            updateData['following'] = _accountDataProvider.following;
           }
 
           if (existingUserData['posts'] == null) {
-            updateData['posts'] = _accountDataProvider.posts.value;
+            updateData['posts'] = _accountDataProvider.posts;
           }
 
           // Only update if there are missing fields
@@ -235,15 +235,15 @@ class SupabaseService extends GetxService {
       Map<String, dynamic> updateData = {};
 
       if (userData['followers'] == null) {
-        updateData['followers'] = _accountDataProvider.followers.value;
+        updateData['followers'] = _accountDataProvider.followers;
       }
 
       if (userData['following'] == null) {
-        updateData['following'] = _accountDataProvider.following.value;
+        updateData['following'] = _accountDataProvider.following;
       }
 
       if (userData['posts'] == null) {
-        updateData['posts'] = _accountDataProvider.posts.value;
+        updateData['posts'] = _accountDataProvider.posts;
       }
 
       // Update database with default values if any field was null
@@ -259,7 +259,7 @@ class SupabaseService extends GetxService {
         _accountDataProvider.username.value = userData['username'] ?? '';
         _accountDataProvider.avatar.value = userData['avatar'] ?? '';
         _accountDataProvider.nickname.value = userData['nickname'] ?? '';
-        _accountDataProvider.about.value = userData['about'] ?? '';
+        _accountDataProvider.bio.value = userData['bio'] ?? '';
         _accountDataProvider.email.value = client.auth.currentUser?.email ?? '';
         _accountDataProvider.googleAvatar.value =
             client.auth.currentUser?.userMetadata?['avatar_url'] ?? '';
