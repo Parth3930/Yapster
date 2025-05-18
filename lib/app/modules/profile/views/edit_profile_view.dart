@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/core/theme/theme_controller.dart';
@@ -6,54 +5,14 @@ import 'package:yapster/app/core/values/colors.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
+import 'package:yapster/app/global_widgets/custom_input.dart';
+import 'package:yapster/app/modules/profile/constants/profile_constants.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_controller.dart';
+import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class EditProfileView extends StatelessWidget {
   const EditProfileView({super.key});
-
-  // Helper function to build custom input fields
-  Widget _buildCustomInput({
-    required String labelText,
-    required Function(String) onChanged,
-    TextEditingController? controller,
-    int maxLines = 1,
-    int? maxLength,
-    bool alignLabelWithHint = false,
-    String? helperText,
-  }) {
-    return TextFormField(
-      style: TextStyle(color: Colors.white),
-      maxLines: maxLines,
-      maxLength: maxLength,
-      onChanged: onChanged,
-      controller: controller,
-      cursorColor: Colors.white,
-      decoration: InputDecoration(
-        labelText: labelText,
-        labelStyle: TextStyle(color: Color(0xff727272)),
-        floatingLabelStyle: TextStyle(
-          color: Colors.white,
-        ), // White label color when focused
-        filled: true,
-        fillColor: Color(0xff111111),
-        alignLabelWithHint: alignLabelWithHint,
-        helperText: helperText,
-        helperStyle: TextStyle(color: Color(0xff727272)),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.transparent),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.transparent),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.white, width: 1.5),
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,104 +37,18 @@ class EditProfileView extends StatelessWidget {
                 child: Column(
                   children: [
                     SizedBox(height: 30),
-                    Center(
-                      child: GestureDetector(
+                    Obx(
+                      () => ProfileAvatarWidget(
+                        selectedImage: profileController.selectedImage.value,
                         onTap: () async => await profileController.pickImage(),
-                        child: Obx(
-                          () => Stack(
-                            children: [
-                              // Avatar image
-                              CircleAvatar(
-                                radius: 50,
-                                backgroundColor: Color(0xff111111),
-                                backgroundImage:
-                                    profileController.selectedImage.value !=
-                                            null
-                                        ? FileImage(
-                                          File(
-                                            profileController
-                                                .selectedImage
-                                                .value!
-                                                .path,
-                                          ),
-                                        )
-                                        : ((accountDataProvider
-                                                        .avatar
-                                                        .value
-                                                        .isNotEmpty &&
-                                                    accountDataProvider
-                                                            .avatar
-                                                            .value !=
-                                                        "skiped")
-                                                ? NetworkImage(
-                                                  accountDataProvider
-                                                      .avatar
-                                                      .value,
-                                                )
-                                                : (accountDataProvider
-                                                        .googleAvatar
-                                                        .value
-                                                        .isNotEmpty
-                                                    ? NetworkImage(
-                                                      accountDataProvider
-                                                          .googleAvatar
-                                                          .value,
-                                                    )
-                                                    : null))
-                                            as ImageProvider?,
-                                child:
-                                    (profileController.selectedImage.value ==
-                                                null &&
-                                            accountDataProvider
-                                                .avatar
-                                                .value
-                                                .isEmpty &&
-                                            accountDataProvider
-                                                .googleAvatar
-                                                .value
-                                                .isEmpty)
-                                        ? Icon(
-                                          Icons.person,
-                                          size: 50,
-                                          color: Colors.white,
-                                        )
-                                        : null,
-                              ),
-                              // Blue circle with plus icon
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Container(
-                                  height: 30,
-                                  width: 30,
-                                  decoration: BoxDecoration(
-                                    color: Color(0xff0060FF),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.add,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        isLoaded: profileController.isAvatarLoaded.value,
                       ),
                     ),
-                    SizedBox(height: 5),
-                    Text(
-                      "Tap to change profile image",
-                      style: TextStyle(fontSize: 12, color: Color(0xff727272)),
-                    ),
-                    SizedBox(height: 40),
+                    SizedBox(height: ProfileConstants.defaultSpacing * 2),
                     Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ProfileConstants.defaultPadding,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -183,53 +56,54 @@ class EditProfileView extends StatelessWidget {
                             children: [
                               SizedBox(width: 5),
                               Text(
-                                "Profile Information",
-                                style: TextStyle(
-                                  color: Color(0xffC1C1C1),
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                ProfileConstants.profileInfoTitle,
+                                style: ProfileConstants.sectionTitleStyle,
                                 textAlign: TextAlign.left,
                               ),
                             ],
                           ),
-                          SizedBox(height: 10),
-                          // Name input field using helper function
-                          _buildCustomInput(
-                            labelText: 'Name',
+                          SizedBox(height: ProfileConstants.smallSpacing),
+                          // Name input field
+                          CustomInput(
+                            label: 'Name',
                             controller: profileController.nicknameController,
                             onChanged: (_) {
                               // Controller handles the value internally
                             },
                           ),
-                          SizedBox(height: 20),
+                          SizedBox(height: ProfileConstants.defaultSpacing),
 
-                          // Username input field using helper function
-                          _buildCustomInput(
-                            labelText: 'Username',
+                          // Username input field
+                          CustomInput(
+                            label: 'Username',
                             controller: profileController.usernameController,
                             onChanged: (_) {
                               // Controller handles the value internally
                             },
-                            helperText:
-                                profileController.canUpdateUsername()
-                                    ? null
-                                    : "Username can only be changed once every 14 days",
+                            suffixIcon:
+                                !profileController.canUpdateUsername()
+                                    ? Tooltip(
+                                      message:
+                                          ProfileConstants
+                                              .usernameRestrictionMessage,
+                                      child: Icon(
+                                        Icons.info_outline,
+                                        color: ProfileConstants.textGrey,
+                                      ),
+                                    )
+                                    : null,
                           ),
-                          SizedBox(height: 20),
+                          SizedBox(height: ProfileConstants.defaultSpacing),
 
-                          // Bio input field using helper function
-                          _buildCustomInput(
-                            labelText: 'Bio',
+                          // Bio input field
+                          CustomInput(
+                            label: 'Bio',
                             controller: profileController.bioController,
                             maxLines: 3,
-                            maxLength: 100,
-                            alignLabelWithHint: true,
-                            onChanged: (_) {
-                              // Controller handles the value internally
-                            },
+                            minLines: 3,
+                            keyboardType: TextInputType.multiline,
                           ),
-                          SizedBox(height: 20),
+                          SizedBox(height: ProfileConstants.defaultSpacing),
                         ],
                       ),
                     ),
@@ -240,11 +114,13 @@ class EditProfileView extends StatelessWidget {
             Obx(
               () =>
                   profileController.isLoading.value
-                      ? CircularProgressIndicator(color: Color(0xff0060FF))
+                      ? CircularProgressIndicator(
+                        color: ProfileConstants.primaryBlue,
+                      )
                       : CustomButton(
                         text: "Update Profile",
                         width: 300,
-                        backgroundColor: const Color(0xff0060FF),
+                        backgroundColor: ProfileConstants.primaryBlue,
                         textColor:
                             themeController.isDarkMode
                                 ? AppColors.textWhite

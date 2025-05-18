@@ -254,4 +254,17 @@ class AccountDataProvider extends GetxController {
     // Initialize default structures
     initializeDefaultStructures();
   }
+
+  /// Clears all user data when signing out
+  void clearData() {
+    username.value = '';
+    nickname.value = '';
+    bio.value = '';
+    avatar.value = '';
+    email.value = '';
+    googleAvatar.value = '';
+    
+    // Reset social data structures to defaults
+    initializeDefaultStructures();
+  }
 }

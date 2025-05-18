@@ -7,6 +7,9 @@ import 'package:yapster/app/core/values/colors.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
+import 'package:yapster/app/core/utils/avatar_utils.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
 
 class AccountAvatarSetupView extends GetView<AccountSetupController> {
   const AccountAvatarSetupView({super.key});
@@ -15,6 +18,14 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
     final accountDataProvider = Get.find<AccountDataProvider>();
+
+    // Preload any existing avatar images when view is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (accountDataProvider.avatar.value.isNotEmpty || 
+          accountDataProvider.googleAvatar.value.isNotEmpty) {
+        AvatarUtils.preloadAvatarImages(accountDataProvider);
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -55,17 +66,14 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
                     CircleAvatar(
                       radius: 50,
                       backgroundColor: Colors.grey[300],
-                      backgroundImage: controller.selectedImage.value != null
-                          ? FileImage(File(controller.selectedImage.value!.path))
-                          : ((accountDataProvider.avatar.value.isNotEmpty &&
-                              accountDataProvider.avatar.value != "skiped")
-                              ? NetworkImage(accountDataProvider.avatar.value)
-                              : (accountDataProvider.googleAvatar.value.isNotEmpty
-                                ? NetworkImage(accountDataProvider.googleAvatar.value)
-                                : null)) as ImageProvider?,
-                      child: (controller.selectedImage.value == null &&
-                              accountDataProvider.avatar.value.isEmpty &&
-                              accountDataProvider.googleAvatar.value.isEmpty)
+                      backgroundImage: _getAvatarImage(
+                        controller.selectedImage.value, 
+                        accountDataProvider
+                      ),
+                      child: _shouldShowDefaultIcon(
+                        controller.selectedImage.value, 
+                        accountDataProvider
+                      )
                           ? Icon(Icons.person, size: 50, color: Colors.white)
                           : null,
                     ),
@@ -119,5 +127,20 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
         ],
       ),
     );
+  }
+  
+  // Using the centralized avatar utility methods
+  ImageProvider? _getAvatarImage(
+    XFile? selectedImage,
+    AccountDataProvider provider,
+  ) {
+    return AvatarUtils.getAvatarImage(selectedImage, provider);
+  }
+
+  bool _shouldShowDefaultIcon(
+    XFile? selectedImage,
+    AccountDataProvider provider,
+  ) {
+    return AvatarUtils.shouldShowDefaultIcon(selectedImage, provider);
   }
 }

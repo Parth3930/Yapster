@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import '../../../core/utils/supabase_service.dart';
 import '../../../routes/app_pages.dart';
@@ -38,8 +38,10 @@ class AccountSetupController extends GetxController {
           'username': username,
         });
 
-        // Update local data provider
+        // Update local data provider and cache status
         _accountDataProvider.username.value = username;
+        _supabaseService.profileDataCached.value = true;
+        _supabaseService.lastProfileFetch = DateTime.now();
 
         // Navigate to avatar setup after successful username save
         Get.offAllNamed(Routes.ACCOUNT_AVATAR_SETUP);
@@ -91,6 +93,10 @@ class AccountSetupController extends GetxController {
         'avatar': "skiped",
       });
 
+      // Update cache status
+      _supabaseService.profileDataCached.value = true;
+      _supabaseService.lastProfileFetch = DateTime.now();
+
       // Navigate to home after skipping
       Get.offAllNamed(Routes.HOME);
     } catch (e) {
@@ -119,35 +125,20 @@ class AccountSetupController extends GetxController {
         return;
       }
 
-      final userId = _supabaseService.currentUser.value?.id;
-      if (userId == null) return;
+      // Use the centralized avatar upload utility
+      final imageUrl = await AvatarUtils.uploadAvatarImage(
+        selectedImage.value!,
+      );
 
-      // Read image bytes
-      final imageBytes = await selectedImage.value!.readAsBytes();
+      if (imageUrl != null) {
+        _accountDataProvider.avatar.value = imageUrl;
 
-      // Upload image to Supabase storage
-      await _supabaseService.client.storage
-          .from('profiles')
-          .uploadBinary(
-            "/$userId/avatar",
-            imageBytes,
-            fileOptions: FileOptions(upsert: true),
-          );
+        // Update cache status
+        _supabaseService.profileDataCached.value = true;
+        _supabaseService.lastProfileFetch = DateTime.now();
 
-      // Get the public URL for the uploaded image
-      final imageUrl = _supabaseService.client.storage
-          .from('profiles')
-          .getPublicUrl("/$userId/avatar");
-
-      // Update the profile record with the avatar URL
-      await _supabaseService.client.from('profiles').upsert({
-        'user_id': userId,
-        'avatar': imageUrl,
-      });
-
-      _accountDataProvider.avatar.value = imageUrl;
-
-      Get.offAllNamed(Routes.HOME);
+        Get.offAllNamed(Routes.HOME);
+      }
     } catch (e) {
       debugPrint('Error saving avatar: $e');
       Get.snackbar(
@@ -161,28 +152,9 @@ class AccountSetupController extends GetxController {
   }
 
   Future<void> pickImage() async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
-      if (image != null) {
-        // Store the selected image in our reactive variable
-        selectedImage.value = image;
-      } else {
-        debugPrint('No image selected');
-        Get.snackbar(
-          'Error',
-          'No image selected',
-          snackPosition: SnackPosition.BOTTOM,
-        );
-      }
-    } catch (e) {
-      debugPrint('Error picking image: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to pick image',
-        snackPosition: SnackPosition.BOTTOM,
-      );
+    final image = await AvatarUtils.pickImageFromGallery();
+    if (image != null) {
+      selectedImage.value = image;
     }
   }
 

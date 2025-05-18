@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
+import 'package:yapster/app/core/utils/avatar_utils.dart';
 import '../../routes/app_pages.dart';
 
 class SupabaseService extends GetxService {
@@ -17,6 +18,10 @@ class SupabaseService extends GetxService {
   final RxBool isAuthenticated = false.obs;
   final RxBool isLoading = false.obs;
   final RxBool isInitialized = false.obs;
+
+  // Cache control
+  final RxBool profileDataCached = false.obs;
+  DateTime? lastProfileFetch;
 
   /// Initializes the Supabase service by loading environment variables and setting up the Supabase client
   Future<SupabaseService> init() async {
@@ -33,36 +38,57 @@ class SupabaseService extends GetxService {
       final supabaseUrl = dotenv.env['SUPABASE_URL'];
       final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-      // Check if Supabase is already initialized to avoid the assertion error
-      try {
-        client = Supabase.instance.client;
-        debugPrint('Supabase was already initialized, using existing instance');
-        isInitialized.value = true;
-      } catch (e) {
-        // If not initialized, initialize it
-        if (supabaseUrl == null || supabaseAnonKey == null) {
-          debugPrint(
-            'Error: SUPABASE_URL or SUPABASE_ANON_KEY not found in .env file',
-          );
-          await Supabase.initialize(
-            url: supabaseUrl ?? '',
-            anonKey: supabaseAnonKey ?? '',
-          );
-        } else {
-          await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
-        }
-        client = Supabase.instance.client;
+      if (supabaseUrl == null || supabaseAnonKey == null) {
+        throw Exception('Missing Supabase URL or Anon Key in environment');
       }
 
-      // Initialize account data provider with default structures
-      _accountDataProvider.initializeDefaultStructures();
+      // Initialize Supabase
+      await Supabase.initialize(
+        url: supabaseUrl,
+        anonKey: supabaseAnonKey,
+      );
 
-      _fetchCurrentUserData();
+      client = Supabase.instance.client;
+      currentUser.value = client.auth.currentUser;
+      isAuthenticated.value = currentUser.value != null;
       isInitialized.value = true;
+
+      // Set up auth state change listener
+      client.auth.onAuthStateChange.listen((data) {
+        final AuthChangeEvent event = data.event;
+        final Session? session = data.session;
+
+        if (event == AuthChangeEvent.signedIn) {
+          currentUser.value = session?.user;
+          isAuthenticated.value = true;
+          debugPrint('User signed in: ${currentUser.value?.email}');
+        } else if (event == AuthChangeEvent.signedOut) {
+          currentUser.value = null;
+          isAuthenticated.value = false;
+          profileDataCached.value = false;
+          lastProfileFetch = null;
+          _accountDataProvider.clearData();
+          debugPrint('User signed out');
+        } else if (event == AuthChangeEvent.userUpdated) {
+          currentUser.value = session?.user;
+          debugPrint('User updated: ${currentUser.value?.email}');
+        }
+      });
+
+      // Preload avatar images if user is authenticated and we have cached data
+      if (isAuthenticated.value && profileDataCached.value &&
+          _accountDataProvider.avatar.value.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          AvatarUtils.preloadAvatarImages(_accountDataProvider);
+          debugPrint('Preloaded avatar images during initialization');
+        });
+      }
+
+      debugPrint('Supabase initialized successfully');
       return this;
     } catch (e) {
       debugPrint('Error initializing Supabase: $e');
-      rethrow; //
+      rethrow;
     }
   }
 

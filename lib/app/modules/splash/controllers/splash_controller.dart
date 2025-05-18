@@ -32,13 +32,32 @@ class SplashController extends GetxController {
         return;
       }
 
-      // Try to fetch user profile data
-      try {
+      // Check if we have cached profile data that's not too old (cache for 6 hours)
+      bool shouldFetchFromDB = true;
+      
+      if (_supabaseService.profileDataCached.value && 
+          _supabaseService.lastProfileFetch != null) {
+        final cacheDuration = DateTime.now().difference(_supabaseService.lastProfileFetch!);
+        // Use cache if it's less than 6 hours old and we have data
+        if (cacheDuration.inHours < 6 && 
+            _accountDataProvider.username.value.isNotEmpty) {
+          shouldFetchFromDB = false;
+          debugPrint('Using cached profile data in splash screen');
+        }
+      }
+      
+      // Try to fetch user profile data if needed
+      if (shouldFetchFromDB) {
+        debugPrint('Fetching profile data from database in splash screen');
         final userData = await _supabaseService.client
             .from('profiles')
             .select()
             .eq('user_id', currentUser.id)
             .maybeSingle();
+            
+        // Update cache status
+        _supabaseService.profileDataCached.value = true;
+        _supabaseService.lastProfileFetch = DateTime.now();
         
         // Check if user exists in profiles table
         if (userData == null) {
@@ -53,13 +72,9 @@ class SplashController extends GetxController {
         _supabaseService.isAuthenticated.value = true;
         _accountDataProvider.username.value = userData['username'] ?? '';
         _accountDataProvider.avatar.value = userData['avatar'] ?? '';
+        _accountDataProvider.nickname.value = userData['nickname'] ?? '';
+        _accountDataProvider.bio.value = userData['bio'] ?? '';
         _accountDataProvider.email.value = currentUser.email ?? '';
-      } catch (e) {
-        debugPrint('Error fetching profile data: $e');
-        _supabaseService.isAuthenticated.value = false;
-        await _supabaseService.signOut();
-        Get.offAllNamed(Routes.LOGIN);
-        return;
       }
 
       // If authenticated, check username
