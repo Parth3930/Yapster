@@ -136,7 +136,7 @@ class SupabaseService extends GetxService {
             debugPrint(
               'Received realtime profile update: ${payload.newRecord}',
             );
-            _handleProfileUpdate(Map<String, dynamic>.from(payload.newRecord!));
+            _handleProfileUpdate(Map<String, dynamic>.from(payload.newRecord));
           },
         )
         .subscribe((status, [err]) {
@@ -178,8 +178,9 @@ class SupabaseService extends GetxService {
       _processFollowingData(newData['following']);
     }
 
-    if (newData['posts'] != null) {
-      _processPostsData(newData['posts']);
+    if (newData['user_posts'] != null) {
+      // Update user posts data
+      _accountDataProvider.updateUserPostData(Map<String, dynamic>.from(newData['user_posts']));
     }
 
     if (newData['searches'] != null) {
@@ -284,7 +285,7 @@ class SupabaseService extends GetxService {
             'user_id': userId,
             'followers': _accountDataProvider.followers,
             'following': _accountDataProvider.following,
-            'posts': _createEnhancedPostsStructure(),
+            'user_posts': {'post_count': 0},
           });
         } else {
           // Existing user - ensure social data fields exist, but don't overwrite
@@ -299,14 +300,8 @@ class SupabaseService extends GetxService {
             updateData['following'] = _accountDataProvider.following;
           }
 
-          if (existingUserData['posts'] == null) {
-            updateData['posts'] = _createEnhancedPostsStructure();
-          } else if (existingUserData['posts'] is Map &&
-              !_isPostStructureEnhanced(existingUserData['posts'])) {
-            // Migrate to enhanced post structure if needed
-            updateData['posts'] = _migrateToEnhancedPostsStructure(
-              existingUserData['posts'],
-            );
+          if (existingUserData['user_posts'] == null) {
+            updateData['user_posts'] = {'post_count': 0};
           }
 
           // Only update if there are missing fields
@@ -665,27 +660,6 @@ class SupabaseService extends GetxService {
     }
   }
 
-  /// Process posts data ensuring it has the expected structure
-  void _processPostsData(dynamic postsData) {
-    // This method is no longer needed as we use the posts table directly
-    // Leaving this here for reference, will be removed in a future update
-
-    // For backward compatibility, if this function is called
-    // we'll handle it gracefully by doing nothing
-    debugPrint(
-      '_processPostsData called but is deprecated - using posts table instead',
-    );
-  }
-
-  // Helper method to ensure each post category is properly formatted and enhanced
-  void _ensurePostCategory(Map<String, dynamic> data, String category) {
-    // This method is no longer needed as we use the posts table directly
-    // Leaving this here for reference, will be removed in a future update
-    debugPrint(
-      '_ensurePostCategory called but is deprecated - using posts table instead',
-    );
-  }
-
   /// Enhances a single post item with additional metadata
   Map<String, dynamic> _enhancePostItem(Map<String, dynamic> post) {
     // Clone the post to avoid modifying the original
@@ -706,32 +680,5 @@ class SupabaseService extends GetxService {
     }
 
     return enhancedPost;
-  }
-
-  /// Creates an enhanced posts structure with better metadata
-  Map<String, dynamic> _createEnhancedPostsStructure() {
-    // This method is no longer needed as we use the posts table directly
-    debugPrint(
-      '_createEnhancedPostsStructure called but is deprecated - using posts table instead',
-    );
-    return {'post_count': 0};
-  }
-
-  /// Checks if the post structure is already enhanced
-  bool _isPostStructureEnhanced(dynamic postsData) {
-    // This method is no longer needed as we use the posts table directly
-    debugPrint(
-      '_isPostStructureEnhanced called but is deprecated - using posts table instead',
-    );
-    return false;
-  }
-
-  /// Migrates old post structure to enhanced format
-  Map<String, dynamic> _migrateToEnhancedPostsStructure(dynamic oldPosts) {
-    // This method is no longer needed as we use the posts table directly
-    debugPrint(
-      '_migrateToEnhancedPostsStructure called but is deprecated - using posts table instead',
-    );
-    return {'post_count': 0};
   }
 }

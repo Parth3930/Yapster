@@ -5,7 +5,6 @@ import 'package:yapster/app/core/theme/theme_controller.dart';
 import 'package:yapster/app/core/values/colors.dart';
 import '../controllers/login_controller.dart';
 import '../../../global_widgets/custom_button.dart';
-import '../../../global_widgets/loading_widget.dart';
 
 class LoginView extends GetView<LoginController> {
   const LoginView({super.key});
@@ -13,13 +12,11 @@ class LoginView extends GetView<LoginController> {
   @override
   Widget build(BuildContext context) {
     final themeController = Get.find<ThemeController>();
+    // Track which button is clicked
+    final RxString loadingButton = ''.obs;
 
     return Scaffold(
       body: Obx(() {
-        if (controller.isLoading.value) {
-          return const LoadingWidget(message: 'Signing in...');
-        }
-
         return SafeArea(
           child: Column(
             children: [
@@ -80,14 +77,20 @@ class LoginView extends GetView<LoginController> {
                   children: [
                     CustomButton(
                       text: 'Continue with Google',
-                      onPressed:
-                          controller.isLoading.value
-                              ? () {} // Empty callback when loading
-                              : () => controller.signInWithGoogle(),
+                      onPressed: controller.isLoading.value
+                          ? () {} 
+                          : () {
+                              loadingButton.value = 'google';
+                              controller.signInWithGoogle().then((_) {
+                                loadingButton.value = '';
+                              }).catchError((_) {
+                                loadingButton.value = '';
+                              });
+                            },
                       width: 270,
                       height: 55,
                       textColor: const Color(0xff3C4043),
-                      isLoading: controller.isLoading.value,
+                      isLoading: controller.isLoading.value && loadingButton.value == 'google',
                       backgroundColor: Colors.white,
                       imageIcon: Image.asset(
                         'assets/icons/google.png',
@@ -99,14 +102,20 @@ class LoginView extends GetView<LoginController> {
                     const SizedBox(height: 20),
                     CustomButton(
                       text: 'Create New Account',
-                      onPressed:
-                          controller.isLoading.value
-                              ? () {}
-                              : () => controller.signInWithGoogle(),
+                      onPressed: controller.isLoading.value
+                          ? () {}
+                          : () {
+                              loadingButton.value = 'create';
+                              controller.signInWithGoogle().then((_) {
+                                loadingButton.value = '';
+                              }).catchError((_) {
+                                loadingButton.value = '';
+                              });
+                            },
                       width: 270,
                       height: 55,
                       textColor: Colors.white,
-                      isLoading: controller.isLoading.value,
+                      isLoading: controller.isLoading.value && loadingButton.value == 'create',
                       backgroundColor: Colors.black,
                       fontFamily: GoogleFonts.roboto().fontFamily,
                     ),

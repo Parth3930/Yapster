@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
@@ -33,70 +34,112 @@ class CreateView extends GetView<CreateController> {
         backgroundColor: Colors.transparent,
       ),
       body: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
           children: [
-            Column(
+            // Main content area
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.grey[300],
-                  backgroundImage: AvatarUtils.getAvatarImage(
-                    null,
-                    accountDataProvider,
-                  ),
+                // Left column with large avatar and line
+                Column(
+                  children: [
+                    SizedBox(height: 20),
+                    CircleAvatar(
+                      radius: 35,
+                      backgroundColor: Colors.grey[300],
+                      backgroundImage: AvatarUtils.getAvatarImage(
+                        null,
+                        accountDataProvider,
+                      ),
+                    ),
+                    Container(height: 50, width: 1, color: Colors.grey[700]),
+                  ],
                 ),
-                Container(height: 50, width: 1, color: Colors.grey[700]),
-
-                CircleAvatar(
-                  radius: 15,
-                  backgroundColor: Colors.grey[300],
-                  backgroundImage: AvatarUtils.getAvatarImage(
-                    null,
-                    accountDataProvider,
+                SizedBox(width: 10),
+                // Right column with username and content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("@${accountDataProvider.username.string}"),
+                      Text(
+                        "Whats New?",
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
+                      SizedBox(height: 10),
+                      Row(
+                        children: [
+                          IconButtonWidget(
+                            assetPath: "assets/icons/add_image.png",
+                            width: 20,
+                            height: 20,
+                            onTap: () {},
+                          ),
+                          SizedBox(width: 10),
+                          IconButtonWidget(
+                            assetPath: "assets/icons/camera.png",
+                            width: 20,
+                            height: 20,
+                            onTap: () {},
+                          ),
+                          SizedBox(width: 10),
+                          IconButtonWidget(
+                            assetPath: "assets/icons/gif.png",
+                            width: 20,
+                            height: 20,
+                            onTap: () {},
+                          ),
+                          SizedBox(width: 10),
+                          IconButtonWidget(
+                            assetPath: "assets/icons/sticker.png",
+                            width: 20,
+                            height: 20,
+                            onTap: () {},
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-            SizedBox(width: 10),
-            Expanded(
-              child: Column(
+
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 15),
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("@${accountDataProvider.username.string}"),
-                  Text("Whats New?", style: TextStyle(color: Colors.grey[500])),
-                  SizedBox(height: 10),
-                  Row(
-                    spacing: 10,
-                    children: [
-                      IconButtonWidget(
-                        assetPath: "assets/icons/add_image.png",
-                        width: 20,
-                        height: 20,
-                        onTap: () {},
-                      ),
-                      IconButtonWidget(
-                        assetPath: "assets/icons/camera.png",
-                        width: 20,
-                        height: 20,
-                        onTap: () {},
-                      ),
-                      IconButtonWidget(
-                        assetPath: "assets/icons/gif.png",
-                        width: 20,
-                        height: 20,
-                        onTap: () {},
-                      ),
-                      IconButtonWidget(
-                        assetPath: "assets/icons/sticker.png",
-                        width: 20,
-                        height: 20,
-                        onTap: () {},
-                      ),
-                    ],
+                  // Recreating the layout structure to match the column above
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Colors.grey[300],
+                    backgroundImage: AvatarUtils.getAvatarImage(
+                      null,
+                      accountDataProvider,
+                    ),
                   ),
-                  SizedBox(height: 20),
+                  SizedBox(width: 10), // Same spacing as in main row
+                  Expanded(
+                    child: TextField(
+                      maxLines: null,
+                      maxLength: 200,
+                      maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                      controller: controller.postTextController,
+                      cursorColor: Colors.white,
+                      keyboardType: TextInputType.multiline,
+                      style: TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Add Thread',
+                        hintStyle: TextStyle(color: Colors.grey[500]),
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        counterStyle: TextStyle(color: Colors.grey[500]),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

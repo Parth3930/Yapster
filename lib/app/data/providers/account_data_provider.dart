@@ -241,17 +241,15 @@ class AccountDataProvider extends GetxController {
         .eq('user_id', userId)
         .order('created_at', ascending: false);
         
-      if (response != null) {
-        final postsList = List<Map<String, dynamic>>.from(response);
-        posts.value = postsList;
-        _rebuildPostsMap();
-        
-        // Update post count in user_posts data
-        userPostData['post_count'] = postsList.length;
-        
-        debugPrint('Loaded ${posts.length} posts for user $userId');
-      }
-    } catch (e) {
+      final postsList = List<Map<String, dynamic>>.from(response);
+      posts.value = postsList;
+      _rebuildPostsMap();
+      
+      // Update post count in user_posts data
+      userPostData['post_count'] = postsList.length;
+      
+      debugPrint('Loaded ${posts.length} posts for user $userId');
+        } catch (e) {
       debugPrint('Error loading user posts: $e');
       posts.value = [];
     }

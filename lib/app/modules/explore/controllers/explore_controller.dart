@@ -243,10 +243,6 @@ class ExploreController extends GetxController {
           .select('user_id, username, nickname, avatar, bio, followers, following, user_posts')
           .eq('user_id', userId)
           .single();
-          
-      if (userData == null) {
-        throw Exception('User not found');
-      }
       
       // Store the user profile data
       selectedUserProfile.value = Map<String, dynamic>.from(userData);

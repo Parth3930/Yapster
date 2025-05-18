@@ -6,7 +6,6 @@ import 'package:yapster/app/core/values/colors.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/global_widgets/custom_input.dart';
 import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
-import '../../../global_widgets/loading_widget.dart';
 
 class AccountUsernameSetupView extends GetView<AccountSetupController> {
   const AccountUsernameSetupView({super.key});
@@ -17,10 +16,6 @@ class AccountUsernameSetupView extends GetView<AccountSetupController> {
 
     return Scaffold(
       body: Obx(() {
-        if (controller.isLoading.value) {
-          return const LoadingWidget(message: 'Signing in...');
-        }
-
         return GestureDetector(
           onTap: () {
             FocusScope.of(
@@ -54,6 +49,7 @@ class AccountUsernameSetupView extends GetView<AccountSetupController> {
                           label: 'Username',
                           hintText: 'Enter your username',
                           controller: controller.usernameController,
+                          readOnly: controller.isLoading.value,
                         ),
                       ),
                       const Spacer(),

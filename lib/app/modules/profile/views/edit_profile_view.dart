@@ -64,9 +64,6 @@ class EditProfileView extends StatelessWidget {
                           CustomInput(
                             label: 'Name',
                             controller: profileController.nicknameController,
-                            onChanged: (_) {
-                              // Controller handles the value internally
-                            },
                           ),
                           SizedBox(height: ProfileConstants.defaultSpacing),
 
@@ -74,9 +71,6 @@ class EditProfileView extends StatelessWidget {
                           CustomInput(
                             label: 'Username',
                             controller: profileController.usernameController,
-                            onChanged: (_) {
-                              // Controller handles the value internally
-                            },
                             suffixIcon:
                                 !profileController.canUpdateUsername()
                                     ? Tooltip(
