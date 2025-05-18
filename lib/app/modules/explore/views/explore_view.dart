@@ -134,44 +134,77 @@ class UserListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = Get.find<ExploreController>();
 
-    // Debug info
-    debugPrint('Building UserListItem - isSearchResult: $isSearchResult');
-    debugPrint('User data: ${user['username']}, ${user['user_id']}');
-
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(vertical: 8.0),
-      leading: CircleAvatar(
-        radius: 24,
-        backgroundColor: Colors.grey[300],
-        backgroundImage:
-            user['avatar'] != null && user['avatar'].toString().isNotEmpty
-                ? CachedNetworkImageProvider(user['avatar'])
-                : null,
-        child:
-            user['avatar'] == null || user['avatar'].toString().isEmpty
-                ? const Icon(Icons.person, color: Colors.white)
-                : null,
-      ),
-      title: Text(
-        user['username'] != null ? '@${user['username']}' : '',
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      subtitle: Text(
-        user['nickname'] ?? '',
-        style: TextStyle(color: Colors.grey[500]),
-      ),
-      trailing:
-          isSearchResult
-              ? null
-              : IconButton(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.close, size: 20, color: Colors.grey),
-                onPressed: () {
-                  debugPrint('Deleting search history item');
-                  controller.removeFromRecentSearches(user);
-                },
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Row(
+            children: [
+              _buildAvatar(),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user['username'] != null ? '@${user['username']}' : '',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    if (user['nickname'] != null &&
+                        user['nickname'].toString().isNotEmpty)
+                      Text(
+                        user['nickname'],
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
+                  ],
+                ),
               ),
-      onTap: onTap,
+              isSearchResult
+                  ? _buildPostIndicatorIcons()
+                  : IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+                    onPressed: () {
+                      debugPrint('Deleting search history item');
+                      controller.removeFromRecentSearches(user);
+                    },
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar() {
+    return CircleAvatar(
+      radius: 24,
+      backgroundColor: Colors.grey[300],
+      backgroundImage:
+          user['avatar'] != null && user['avatar'].toString().isNotEmpty
+              ? CachedNetworkImageProvider(user['avatar'])
+              : null,
+      child:
+          user['avatar'] == null || user['avatar'].toString().isEmpty
+              ? const Icon(Icons.person, color: Colors.white)
+              : null,
+    );
+  }
+
+  // Build indicators for what types of content the user has posted
+  Widget _buildPostIndicatorIcons() {
+    // These will be updated when we fetch the user profile
+    // For now just showing placeholder icons
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey[400]),
+        const SizedBox(width: 4),
+        Icon(Icons.image_outlined, size: 16, color: Colors.grey[400]),
+      ],
     );
   }
 }

@@ -26,6 +26,12 @@ class ExploreController extends GetxController {
   // Cache keys
   static const String searchCacheKey = 'last_search_results';
   
+  // User profile posts data
+  final RxList<Map<String, dynamic>> userPosts = <Map<String, dynamic>>[].obs;
+  final RxInt selectedPostTypeTab = 0.obs;
+  final RxMap<String, dynamic> selectedUserProfile = <String, dynamic>{}.obs;
+  final RxBool isLoadingUserProfile = false.obs;
+  
   // Debounce timer for search
   Timer? _debounce;
   
@@ -216,7 +222,116 @@ class ExploreController extends GetxController {
     // Add to recent searches
     addToRecentSearches(user);
     
-    // Navigate to user profile (assuming you have a route for that)
-    Get.toNamed('/profile/${user['user_id']}');
+    // Load user profile data before navigating
+    loadUserProfile(user['user_id']).then((_) {
+      // Navigate to user profile
+      Get.toNamed('/profile/${user['user_id']}', arguments: {
+        'userData': selectedUserProfile.value,
+        'posts': userPosts.value,
+      });
+    });
+  }
+  
+  // Load a user's profile data and posts
+  Future<void> loadUserProfile(String userId) async {
+    try {
+      isLoadingUserProfile.value = true;
+      
+      // Fetch user profile data
+      final userData = await _supabaseService.client
+          .from('profiles')
+          .select('user_id, username, nickname, avatar, bio, followers, following, user_posts')
+          .eq('user_id', userId)
+          .single();
+          
+      if (userData == null) {
+        throw Exception('User not found');
+      }
+      
+      // Store the user profile data
+      selectedUserProfile.value = Map<String, dynamic>.from(userData);
+      
+      // Fetch posts directly from posts table
+      final postsResponse = await _supabaseService.client
+          .from('posts')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+          
+      final List<Map<String, dynamic>> allPosts = 
+          List<Map<String, dynamic>>.from(postsResponse);
+      
+      // Convert post_type to category for backward compatibility
+      for (var post in allPosts) {
+        post['category'] = post['post_type'];
+      }
+      
+      userPosts.value = allPosts;
+      debugPrint('Loaded ${allPosts.length} posts for user: ${userData['username']}');
+      
+    } catch (e) {
+      debugPrint('Error loading user profile: $e');
+      EasyLoading.showError('Failed to load profile');
+    } finally {
+      isLoadingUserProfile.value = false;
+    }
+  }
+  
+  // Get filtered posts based on selected tab
+  List<Map<String, dynamic>> getFilteredPosts() {
+    switch (selectedPostTypeTab.value) {
+      case 0: // All
+        return userPosts;
+      case 1: // Threads
+        return userPosts.where((post) => post['post_type'] == 'text').toList();
+      case 2: // Images
+        return userPosts.where((post) => post['post_type'] == 'image').toList();
+      case 3: // GIFs
+        return userPosts.where((post) => post['post_type'] == 'gif').toList();
+      case 4: // Stickers
+        return userPosts.where((post) => post['post_type'] == 'sticker').toList();
+      default:
+        return userPosts;
+    }
+  }
+  
+  // Set which tab is selected
+  void setSelectedPostTypeTab(int index) {
+    selectedPostTypeTab.value = index;
+  }
+  
+  // Check if the current user is following the selected user
+  bool isFollowingUser(String userId) {
+    if (selectedUserProfile.isEmpty || userId.isEmpty) return false;
+    
+    final following = _accountDataProvider.followingList;
+    final username = selectedUserProfile['username'];
+    
+    return username != null && following.contains(username);
+  }
+  
+  // Follow or unfollow a user
+  Future<void> toggleFollowUser(String userId) async {
+    if (userId.isEmpty) return;
+    
+    try {
+      EasyLoading.show(status: 'Processing...');
+      
+      final isFollowing = isFollowingUser(userId);
+      
+      if (isFollowing) {
+        await _supabaseService.unfollowUser(userId);
+      } else {
+        await _supabaseService.followUser(userId);
+      }
+      
+      // Refresh user profile data to get updated followers/following counts
+      await loadUserProfile(userId);
+      
+      EasyLoading.dismiss();
+    } catch (e) {
+      debugPrint('Error toggling follow status: $e');
+      EasyLoading.showError('Failed to update follow status');
+    }
   }
 }

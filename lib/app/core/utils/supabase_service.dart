@@ -23,6 +23,10 @@ class SupabaseService extends GetxService {
   final RxBool profileDataCached = false.obs;
   DateTime? lastProfileFetch;
 
+  // Realtime subscriptions
+  RealtimeChannel? _profileSubscription;
+  final RxBool isRealtimeConnected = false.obs;
+
   /// Initializes the Supabase service by loading environment variables and setting up the Supabase client
   Future<SupabaseService> init() async {
     try {
@@ -43,10 +47,7 @@ class SupabaseService extends GetxService {
       }
 
       // Initialize Supabase
-      await Supabase.initialize(
-        url: supabaseUrl,
-        anonKey: supabaseAnonKey,
-      );
+      await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
 
       client = Supabase.instance.client;
       currentUser.value = client.auth.currentUser;
@@ -62,7 +63,13 @@ class SupabaseService extends GetxService {
           currentUser.value = session?.user;
           isAuthenticated.value = true;
           debugPrint('User signed in: ${currentUser.value?.email}');
+
+          // Set up realtime subscriptions
+          _setupRealtimeSubscriptions();
         } else if (event == AuthChangeEvent.signedOut) {
+          // Clean up subscriptions
+          _cleanupRealtimeSubscriptions();
+
           currentUser.value = null;
           isAuthenticated.value = false;
           profileDataCached.value = false;
@@ -75,8 +82,14 @@ class SupabaseService extends GetxService {
         }
       });
 
+      // If user is already authenticated, set up realtime subscriptions
+      if (isAuthenticated.value) {
+        _setupRealtimeSubscriptions();
+      }
+
       // Preload avatar images if user is authenticated and we have cached data
-      if (isAuthenticated.value && profileDataCached.value &&
+      if (isAuthenticated.value &&
+          profileDataCached.value &&
           _accountDataProvider.avatar.value.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           AvatarUtils.preloadAvatarImages(_accountDataProvider);
@@ -89,6 +102,127 @@ class SupabaseService extends GetxService {
     } catch (e) {
       debugPrint('Error initializing Supabase: $e');
       rethrow;
+    }
+  }
+
+  /// Sets up realtime subscriptions for the authenticated user's profile data
+  void _setupRealtimeSubscriptions() {
+    if (!isInitialized.value || currentUser.value == null) {
+      debugPrint(
+        'Cannot setup realtime: Supabase not initialized or user not authenticated',
+      );
+      return;
+    }
+
+    final userId = currentUser.value!.id;
+    debugPrint('Setting up realtime subscriptions for user: $userId');
+
+    // Close any existing subscription
+    _cleanupRealtimeSubscriptions();
+
+    // Create a new subscription to the profiles table for this user
+    _profileSubscription = client
+        .channel('profiles:user_id=eq.$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'profiles',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            debugPrint(
+              'Received realtime profile update: ${payload.newRecord}',
+            );
+            _handleProfileUpdate(Map<String, dynamic>.from(payload.newRecord!));
+          },
+        )
+        .subscribe((status, [err]) {
+          if (status == 'SUBSCRIBED') {
+            debugPrint('Realtime subscription active');
+            isRealtimeConnected.value = true;
+          } else {
+            debugPrint('Realtime status: $status, error: $err');
+            isRealtimeConnected.value = status == 'SUBSCRIBED';
+          }
+        });
+  }
+
+  /// Handles updates received from the realtime subscription
+  void _handleProfileUpdate(Map<String, dynamic> newData) {
+    // Process profile updates
+    if (newData['username'] != null) {
+      _accountDataProvider.username.value = newData['username'];
+    }
+
+    if (newData['nickname'] != null) {
+      _accountDataProvider.nickname.value = newData['nickname'];
+    }
+
+    if (newData['bio'] != null) {
+      _accountDataProvider.bio.value = newData['bio'];
+    }
+
+    if (newData['avatar'] != null) {
+      _accountDataProvider.avatar.value = newData['avatar'];
+    }
+
+    // Process social data updates
+    if (newData['followers'] != null) {
+      _processFollowersData(newData['followers']);
+    }
+
+    if (newData['following'] != null) {
+      _processFollowingData(newData['following']);
+    }
+
+    if (newData['posts'] != null) {
+      _processPostsData(newData['posts']);
+    }
+
+    if (newData['searches'] != null) {
+      // Process searches data
+      try {
+        final List<dynamic> searchesList = newData['searches'];
+        _accountDataProvider.searches.value = List<Map<String, dynamic>>.from(
+          searchesList.map((item) => Map<String, dynamic>.from(item)),
+        );
+        // Rebuild the searches map
+        _rebuildSearchesMap();
+        debugPrint(
+          'Updated searches from realtime: ${searchesList.length} items',
+        );
+      } catch (e) {
+        debugPrint('Error processing searches update: $e');
+      }
+    }
+  }
+
+  /// Rebuilds the searches map in account data provider
+  void _rebuildSearchesMap() {
+    // Access the searches and rebuild the map
+    final searches = _accountDataProvider.searches;
+    final Map<String, Map<String, dynamic>> searchesMap = {};
+
+    for (final search in searches) {
+      if (search['user_id'] != null) {
+        searchesMap[search['user_id'].toString()] = search;
+      }
+    }
+
+    // Update the internal map
+    _accountDataProvider.updateSearchesMap(searchesMap);
+  }
+
+  /// Cleans up all realtime subscriptions
+  void _cleanupRealtimeSubscriptions() {
+    if (_profileSubscription != null) {
+      _profileSubscription!.unsubscribe();
+      _profileSubscription = null;
+      isRealtimeConnected.value = false;
+      debugPrint('Closed realtime subscriptions');
     }
   }
 
@@ -145,12 +279,12 @@ class SupabaseService extends GetxService {
         _accountDataProvider.initializeDefaultStructures();
 
         if (existingUserData == null) {
-          // New user - initialize with default social data structure
+          // New user - initialize with enhanced post structure
           await client.from('profiles').upsert({
             'user_id': userId,
             'followers': _accountDataProvider.followers,
             'following': _accountDataProvider.following,
-            'posts': _accountDataProvider.posts,
+            'posts': _createEnhancedPostsStructure(),
           });
         } else {
           // Existing user - ensure social data fields exist, but don't overwrite
@@ -166,7 +300,13 @@ class SupabaseService extends GetxService {
           }
 
           if (existingUserData['posts'] == null) {
-            updateData['posts'] = _accountDataProvider.posts;
+            updateData['posts'] = _createEnhancedPostsStructure();
+          } else if (existingUserData['posts'] is Map &&
+              !_isPostStructureEnhanced(existingUserData['posts'])) {
+            // Migrate to enhanced post structure if needed
+            updateData['posts'] = _migrateToEnhancedPostsStructure(
+              existingUserData['posts'],
+            );
           }
 
           // Only update if there are missing fields
@@ -174,6 +314,9 @@ class SupabaseService extends GetxService {
             await client.from('profiles').upsert(updateData);
           }
         }
+
+        // Set up realtime subscriptions
+        _setupRealtimeSubscriptions();
 
         // Fetch the updated user data
         await fetchUserData();
@@ -193,6 +336,10 @@ class SupabaseService extends GetxService {
   Future<void> signOut() async {
     try {
       isLoading.value = true;
+
+      // Clean up subscriptions first
+      _cleanupRealtimeSubscriptions();
+
       await client.auth.signOut();
       _clearUserProfile();
       isAuthenticated.value = false;
@@ -213,24 +360,7 @@ class SupabaseService extends GetxService {
     _accountDataProvider.avatar.value = '';
   }
 
-  /// Fetches the current user's data if already authenticated
-  void _fetchCurrentUserData() {
-    final user = client.auth.currentUser;
-    if (user != null) {
-      currentUser.value = user;
-      isAuthenticated.value = true;
-      // Also fetch profile data from the database
-      fetchUserData()
-          .then((_) {
-            debugPrint('Initial profile data loaded in _fetchCurrentUserData');
-          })
-          .catchError((e) {
-            debugPrint('Error fetching initial profile data: $e');
-          });
-    }
-  }
-
-  /// Fetches user profile data from the Supabase database
+  /// Fetch user profile data from the Supabase database
   Future<Map<String, dynamic>> fetchUserData() async {
     try {
       isLoading.value = true;
@@ -251,7 +381,9 @@ class SupabaseService extends GetxService {
       final userData =
           await client
               .from('profiles')
-              .select()
+              .select(
+                'user_id, username, nickname, avatar, bio, followers, following, user_posts, updated_at',
+              )
               .eq('user_id', user.id)
               .single();
 
@@ -268,13 +400,13 @@ class SupabaseService extends GetxService {
         updateData['following'] = _accountDataProvider.following;
       }
 
-      if (userData['posts'] == null) {
-        updateData['posts'] = _accountDataProvider.posts;
+      if (userData['user_posts'] == null) {
+        updateData['user_posts'] = {'post_count': 0};
       }
 
-      // Update database with default values if any field was null
+      // Update database with default values if any field was null or needs migration
       if (updateData.isNotEmpty) {
-        debugPrint('Updating missing fields in database: $updateData');
+        debugPrint('Updating missing fields or migrating data: $updateData');
         await client.from('profiles').update(updateData).eq('user_id', user.id);
 
         // Merge updates with userData for local use
@@ -293,7 +425,20 @@ class SupabaseService extends GetxService {
         // Process social data with proper structure
         _processFollowersData(userData['followers']);
         _processFollowingData(userData['following']);
-        _processPostsData(userData['posts']);
+
+        // Update user_posts data
+        if (userData['user_posts'] != null) {
+          _accountDataProvider.updateUserPostData(
+            Map<String, dynamic>.from(userData['user_posts']),
+          );
+        }
+
+        // Load posts from posts table
+        await _accountDataProvider.loadUserPosts(user.id);
+
+        // Mark profile data as cached and record timestamp
+        profileDataCached.value = true;
+        lastProfileFetch = DateTime.now();
       } else {
         debugPrint('No profile data found for user ${user.id}');
       }
@@ -304,6 +449,145 @@ class SupabaseService extends GetxService {
       return {'isAuthenticated': false, 'error': e.toString()};
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  /// Add a new post with the enhanced post structure
+  Future<void> addNewPost(
+    Map<String, dynamic> postData,
+    String category,
+  ) async {
+    try {
+      // Get user ID
+      final userId = client.auth.currentUser?.id;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Ensure required fields are present
+      final enhancedPost = _enhancePostItem(postData);
+
+      // Add to local state first for immediate UI update
+      _accountDataProvider.addPost(enhancedPost);
+
+      // Update the posts in Supabase using the new create_post function
+      String postType;
+      switch (category) {
+        case 'threads':
+          postType = 'text';
+          break;
+        case 'images':
+          postType = 'image';
+          break;
+        case 'gifs':
+          postType = 'gif';
+          break;
+        case 'stickers':
+          postType = 'sticker';
+          break;
+        default:
+          postType = 'text';
+      }
+
+      // Call the create_post RPC function
+      final result = await client.rpc(
+        'create_post',
+        params: {
+          'user_id': userId,
+          'content': enhancedPost['content'] ?? '',
+          'post_type': postType,
+          'image_url': enhancedPost['image_url'],
+          'gif_url': enhancedPost['gif_url'],
+          'sticker_url': enhancedPost['sticker_url'],
+          'metadata': enhancedPost['metadata'] ?? {},
+        },
+      );
+
+      // Get the new post ID and update local post
+      final postId = result as String;
+      enhancedPost['id'] = postId;
+
+      debugPrint('Added new post with ID: $postId');
+    } catch (e) {
+      debugPrint('Error adding new post: $e');
+      Get.snackbar('Error', 'Failed to add post. Please try again.');
+    }
+  }
+
+  /// Delete a post from any category
+  Future<void> deletePost(String postId) async {
+    try {
+      // Get user ID
+      final userId = client.auth.currentUser?.id;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Remove from local state first for immediate UI update
+      _accountDataProvider.removePost(postId);
+
+      // Update the posts in Supabase using the delete_post function
+      final result = await client.rpc(
+        'delete_post',
+        params: {'post_id': postId, 'user_id': userId},
+      );
+
+      if (result == true) {
+        debugPrint('Deleted post with ID: $postId');
+      } else {
+        debugPrint('Post not found or could not be deleted: $postId');
+      }
+    } catch (e) {
+      debugPrint('Error deleting post: $e');
+      Get.snackbar('Error', 'Failed to delete post. Please try again.');
+    }
+  }
+
+  /// Follow a user
+  Future<void> followUser(String targetUserId) async {
+    try {
+      // Get user ID
+      final userId = client.auth.currentUser?.id;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Update the following list in Supabase
+      await client.rpc(
+        'follow_user',
+        params: {'follower_id': userId, 'following_id': targetUserId},
+      );
+
+      debugPrint('Following user: $targetUserId');
+
+      // We'll rely on the realtime update to update our local state
+    } catch (e) {
+      debugPrint('Error following user: $e');
+      Get.snackbar('Error', 'Failed to follow user. Please try again.');
+    }
+  }
+
+  /// Unfollow a user
+  Future<void> unfollowUser(String targetUserId) async {
+    try {
+      // Get user ID
+      final userId = client.auth.currentUser?.id;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Update the following list in Supabase
+      await client.rpc(
+        'unfollow_user',
+        params: {'follower_id': userId, 'following_id': targetUserId},
+      );
+
+      debugPrint('Unfollowed user: $targetUserId');
+
+      // We'll rely on the realtime update to update our local state
+    } catch (e) {
+      debugPrint('Error unfollowing user: $e');
+      Get.snackbar('Error', 'Failed to unfollow user. Please try again.');
     }
   }
 
@@ -383,109 +667,71 @@ class SupabaseService extends GetxService {
 
   /// Process posts data ensuring it has the expected structure
   void _processPostsData(dynamic postsData) {
-    if (postsData == null) {
-      // Use the already initialized default structure
-      return;
-    }
+    // This method is no longer needed as we use the posts table directly
+    // Leaving this here for reference, will be removed in a future update
 
-    try {
-      final Map<String, dynamic> processedData = Map<String, dynamic>.from(
-        postsData,
-      );
-
-      // Check if this is old format data (with 'posts' and 'count' fields)
-      if (processedData['posts'] != null) {
-        // Convert old format to new format (categorized)
-        final List oldPosts = processedData['posts'] as List;
-
-        // Initialize categories if they don't exist
-        if (processedData['threads'] == null) {
-          processedData['threads'] = <Map<String, dynamic>>[];
-        }
-        if (processedData['images'] == null) {
-          processedData['images'] = <Map<String, dynamic>>[];
-        }
-        if (processedData['gifs'] == null) {
-          processedData['gifs'] = <Map<String, dynamic>>[];
-        }
-        if (processedData['stickers'] == null) {
-          processedData['stickers'] = <Map<String, dynamic>>[];
-        }
-
-        // Move old posts to threads category (default)
-        if (oldPosts.isNotEmpty) {
-          final List<Map<String, dynamic>> processedThreads = [];
-
-          for (final item in oldPosts) {
-            if (item is Map<String, dynamic>) {
-              // Ensure each post has an id
-              if (item['id'] == null) {
-                item['id'] = DateTime.now().millisecondsSinceEpoch.toString();
-              }
-              processedThreads.add(item);
-            } else {
-              // Create a new post map with an id
-              processedThreads.add({
-                'id': DateTime.now().millisecondsSinceEpoch.toString(),
-                'content': item.toString(),
-              });
-            }
-          }
-
-          // Merge with existing threads
-          final existingThreads = processedData['threads'] as List? ?? [];
-          processedData['threads'] = [...existingThreads, ...processedThreads];
-        }
-
-        // Remove old format keys
-        processedData.remove('posts');
-        processedData.remove('count');
-      }
-
-      // Ensure all categories exist and are properly formatted
-      _ensurePostCategory(processedData, 'threads');
-      _ensurePostCategory(processedData, 'images');
-      _ensurePostCategory(processedData, 'gifs');
-      _ensurePostCategory(processedData, 'stickers');
-
-      _accountDataProvider.updatePosts(processedData);
-    } catch (e) {
-      debugPrint('Error processing posts data: $e');
-      // Default structure is already initialized
-    }
+    // For backward compatibility, if this function is called
+    // we'll handle it gracefully by doing nothing
+    debugPrint(
+      '_processPostsData called but is deprecated - using posts table instead',
+    );
   }
 
-  // Helper method to ensure each post category is properly formatted
+  // Helper method to ensure each post category is properly formatted and enhanced
   void _ensurePostCategory(Map<String, dynamic> data, String category) {
-    if (data[category] == null) {
-      data[category] = <Map<String, dynamic>>[];
-      return;
+    // This method is no longer needed as we use the posts table directly
+    // Leaving this here for reference, will be removed in a future update
+    debugPrint(
+      '_ensurePostCategory called but is deprecated - using posts table instead',
+    );
+  }
+
+  /// Enhances a single post item with additional metadata
+  Map<String, dynamic> _enhancePostItem(Map<String, dynamic> post) {
+    // Clone the post to avoid modifying the original
+    final Map<String, dynamic> enhancedPost = Map<String, dynamic>.from(post);
+
+    // Add timestamps if missing
+    if (enhancedPost['created_at'] == null) {
+      enhancedPost['created_at'] = DateTime.now().toIso8601String();
     }
 
-    if (data[category] is! List) {
-      data[category] = <Map<String, dynamic>>[];
-      return;
+    if (enhancedPost['updated_at'] == null) {
+      enhancedPost['updated_at'] = enhancedPost['created_at'];
     }
 
-    final List<dynamic> rawItems = data[category] as List;
-    final List<Map<String, dynamic>> processedItems = [];
-
-    for (final item in rawItems) {
-      if (item is Map<String, dynamic>) {
-        // Ensure each post has an id
-        if (item['id'] == null) {
-          item['id'] = DateTime.now().millisecondsSinceEpoch.toString();
-        }
-        processedItems.add(item);
-      } else if (item != null) {
-        // Create a new post map with an id for non-null items
-        processedItems.add({
-          'id': DateTime.now().millisecondsSinceEpoch.toString(),
-          'content': item.toString(),
-        });
-      }
+    // Add metadata if missing
+    if (enhancedPost['metadata'] == null) {
+      enhancedPost['metadata'] = {};
     }
 
-    data[category] = processedItems;
+    return enhancedPost;
+  }
+
+  /// Creates an enhanced posts structure with better metadata
+  Map<String, dynamic> _createEnhancedPostsStructure() {
+    // This method is no longer needed as we use the posts table directly
+    debugPrint(
+      '_createEnhancedPostsStructure called but is deprecated - using posts table instead',
+    );
+    return {'post_count': 0};
+  }
+
+  /// Checks if the post structure is already enhanced
+  bool _isPostStructureEnhanced(dynamic postsData) {
+    // This method is no longer needed as we use the posts table directly
+    debugPrint(
+      '_isPostStructureEnhanced called but is deprecated - using posts table instead',
+    );
+    return false;
+  }
+
+  /// Migrates old post structure to enhanced format
+  Map<String, dynamic> _migrateToEnhancedPostsStructure(dynamic oldPosts) {
+    // This method is no longer needed as we use the posts table directly
+    debugPrint(
+      '_migrateToEnhancedPostsStructure called but is deprecated - using posts table instead',
+    );
+    return {'post_count': 0};
   }
 }

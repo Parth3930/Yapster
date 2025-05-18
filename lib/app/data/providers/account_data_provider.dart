@@ -14,8 +14,9 @@ class AccountDataProvider extends GetxController {
   final RxMap<String, dynamic> followers = <String, dynamic>{}.obs;
   final RxMap<String, dynamic> following = <String, dynamic>{}.obs;
 
-  // Updated posts structure with categories
-  final RxMap<String, dynamic> posts = <String, dynamic>{}.obs;
+  // Posts data from separate posts table
+  final RxList<Map<String, dynamic>> posts = <Map<String, dynamic>>[].obs;
+  final RxMap<String, dynamic> userPostData = <String, dynamic>{}.obs;
   
   // Recent searches
   final RxList<Map<String, dynamic>> searches = <Map<String, dynamic>>[].obs;
@@ -31,47 +32,32 @@ class AccountDataProvider extends GetxController {
   // Helper getters for easy access
   int get followersCount => followers['count'] as int? ?? 0;
   int get followingCount => following['count'] as int? ?? 0;
-  int get postsCount {
-    int total = 0;
-    if (posts['threads'] != null) total += (posts['threads'] as List).length;
-    if (posts['images'] != null) total += (posts['images'] as List).length;
-    if (posts['gifs'] != null) total += (posts['gifs'] as List).length;
-    if (posts['stickers'] != null) total += (posts['stickers'] as List).length;
-    return total;
-  }
+  int get postsCount => userPostData['post_count'] as int? ?? 0;
 
-  // Category-specific counts
-  int get threadsCount =>
-      posts['threads'] != null ? (posts['threads'] as List).length : 0;
-  int get imagesCount =>
-      posts['images'] != null ? (posts['images'] as List).length : 0;
-  int get gifsCount =>
-      posts['gifs'] != null ? (posts['gifs'] as List).length : 0;
-  int get stickersCount =>
-      posts['stickers'] != null ? (posts['stickers'] as List).length : 0;
+  // Post type counts (calculated from posts list)
+  int get threadsCount => posts.where((post) => post['post_type'] == 'text').length;
+  int get imagesCount => posts.where((post) => post['post_type'] == 'image').length;
+  int get gifsCount => posts.where((post) => post['post_type'] == 'gif').length;
+  int get stickersCount => posts.where((post) => post['post_type'] == 'sticker').length;
 
   List<String> get followersList => List<String>.from(followers['users'] ?? []);
   List<String> get followingList => List<String>.from(following['users'] ?? []);
 
   // Category-specific post lists
-  List<Map<String, dynamic>> get threadsList =>
-      List<Map<String, dynamic>>.from(posts['threads'] ?? []);
-  List<Map<String, dynamic>> get imagesList =>
-      List<Map<String, dynamic>>.from(posts['images'] ?? []);
-  List<Map<String, dynamic>> get gifsList =>
-      List<Map<String, dynamic>>.from(posts['gifs'] ?? []);
-  List<Map<String, dynamic>> get stickersList =>
-      List<Map<String, dynamic>>.from(posts['stickers'] ?? []);
+  List<Map<String, dynamic>> get threadsList => 
+      posts.where((post) => post['post_type'] == 'text').toList();
+  
+  List<Map<String, dynamic>> get imagesList => 
+      posts.where((post) => post['post_type'] == 'image').toList();
+  
+  List<Map<String, dynamic>> get gifsList => 
+      posts.where((post) => post['post_type'] == 'gif').toList();
+  
+  List<Map<String, dynamic>> get stickersList => 
+      posts.where((post) => post['post_type'] == 'sticker').toList();
 
-  // All posts combined
-  List<Map<String, dynamic>> get allPosts {
-    List<Map<String, dynamic>> allItems = [];
-    allItems.addAll(threadsList);
-    allItems.addAll(imagesList);
-    allItems.addAll(gifsList);
-    allItems.addAll(stickersList);
-    return allItems;
-  }
+  // All posts (already in posts RxList)
+  List<Map<String, dynamic>> get allPosts => posts;
 
   // Fast lookup methods - O(1) operations
   bool isFollower(String username) => _followersMap[username] ?? false;
@@ -90,43 +76,14 @@ class AccountDataProvider extends GetxController {
       following.value = {'count': 0, 'users': <String>[]};
     }
 
-    // Default posts structure with categories
+    // Initialize posts list if empty
     if (posts.isEmpty) {
-      posts.value = {
-        'threads': <Map<String, dynamic>>[],
-        'images': <Map<String, dynamic>>[],
-        'gifs': <Map<String, dynamic>>[],
-        'stickers': <Map<String, dynamic>>[],
-      };
-    } else {
-      // Ensure all categories exist
-      if (posts['threads'] == null) {
-        posts['threads'] = <Map<String, dynamic>>[];
-      }
-      if (posts['images'] == null) {
-        posts['images'] = <Map<String, dynamic>>[];
-      }
-      if (posts['gifs'] == null) {
-        posts['gifs'] = <Map<String, dynamic>>[];
-      }
-      if (posts['stickers'] == null) {
-        posts['stickers'] = <Map<String, dynamic>>[];
-      }
-
-      // Handle migration from old format if needed
-      if (posts['posts'] != null && posts['count'] != null) {
-        // Migrate old format posts to new categories (default to threads)
-        List<Map<String, dynamic>> oldPosts = List<Map<String, dynamic>>.from(
-          posts['posts'],
-        );
-        if (oldPosts.isNotEmpty) {
-          posts['threads'] = [...posts['threads'], ...oldPosts];
-        }
-
-        // Remove old format keys
-        posts.remove('posts');
-        posts.remove('count');
-      }
+      posts.value = [];
+    }
+    
+    // Initialize user post data if empty
+    if (userPostData.isEmpty) {
+      userPostData.value = {'post_count': 0};
     }
     
     // Initialize searches structure if empty
@@ -152,9 +109,15 @@ class AccountDataProvider extends GetxController {
     _rebuildFollowingMap();
   }
 
-  void updatePosts(Map<String, dynamic> newPosts) {
+  void updatePosts(List<Map<String, dynamic>> newPosts) {
     posts.value = newPosts;
+    userPostData.value = {'post_count': newPosts.length};
     _rebuildPostsMap();
+  }
+
+  // Update user_posts data directly
+  void updateUserPostData(Map<String, dynamic> newUserPostData) {
+    userPostData.value = newUserPostData;
   }
 
   // Methods to add/remove individual items
@@ -198,37 +161,25 @@ class AccountDataProvider extends GetxController {
     }
   }
 
-  // Add post to a specific category
-  void addPost(Map<String, dynamic> post, String category) {
-    if (post['id'] != null && posts[category] != null) {
-      final List<Map<String, dynamic>> categoryList =
-          List<Map<String, dynamic>>.from(posts[category] ?? []);
-      categoryList.add(post);
-      posts[category] = categoryList;
+  // Add a new post to the list (local update before database)
+  void addPost(Map<String, dynamic> post) {
+    if (post['id'] != null) {
+      posts.add(post);
       _postsMap[post['id'].toString()] = post;
+      
+      // Update the post count
+      userPostData['post_count'] = (userPostData['post_count'] as int? ?? 0) + 1;
     }
   }
 
-  // Remove post from any category
+  // Remove a post from the list (local update before database)
   void removePost(String postId) {
     if (_postsMap.containsKey(postId)) {
-      // Find and remove from appropriate category
-      for (final category in ['threads', 'images', 'gifs', 'stickers']) {
-        if (posts[category] != null) {
-          final List<Map<String, dynamic>> categoryList =
-              List<Map<String, dynamic>>.from(posts[category]);
-          final int oldLength = categoryList.length;
-          categoryList.removeWhere((post) => post['id'].toString() == postId);
-
-          if (categoryList.length < oldLength) {
-            // Post was found and removed from this category
-            posts[category] = categoryList;
-            break;
-          }
-        }
-      }
-
+      posts.removeWhere((post) => post['id'].toString() == postId);
       _postsMap.remove(postId);
+      
+      // Update the post count
+      userPostData['post_count'] = (userPostData['post_count'] as int? ?? 0) - 1;
     }
   }
 
@@ -249,14 +200,9 @@ class AccountDataProvider extends GetxController {
 
   void _rebuildPostsMap() {
     _postsMap.clear();
-    // Add all posts from all categories
-    for (final category in ['threads', 'images', 'gifs', 'stickers']) {
-      if (posts[category] != null) {
-        for (final post in List<Map<String, dynamic>>.from(posts[category])) {
-          if (post['id'] != null) {
-            _postsMap[post['id'].toString()] = post;
-          }
-        }
+    for (final post in posts) {
+      if (post['id'] != null) {
+        _postsMap[post['id'].toString()] = post;
       }
     }
   }
@@ -277,9 +223,38 @@ class AccountDataProvider extends GetxController {
     email.value = '';
     googleAvatar.value = '';
     searches.clear();
+    posts.clear();
+    userPostData.value = {'post_count': 0};
     
     // Reset social data structures to defaults
     initializeDefaultStructures();
+  }
+  
+  /// Load user posts from the posts table
+  Future<void> loadUserPosts(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      
+      final response = await supabaseService.client
+        .from('posts')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', ascending: false);
+        
+      if (response != null) {
+        final postsList = List<Map<String, dynamic>>.from(response);
+        posts.value = postsList;
+        _rebuildPostsMap();
+        
+        // Update post count in user_posts data
+        userPostData['post_count'] = postsList.length;
+        
+        debugPrint('Loaded ${posts.length} posts for user $userId');
+      }
+    } catch (e) {
+      debugPrint('Error loading user posts: $e');
+      posts.value = [];
+    }
   }
   
   /// Load searches from database
@@ -348,5 +323,11 @@ class AccountDataProvider extends GetxController {
         _searchesMap[search['user_id'].toString()] = search;
       }
     }
+  }
+
+  /// Update the searches map directly
+  void updateSearchesMap(Map<String, Map<String, dynamic>> newMap) {
+    _searchesMap.clear();
+    _searchesMap.addAll(newMap);
   }
 }

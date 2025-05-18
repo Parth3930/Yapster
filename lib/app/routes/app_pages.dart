@@ -8,6 +8,8 @@ import 'package:yapster/app/modules/create/bindings/create_binding.dart';
 import 'package:yapster/app/modules/create/views/create_view.dart';
 import 'package:yapster/app/modules/explore/bindings/explore_binding.dart';
 import 'package:yapster/app/modules/explore/views/explore_view.dart';
+import 'package:yapster/app/modules/notifications/bindings/notifications_binding.dart';
+import 'package:yapster/app/modules/notifications/views/notifications_view.dart';
 import 'package:yapster/app/modules/profile/bindings/profile_binding.dart';
 import 'package:yapster/app/modules/profile/views/edit_profile_view.dart';
 import 'package:yapster/app/modules/profile/views/profile_view.dart';
@@ -132,6 +134,18 @@ class AppPages {
       name: _Paths.EDIT_PROFILE,
       page: () => const EditProfileView(),
       binding: ProfileBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      fullscreenDialog: false,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: false,
+    ),
+    GetPage(
+      name: _Paths.NOTIFICATIONS,
+      page: () => const NotificationsView(),
+      binding: NotificationsBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
