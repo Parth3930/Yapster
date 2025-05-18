@@ -1,4 +1,6 @@
 import 'package:get/get.dart';
+import 'package:flutter/foundation.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 
 class AccountDataProvider extends GetxController {
   final RxString username = ''.obs;
@@ -14,11 +16,16 @@ class AccountDataProvider extends GetxController {
 
   // Updated posts structure with categories
   final RxMap<String, dynamic> posts = <String, dynamic>{}.obs;
+  
+  // Recent searches
+  final RxList<Map<String, dynamic>> searches = <Map<String, dynamic>>[].obs;
 
   // Optimized HashMaps for O(1) lookups
   final RxMap<String, bool> _followersMap = <String, bool>{}.obs;
   final RxMap<String, bool> _followingMap = <String, bool>{}.obs;
   final RxMap<String, Map<String, dynamic>> _postsMap =
+      <String, Map<String, dynamic>>{}.obs;
+  final RxMap<String, Map<String, dynamic>> _searchesMap =
       <String, Map<String, dynamic>>{}.obs;
 
   // Helper getters for easy access
@@ -121,11 +128,17 @@ class AccountDataProvider extends GetxController {
         posts.remove('count');
       }
     }
+    
+    // Initialize searches structure if empty
+    if (searches.isEmpty) {
+      searches.value = [];
+    }
 
     // Rebuild HashMaps from primary data structures
     _rebuildFollowersMap();
     _rebuildFollowingMap();
     _rebuildPostsMap();
+    _rebuildSearchesMap();
   }
 
   // Update methods that keep HashMaps in sync
@@ -263,8 +276,77 @@ class AccountDataProvider extends GetxController {
     avatar.value = '';
     email.value = '';
     googleAvatar.value = '';
+    searches.clear();
     
     // Reset social data structures to defaults
     initializeDefaultStructures();
+  }
+  
+  /// Load searches from database
+  Future<void> loadSearches() async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      final userId = supabaseService.currentUser.value?.id;
+      
+      if (userId == null) return;
+      
+      final userData = await supabaseService.client
+        .from('profiles')
+        .select('searches')
+        .eq('user_id', userId)
+        .single();
+        
+      if (userData.isNotEmpty && userData['searches'] != null) {
+        List<dynamic> searchesList = userData['searches'];
+        searches.value = List<Map<String, dynamic>>.from(
+          searchesList.map((item) => Map<String, dynamic>.from(item))
+        );
+        _rebuildSearchesMap();
+        debugPrint('Loaded ${searches.length} recent searches');
+      }
+    } catch (e) {
+      debugPrint('Error loading searches: $e');
+      // Initialize with empty list if there's an error
+      searches.value = [];
+    }
+  }
+  
+  /// Update searches in memory and database
+  Future<void> updateSearches(List<Map<String, dynamic>> newSearches) async {
+    try {
+      searches.value = List<Map<String, dynamic>>.from(newSearches);
+      _rebuildSearchesMap();
+      
+      // Update in database
+      final supabaseService = Get.find<SupabaseService>();
+      final userId = supabaseService.currentUser.value?.id;
+      
+      if (userId == null) return;
+      
+      await supabaseService.client
+        .from('profiles')
+        .update({'searches': searches})
+        .eq('user_id', userId);
+        
+      debugPrint('Updated searches in database');
+    } catch (e) {
+      debugPrint('Error updating searches: $e');
+    }
+  }
+  
+  /// Check if a user exists in recent searches
+  bool hasUserInSearches(String userId) => _searchesMap.containsKey(userId);
+  
+  /// Get a user from recent searches by ID
+  Map<String, dynamic>? getUserFromSearches(String userId) => _searchesMap[userId];
+  
+  /// Rebuild the searches map for O(1) lookups
+  void _rebuildSearchesMap() {
+    _searchesMap.clear();
+    for (final search in searches) {
+      if (search['user_id'] != null) {
+        _searchesMap[search['user_id'].toString()] = search;
+      }
+    }
   }
 }

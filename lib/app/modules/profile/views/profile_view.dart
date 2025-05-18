@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/core/theme/theme_controller.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
@@ -15,11 +14,9 @@ class ProfileView extends GetView<ProfileController> {
   @override
   Widget build(BuildContext context) {
     final accountDataProvider = Get.find<AccountDataProvider>();
-    final themeController = Get.find<ThemeController>();
-
     // Preload avatar images when view is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (accountDataProvider.avatar.value.isNotEmpty || 
+      if (accountDataProvider.avatar.value.isNotEmpty ||
           accountDataProvider.googleAvatar.value.isNotEmpty) {
         AvatarUtils.preloadAvatarImages(accountDataProvider);
         controller.isAvatarLoaded.value = true;
@@ -43,15 +40,20 @@ class ProfileView extends GetView<ProfileController> {
                           radius: 45,
                           backgroundColor: Colors.grey[300],
                           backgroundImage: AvatarUtils.getAvatarImage(
-                            null, 
-                            accountDataProvider
+                            null,
+                            accountDataProvider,
                           ),
-                          child: AvatarUtils.shouldShowDefaultIcon(
-                            null, 
-                            accountDataProvider
-                          )
-                              ? Icon(Icons.person, size: 45, color: Colors.white)
-                              : null,
+                          child:
+                              AvatarUtils.shouldShowDefaultIcon(
+                                    null,
+                                    accountDataProvider,
+                                  )
+                                  ? Icon(
+                                    Icons.person,
+                                    size: 45,
+                                    color: Colors.white,
+                                  )
+                                  : null,
                         ),
                         // Blue circle with plus icon (empty functionality)
                         Positioned(
@@ -93,19 +95,24 @@ class ProfileView extends GetView<ProfileController> {
 
                             // add animation of scale down like its pressed
                             GestureDetector(
-                              onTap: () async => {
-                                await Get.toNamed(Routes.EDIT_PROFILE),
-                              },
-                              onTapDown: (_) => controller.setEditIconScale(0.8),
+                              onTap:
+                                  () async => {
+                                    await Get.toNamed(Routes.EDIT_PROFILE),
+                                  },
+                              onTapDown:
+                                  (_) => controller.setEditIconScale(0.8),
                               onTapUp: (_) => controller.setEditIconScale(1.0),
-                              onTapCancel: () => controller.setEditIconScale(1.0),
-                              child: Obx(() => Transform.scale(
-                                scale: controller.editIconScale.value,
-                                child: Image.asset(
-                                  "assets/icons/edit.png",
-                                  width: 20,
+                              onTapCancel:
+                                  () => controller.setEditIconScale(1.0),
+                              child: Obx(
+                                () => Transform.scale(
+                                  scale: controller.editIconScale.value,
+                                  child: Image.asset(
+                                    "assets/icons/edit.png",
+                                    width: 20,
+                                  ),
                                 ),
-                              )),
+                              ),
                             ),
                           ],
                         ),
@@ -294,23 +301,25 @@ class PostItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               child: CachedNetworkImage(
                 imageUrl: post['image_url'].toString(),
-                placeholder: (context, url) => Container(
-                  height: 200,
-                  color: Colors.grey[800],
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xff0060FF),
-                      strokeWidth: 2,
+                placeholder:
+                    (context, url) => Container(
+                      height: 200,
+                      color: Colors.grey[800],
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xff0060FF),
+                          strokeWidth: 2,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  height: 100,
-                  color: Colors.grey[900],
-                  child: Center(
-                    child: Icon(Icons.error, color: Colors.red),
-                  ),
-                ),
+                errorWidget:
+                    (context, url, error) => Container(
+                      height: 100,
+                      color: Colors.grey[900],
+                      child: Center(
+                        child: Icon(Icons.error, color: Colors.red),
+                      ),
+                    ),
                 fit: BoxFit.cover,
                 height: 200,
                 width: double.infinity,

@@ -7,12 +7,16 @@ import 'app/core/utils/storage_service.dart';
 import 'app/core/utils/api_service.dart';
 import 'app/core/utils/supabase_service.dart';
 import 'app/data/providers/account_data_provider.dart';
+import 'package:flutter_easyloading/flutter_easyloading.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize services
   await initServices();
+
+  // Configure EasyLoading
+  configureEasyLoading();
 
   runApp(const MyApp());
 }
@@ -37,6 +41,23 @@ Future<void> initServices() async {
   debugPrint('All services initialized');
 }
 
+// Configure EasyLoading settings
+void configureEasyLoading() {
+  EasyLoading.instance
+    ..displayDuration = const Duration(milliseconds: 1500)
+    ..indicatorType = EasyLoadingIndicatorType.fadingCircle
+    ..loadingStyle = EasyLoadingStyle.dark
+    ..indicatorSize = 35.0
+    ..radius = 10.0
+    ..progressColor = Colors.white
+    ..backgroundColor = Colors.black.withOpacity(0.7)
+    ..indicatorColor = Colors.white
+    ..textColor = Colors.white
+    ..maskColor = Colors.black.withOpacity(0.5)
+    ..userInteractions = false
+    ..dismissOnTap = false;
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -54,6 +75,7 @@ class MyApp extends StatelessWidget {
         themeMode: themeController.themeMode,
         initialRoute: Routes.SPLASH,
         getPages: AppPages.routes,
+        builder: EasyLoading.init(),
       ),
     );
   }

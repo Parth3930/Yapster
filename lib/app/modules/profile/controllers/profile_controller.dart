@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
+import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 
@@ -10,6 +11,7 @@ class ProfileController extends GetxController {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
   final AccountDataProvider _accountDataProvider =
       Get.find<AccountDataProvider>();
+  final StorageService _storageService = Get.find<StorageService>();
   final TextEditingController nicknameController = TextEditingController();
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController bioController = TextEditingController();
@@ -19,19 +21,40 @@ class ProfileController extends GetxController {
   
   // Track avatar loading status specifically
   final RxBool isAvatarLoaded = false.obs;
-  
-  // Edit icon animation scale
   final RxDouble editIconScale = 1.0.obs;
-
-  // Store last username update timestamp
   DateTime? _lastUsernameUpdate;
-
+  static const String _lastUsernameUpdateKey = 'last_username_update';
+  
   @override
   void onInit() {
     super.onInit();
     // Preload avatar if available
     preloadAvatarImages();
+    _loadLastUpdateTimeFromPrefs();
     fetchUserData();
+  }
+  
+  /// Loads the last username update time from SharedPreferences
+  void _loadLastUpdateTimeFromPrefs() {
+    try {
+      final savedTimeString = _storageService.getString(_lastUsernameUpdateKey);
+      if (savedTimeString != null && savedTimeString.isNotEmpty) {
+        _lastUsernameUpdate = DateTime.parse(savedTimeString);
+        debugPrint('Loaded username update time from prefs: $_lastUsernameUpdate');
+      }
+    } catch (e) {
+      debugPrint('Error loading last username update time: $e');
+    }
+  }
+  
+  /// Saves the last username update time to SharedPreferences
+  Future<void> _saveLastUpdateTimeToPrefs(DateTime updateTime) async {
+    try {
+      await _storageService.saveString(_lastUsernameUpdateKey, updateTime.toIso8601String());
+      debugPrint('Saved username update time to prefs: $updateTime');
+    } catch (e) {
+      debugPrint('Error saving last username update time: $e');
+    }
   }
   
   /// Sets the scale for the edit icon animation
@@ -94,16 +117,46 @@ class ProfileController extends GetxController {
           isAvatarLoaded.value = true;
         }
 
-        // Parse the username update timestamp if it exists
-        if (userData['userNameUpdate'] != null) {
+        // Parse the username update timestamp if it exists in database
+        // and we don't already have a more precise timestamp from SharedPreferences
+        if (_lastUsernameUpdate == null && userData['userNameUpdate'] != null) {
           try {
-            // Try to convert string to DateTime
-            _lastUsernameUpdate = DateTime.now().subtract(
-              Duration(days: 15),
-            ); // Default to allowing updates
-            debugPrint('Last username update: ${userData['userNameUpdate']}');
+            final updateTimeString = userData['userNameUpdate'].toString();
+            debugPrint('Found username update timestamp in DB: $updateTimeString');
+            
+            if (updateTimeString.isNotEmpty) {
+              // If it's just a time string (HH:MM:SS), use today's date with that time
+              if (updateTimeString.contains(':') && !updateTimeString.contains('-')) {
+                final now = DateTime.now();
+                final parts = updateTimeString.split(':');
+                if (parts.length >= 3) {
+                  try {
+                    final hour = int.parse(parts[0]);
+                    final minute = int.parse(parts[1]);
+                    final secondParts = parts[2].split('.');  // Handle seconds with decimal
+                    final second = int.parse(secondParts[0]);
+                    
+                    // Create a DateTime with today's date but the stored time
+                    // Then subtract 13 days to be conservative about the restriction
+                    _lastUsernameUpdate = DateTime(
+                      now.year, now.month, now.day, hour, minute, second
+                    ).subtract(const Duration(days: 13));
+                    
+                    debugPrint('Set username update time to: $_lastUsernameUpdate');
+                    
+                    // Also save to SharedPreferences for future reference
+                    _saveLastUpdateTimeToPrefs(_lastUsernameUpdate!);
+                  } catch (parseError) {
+                    debugPrint('Error parsing time components: $parseError');
+                    _lastUsernameUpdate = DateTime.now().subtract(const Duration(days: 13));
+                  }
+                }
+              }
+            }
           } catch (e) {
             debugPrint('Error parsing username update timestamp: $e');
+            // Default to a conservative approach if parsing fails
+            _lastUsernameUpdate = DateTime.now().subtract(const Duration(days: 13));
           }
         }
 
@@ -296,14 +349,22 @@ class ProfileController extends GetxController {
 
     // Update the username update timestamp if username was changed
     if (updateUsernameTimestamp) {
-      // Get current time and format it as just time (HH:MM:SS) - for PostgreSQL 'time' type
+      // Get current time
       final now = DateTime.now();
+      
+      // Format it as just time (HH:MM:SS) for PostgreSQL 'time' type
       final timeString =
           "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}";
       updateData['userNameUpdate'] = timeString;
+      
+      // Store the full datetime internally
       _lastUsernameUpdate = now;
+      
+      // Save to persistent storage
+      _saveLastUpdateTimeToPrefs(now);
 
-      debugPrint('Setting userNameUpdate to time string: $timeString');
+      debugPrint('Setting userNameUpdate time in DB: $timeString');
+      debugPrint('Saving full timestamp locally: ${now.toIso8601String()}');
     }
 
     // Only make the update if there's something to update

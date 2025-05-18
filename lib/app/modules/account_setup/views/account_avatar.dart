@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,7 +7,6 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 
 class AccountAvatarSetupView extends GetView<AccountSetupController> {
@@ -21,7 +19,7 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
 
     // Preload any existing avatar images when view is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (accountDataProvider.avatar.value.isNotEmpty || 
+      if (accountDataProvider.avatar.value.isNotEmpty ||
           accountDataProvider.googleAvatar.value.isNotEmpty) {
         AvatarUtils.preloadAvatarImages(accountDataProvider);
       }
@@ -67,15 +65,20 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
                       radius: 50,
                       backgroundColor: Colors.grey[300],
                       backgroundImage: _getAvatarImage(
-                        controller.selectedImage.value, 
-                        accountDataProvider
+                        controller.selectedImage.value,
+                        accountDataProvider,
                       ),
-                      child: _shouldShowDefaultIcon(
-                        controller.selectedImage.value, 
-                        accountDataProvider
-                      )
-                          ? Icon(Icons.person, size: 50, color: Colors.white)
-                          : null,
+                      child:
+                          _shouldShowDefaultIcon(
+                                controller.selectedImage.value,
+                                accountDataProvider,
+                              )
+                              ? Icon(
+                                Icons.person,
+                                size: 50,
+                                color: Colors.white,
+                              )
+                              : null,
                     ),
                     // Blue circle with plus icon
                     Positioned(
@@ -87,16 +90,9 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
                         decoration: BoxDecoration(
                           color: Color(0xff0060FF),
                           shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 2,
-                          ),
+                          border: Border.all(color: Colors.white, width: 2),
                         ),
-                        child: Icon(
-                          Icons.add,
-                          color: Colors.white,
-                          size: 20,
-                        ),
+                        child: Icon(Icons.add, color: Colors.white, size: 20),
                       ),
                     ),
                   ],
@@ -128,7 +124,7 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
       ),
     );
   }
-  
+
   // Using the centralized avatar utility methods
   ImageProvider? _getAvatarImage(
     XFile? selectedImage,

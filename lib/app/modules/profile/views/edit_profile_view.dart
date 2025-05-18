@@ -2,21 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/core/theme/theme_controller.dart';
 import 'package:yapster/app/core/values/colors.dart';
-import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/global_widgets/custom_input.dart';
 import 'package:yapster/app/modules/profile/constants/profile_constants.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 class EditProfileView extends StatelessWidget {
   const EditProfileView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final accountDataProvider = Get.find<AccountDataProvider>();
     final themeController = Get.find<ThemeController>();
     final profileController = Get.find<ProfileController>();
 

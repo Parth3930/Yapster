@@ -4,7 +4,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/modules/profile/constants/profile_constants.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 class ProfileAvatarWidget extends StatelessWidget {
   final XFile? selectedImage;
@@ -33,28 +32,40 @@ class ProfileAvatarWidget extends StatelessWidget {
           child: Stack(
             children: [
               // Avatar image with loading state
-              !isLoaded && !_shouldShowDefaultIcon(selectedImage, accountDataProvider)
-                  ? SizedBox(
-                      height: radius * 2,
-                      width: radius * 2,
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: ProfileConstants.primaryBlue,
-                          strokeWidth: 2,
-                        ),
-                      ),
-                    )
-                  : CircleAvatar(
-                      radius: radius,
-                      backgroundColor: ProfileConstants.darkBackground,
-                      backgroundImage: _getAvatarImage(
+              !isLoaded &&
+                      !_shouldShowDefaultIcon(
                         selectedImage,
                         accountDataProvider,
+                      )
+                  ? SizedBox(
+                    height: radius * 2,
+                    width: radius * 2,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: ProfileConstants.primaryBlue,
+                        strokeWidth: 2,
                       ),
-                      child: _shouldShowDefaultIcon(selectedImage, accountDataProvider)
-                          ? Icon(Icons.person, size: radius, color: Colors.white)
-                          : null,
                     ),
+                  )
+                  : CircleAvatar(
+                    radius: radius,
+                    backgroundColor: ProfileConstants.darkBackground,
+                    backgroundImage: _getAvatarImage(
+                      selectedImage,
+                      accountDataProvider,
+                    ),
+                    child:
+                        _shouldShowDefaultIcon(
+                              selectedImage,
+                              accountDataProvider,
+                            )
+                            ? Icon(
+                              Icons.person,
+                              size: radius,
+                              color: Colors.white,
+                            )
+                            : null,
+                  ),
               // Edit icon (blue circle with plus icon)
               if (showEditIcon)
                 Positioned(
