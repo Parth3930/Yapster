@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/core/theme/theme_controller.dart';
-import 'package:yapster/app/core/values/colors.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
@@ -14,7 +12,6 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
     final accountDataProvider = Get.find<AccountDataProvider>();
 
     // Preload any existing avatar images when view is built
@@ -108,10 +105,7 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
               text: "Continue",
               width: 300,
               backgroundColor: const Color(0xff0060FF),
-              textColor:
-                  themeController.isDarkMode
-                      ? AppColors.textWhite
-                      : AppColors.textDark,
+              textColor: Colors.white,
               isLoading: controller.isLoading.value,
               onPressed:
                   controller.isLoading.value

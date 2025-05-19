@@ -13,6 +13,7 @@ import 'package:yapster/app/modules/notifications/views/notifications_view.dart'
 import 'package:yapster/app/modules/profile/bindings/profile_binding.dart';
 import 'package:yapster/app/modules/profile/views/edit_profile_view.dart';
 import 'package:yapster/app/modules/profile/views/profile_view.dart';
+import 'package:yapster/app/modules/profile/views/user_profile_view.dart';
 import '../modules/home/bindings/home_binding.dart';
 import '../modules/home/views/home_view.dart';
 import '../modules/login/bindings/login_binding.dart';
@@ -93,6 +94,20 @@ class AppPages {
       opaque: true,
       preventDuplicates: true,
       popGesture: false,
+    ),
+    GetPage(
+      name: '${_Paths.PROFILE}/:id',
+      page: () {
+        final args = Get.arguments;
+        return UserProfileView(
+          userData: args['userData'],
+          posts: args['posts'],
+        );
+      },
+      binding: ProfileBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
     ),
     GetPage(
       name: _Paths.CHAT,

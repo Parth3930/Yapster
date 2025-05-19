@@ -21,6 +21,8 @@ class ProfileView extends GetView<ProfileController> {
         AvatarUtils.preloadAvatarImages(accountDataProvider);
         controller.isAvatarLoaded.value = true;
       }
+      // Force refresh follower/following counts
+      controller.refreshFollowData();
     });
 
     return Scaffold(
@@ -226,32 +228,44 @@ class ProfileView extends GetView<ProfileController> {
   }
 
   Widget _buildFollowersStats(AccountDataProvider provider) {
-    return Column(
-      children: [
-        Obx(
-          () => Text(
-            provider.followersCount.toString(),
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    return GestureDetector(
+      onTap: () => controller.openFollowersList(),
+      child: Column(
+        children: [
+          Obx(
+            () {
+              debugPrint('Displaying follower count: ${provider.followerCount}');
+              return Text(
+                provider.followerCount.toString(),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              );
+            },
           ),
-        ),
-        SizedBox(width: 5),
-        Text("Followers", style: TextStyle(fontSize: 16)),
-      ],
+          SizedBox(width: 5),
+          Text("Followers", style: TextStyle(fontSize: 16)),
+        ],
+      ),
     );
   }
 
   Widget _buildFollowingStats(AccountDataProvider provider) {
-    return Column(
-      children: [
-        Obx(
-          () => Text(
-            provider.followingCount.toString(),
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    return GestureDetector(
+      onTap: () => controller.openFollowingList(),
+      child: Column(
+        children: [
+          Obx(
+            () {
+              debugPrint('Displaying following count: ${provider.followingCount}');
+              return Text(
+                provider.followingCount.toString(),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              );
+            },
           ),
-        ),
-        SizedBox(width: 5),
-        Text("Following", style: TextStyle(fontSize: 16)),
-      ],
+          SizedBox(width: 5),
+          Text("Following", style: TextStyle(fontSize: 16)),
+        ],
+      ),
     );
   }
 
@@ -263,7 +277,7 @@ class ProfileView extends GetView<ProfileController> {
         child: Text(
           title,
           style: TextStyle(
-            fontSize: 18,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
             color: isSelected ? Colors.white : Color(0xffA5A5A5),
           ),

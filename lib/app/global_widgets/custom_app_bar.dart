@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../core/theme/theme_controller.dart';
 import '../core/values/colors.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -28,38 +27,31 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeController themeController = Get.find<ThemeController>();
+    List<Widget> actionWidgets = [];
 
-    return Obx(() {
-      final bool isDark = themeController.isDarkMode;
-      List<Widget> actionWidgets = [];
+    // Add any additional action widgets
+    if (actions != null) {
+      actionWidgets.addAll(actions!);
+    }
 
-      // Add any additional action widgets
-      if (actions != null) {
-        actionWidgets.addAll(actions!);
-      }
-
-      return AppBar(
-        title: Text(
-          title,
-          style: Get.textTheme.titleLarge?.copyWith(
-            color: titleColor ?? Colors.white,
-            fontSize: 48,
-            fontFamily: GoogleFonts.dongle().fontFamily,
-          ),
+    return AppBar(
+      title: Text(
+        title,
+        style: Get.textTheme.titleLarge?.copyWith(
+          color: titleColor ?? Colors.white,
+          fontSize: 48,
+          fontFamily: GoogleFonts.dongle().fontFamily,
         ),
-        centerTitle: true,
-        backgroundColor:
-            backgroundColor ??
-            (isDark ? AppColors.primaryColorDark : AppColors.primaryColor),
-        elevation: elevation,
-        automaticallyImplyLeading: showBackButton,
-        leading: leading,
-        actions: actionWidgets,
-        bottom: bottom,
-        iconTheme: const IconThemeData(color: Colors.white),
-      );
-    });
+      ),
+      centerTitle: true,
+      backgroundColor: AppColors.primaryColorDark,
+      elevation: elevation,
+      automaticallyImplyLeading: showBackButton,
+      leading: leading,
+      actions: actionWidgets,
+      bottom: bottom,
+      iconTheme: const IconThemeData(color: Colors.white),
+    );
   }
 
   @override

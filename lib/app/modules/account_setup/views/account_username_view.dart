@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/core/theme/theme_controller.dart';
-import 'package:yapster/app/core/values/colors.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/global_widgets/custom_input.dart';
 import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
@@ -12,8 +10,6 @@ class AccountUsernameSetupView extends GetView<AccountSetupController> {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-
     return Scaffold(
       body: Obx(() {
         return GestureDetector(
@@ -62,10 +58,7 @@ class AccountUsernameSetupView extends GetView<AccountSetupController> {
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontFamily: GoogleFonts.roboto().fontFamily,
-                                  color:
-                                      themeController.isDarkMode
-                                          ? AppColors.textWhite
-                                          : AppColors.textDark,
+                                  color: Colors.white,
                                 ),
                                 children: [
                                   const TextSpan(
@@ -91,10 +84,7 @@ class AccountUsernameSetupView extends GetView<AccountSetupController> {
                             text: "Continue",
                             width: 300,
                             backgroundColor: const Color(0xff0060FF),
-                            textColor:
-                                themeController.isDarkMode
-                                    ? AppColors.textWhite
-                                    : AppColors.textDark,
+                            textColor: Colors.white,
                             isLoading: controller.isLoading.value,
                             onPressed:
                                 controller.isLoading.value

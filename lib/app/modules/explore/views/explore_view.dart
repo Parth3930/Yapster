@@ -163,7 +163,7 @@ class UserListItem extends StatelessWidget {
                 ),
               ),
               isSearchResult
-                  ? _buildPostIndicatorIcons()
+                  ? const SizedBox.shrink()
                   : IconButton(
                     padding: EdgeInsets.zero,
                     icon: const Icon(Icons.close, size: 20, color: Colors.grey),
@@ -180,31 +180,33 @@ class UserListItem extends StatelessWidget {
   }
 
   Widget _buildAvatar() {
+    // Check if user has regular avatar
+    final hasRegularAvatar = user['avatar'] != null && 
+                           user['avatar'].toString().isNotEmpty && 
+                           user['avatar'] != "skiped" &&
+                           user['avatar'].toString() != "skiped" &&
+                           user['avatar'].toString() != "null";
+                           
+    // Check if user has Google avatar
+    final hasGoogleAvatar = user['google_avatar'] != null && 
+                          user['google_avatar'].toString().isNotEmpty &&
+                          user['google_avatar'].toString() != "null";
+    
+    // Debug avatar info
+    debugPrint('User avatar: ${user['avatar']}');
+    debugPrint('User google avatar: ${user['google_avatar']}');
+    
     return CircleAvatar(
       radius: 24,
       backgroundColor: Colors.grey[300],
-      backgroundImage:
-          user['avatar'] != null && user['avatar'].toString().isNotEmpty
-              ? CachedNetworkImageProvider(user['avatar'])
+      backgroundImage: hasRegularAvatar
+          ? CachedNetworkImageProvider(user['avatar'])
+          : hasGoogleAvatar
+              ? CachedNetworkImageProvider(user['google_avatar'])
               : null,
-      child:
-          user['avatar'] == null || user['avatar'].toString().isEmpty
-              ? const Icon(Icons.person, color: Colors.white)
-              : null,
-    );
-  }
-
-  // Build indicators for what types of content the user has posted
-  Widget _buildPostIndicatorIcons() {
-    // These will be updated when we fetch the user profile
-    // For now just showing placeholder icons
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey[400]),
-        const SizedBox(width: 4),
-        Icon(Icons.image_outlined, size: 16, color: Colors.grey[400]),
-      ],
+      child: (!hasRegularAvatar && !hasGoogleAvatar)
+          ? const Icon(Icons.person, color: Colors.white)
+          : null,
     );
   }
 }

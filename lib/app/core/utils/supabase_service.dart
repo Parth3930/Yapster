@@ -120,34 +120,134 @@ class SupabaseService extends GetxService {
     // Close any existing subscription
     _cleanupRealtimeSubscriptions();
 
-    // Create a new subscription to the profiles table for this user
-    _profileSubscription = client
-        .channel('profiles:user_id=eq.$userId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'profiles',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'user_id',
-            value: userId,
-          ),
-          callback: (payload) {
-            debugPrint(
-              'Received realtime profile update: ${payload.newRecord}',
-            );
-            _handleProfileUpdate(Map<String, dynamic>.from(payload.newRecord));
-          },
-        )
-        .subscribe((status, [err]) {
-          if (status == 'SUBSCRIBED') {
-            debugPrint('Realtime subscription active');
-            isRealtimeConnected.value = true;
-          } else {
-            debugPrint('Realtime status: $status, error: $err');
-            isRealtimeConnected.value = status == 'SUBSCRIBED';
-          }
-        });
+    try {
+      // Create a new subscription to the profiles table for this user
+      _profileSubscription = client
+          .channel('public:profiles')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'profiles',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: userId,
+            ),
+            callback: (payload) {
+              debugPrint(
+                'Received realtime profile update: ${payload.newRecord}',
+              );
+              _handleProfileUpdate(
+                Map<String, dynamic>.from(payload.newRecord),
+              );
+            },
+          )
+          .subscribe((status, [err]) {
+            if (status == 'SUBSCRIBED') {
+              debugPrint('Realtime subscription active for profiles');
+              isRealtimeConnected.value = true;
+            } else {
+              debugPrint('Realtime status for profiles: $status, error: $err');
+              isRealtimeConnected.value = status == 'SUBSCRIBED';
+
+              // If there's an error, attempt to reconnect after a delay
+              if (status == 'CHANNEL_ERROR' || status == 'TIMED_OUT') {
+                Future.delayed(const Duration(seconds: 5), () {
+                  debugPrint(
+                    'Attempting to reconnect realtime subscription...',
+                  );
+                  _cleanupRealtimeSubscriptions();
+                  _setupRealtimeSubscriptions();
+                });
+              }
+            }
+          });
+
+      // Create a separate subscription for posts table
+      client
+          .channel('public:posts')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all, // Listen to all events
+            schema: 'public',
+            table: 'posts',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: userId,
+            ),
+            callback: (payload) {
+              if (payload.eventType == PostgresChangeEvent.insert) {
+                debugPrint('Received new post: ${payload.newRecord}');
+                final newPost = Map<String, dynamic>.from(payload.newRecord);
+                _accountDataProvider.addPost(newPost);
+              } else if (payload.eventType == PostgresChangeEvent.delete) {
+                debugPrint('Received post deletion: ${payload.oldRecord}');
+                final oldPost = Map<String, dynamic>.from(payload.oldRecord);
+                if (oldPost['id'] != null) {
+                  _accountDataProvider.removePost(oldPost['id'].toString());
+                }
+              }
+            },
+          )
+          .subscribe((status, [err]) {
+            debugPrint('Realtime status for posts: $status, error: $err');
+          });
+          
+      // Subscribe to follows table for new followers (when this user is followed)
+      client
+          .channel('public:follows_as_following')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'follows',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'following_id',
+              value: userId,
+            ),
+            callback: (payload) {
+              debugPrint('Received follows update (as following): ${payload.eventType}');
+              
+              // Refresh followers list to keep UI in sync
+              _accountDataProvider.loadFollowers(userId).then((_) {
+                // Notify UI of change
+                debugPrint('Follower count updated to: ${_accountDataProvider.followerCount.value}');
+              });
+            },
+          )
+          .subscribe((status, [err]) {
+            debugPrint('Realtime status for follows_as_following: $status, error: $err');
+          });
+          
+      // Subscribe to follows table for new following (when this user follows someone)
+      client
+          .channel('public:follows_as_follower')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'follows',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'follower_id',
+              value: userId,
+            ),
+            callback: (payload) {
+              debugPrint('Received follows update (as follower): ${payload.eventType}');
+              
+              // Refresh following list to keep UI in sync
+              _accountDataProvider.loadFollowing(userId).then((_) {
+                // Notify UI of change
+                debugPrint('Following count updated to: ${_accountDataProvider.followingCount.value}');
+              });
+            },
+          )
+          .subscribe((status, [err]) {
+            debugPrint('Realtime status for follows_as_follower: $status, error: $err');
+          });
+    } catch (e) {
+      debugPrint('Error setting up realtime subscriptions: $e');
+      isRealtimeConnected.value = false;
+    }
   }
 
   /// Handles updates received from the realtime subscription
@@ -180,7 +280,9 @@ class SupabaseService extends GetxService {
 
     if (newData['user_posts'] != null) {
       // Update user posts data
-      _accountDataProvider.updateUserPostData(Map<String, dynamic>.from(newData['user_posts']));
+      _accountDataProvider.updateUserPostData(
+        Map<String, dynamic>.from(newData['user_posts']),
+      );
     }
 
     if (newData['searches'] != null) {
@@ -269,6 +371,10 @@ class SupabaseService extends GetxService {
       // Check if user already exists in profiles table
       if (response.user != null) {
         final userId = response.user!.id;
+        
+        // Get Google avatar URL if available
+        String? googleAvatarUrl = response.user?.userMetadata?['avatar_url'];
+        
         final existingUserData =
             await client
                 .from('profiles')
@@ -278,30 +384,43 @@ class SupabaseService extends GetxService {
 
         // Ensure default structures are initialized
         _accountDataProvider.initializeDefaultStructures();
+        
+        // Save Google avatar to account provider
+        if (googleAvatarUrl != null && googleAvatarUrl.isNotEmpty) {
+          _accountDataProvider.googleAvatar.value = googleAvatarUrl;
+        }
 
         if (existingUserData == null) {
-          // New user - initialize with enhanced post structure
+          // New user - initialize with enhanced post structure and Google avatar
           await client.from('profiles').upsert({
             'user_id': userId,
-            'followers': _accountDataProvider.followers,
-            'following': _accountDataProvider.following,
+            'follower_count': 0, 
+            'following_count': 0,
             'user_posts': {'post_count': 0},
+            'google_avatar': googleAvatarUrl ?? '',
           });
         } else {
           // Existing user - ensure social data fields exist, but don't overwrite
           final Map<String, dynamic> updateData = {'user_id': userId};
 
           // Only add missing fields, don't override existing ones
-          if (existingUserData['followers'] == null) {
-            updateData['followers'] = _accountDataProvider.followers;
+          if (existingUserData['follower_count'] == null) {
+            updateData['follower_count'] = 0;
           }
 
-          if (existingUserData['following'] == null) {
-            updateData['following'] = _accountDataProvider.following;
+          if (existingUserData['following_count'] == null) {
+            updateData['following_count'] = 0;
           }
 
           if (existingUserData['user_posts'] == null) {
             updateData['user_posts'] = {'post_count': 0};
+          }
+          
+          // Update Google avatar if needed
+          if (googleAvatarUrl != null && 
+              (existingUserData['google_avatar'] == null || 
+              existingUserData['google_avatar'].toString().isEmpty)) {
+            updateData['google_avatar'] = googleAvatarUrl;
           }
 
           // Only update if there are missing fields
@@ -377,26 +496,35 @@ class SupabaseService extends GetxService {
           await client
               .from('profiles')
               .select(
-                'user_id, username, nickname, avatar, bio, followers, following, user_posts, updated_at',
+                'user_id, username, nickname, avatar, bio, follower_count, following_count, user_posts, google_avatar, updated_at',
               )
               .eq('user_id', user.id)
               .single();
 
       debugPrint('Fetched user profile data: $userData');
 
-      // Check if any social data is null and update in database if needed
+      // Check if any data is null and update in database if needed
       Map<String, dynamic> updateData = {};
 
-      if (userData['followers'] == null) {
-        updateData['followers'] = _accountDataProvider.followers;
-      }
-
-      if (userData['following'] == null) {
-        updateData['following'] = _accountDataProvider.following;
-      }
-
+      // Add default values for any missing fields
       if (userData['user_posts'] == null) {
         updateData['user_posts'] = {'post_count': 0};
+      }
+
+      // Update follower_count and following_count if missing
+      if (userData['follower_count'] == null) {
+        updateData['follower_count'] = 0;
+      }
+
+      if (userData['following_count'] == null) {
+        updateData['following_count'] = 0;
+      }
+
+      // Get Google avatar from user metadata if not in profile
+      String? googleAvatarUrl = user.userMetadata?['avatar_url'];
+      if (googleAvatarUrl != null && 
+          (userData['google_avatar'] == null || userData['google_avatar'].toString().isEmpty)) {
+        updateData['google_avatar'] = googleAvatarUrl;
       }
 
       // Update database with default values if any field was null or needs migration
@@ -414,12 +542,16 @@ class SupabaseService extends GetxService {
         _accountDataProvider.nickname.value = userData['nickname'] ?? '';
         _accountDataProvider.bio.value = userData['bio'] ?? '';
         _accountDataProvider.email.value = client.auth.currentUser?.email ?? '';
-        _accountDataProvider.googleAvatar.value =
+        _accountDataProvider.googleAvatar.value = userData['google_avatar'] ?? 
             client.auth.currentUser?.userMetadata?['avatar_url'] ?? '';
 
-        // Process social data with proper structure
-        _processFollowersData(userData['followers']);
-        _processFollowingData(userData['following']);
+        // Update follower and following counts
+        _accountDataProvider.followerCount.value = userData['follower_count'] ?? 0;
+        _accountDataProvider.followingCount.value = userData['following_count'] ?? 0;
+
+        // Load followers and following data
+        await _accountDataProvider.loadFollowers(user.id);
+        await _accountDataProvider.loadFollowing(user.id);
 
         // Update user_posts data
         if (userData['user_posts'] != null) {
@@ -547,15 +679,20 @@ class SupabaseService extends GetxService {
         throw Exception('User not authenticated');
       }
 
-      // Update the following list in Supabase
+      // Call the follow_user function in Supabase with the updated parameter names
       await client.rpc(
         'follow_user',
-        params: {'follower_id': userId, 'following_id': targetUserId},
+        params: {
+          'p_follower_id': userId,
+          'p_following_id': targetUserId,
+        },
       );
 
       debugPrint('Following user: $targetUserId');
 
-      // We'll rely on the realtime update to update our local state
+      // Fetch latest following data to ensure UI is up-to-date
+      await _accountDataProvider.loadFollowing(userId);
+      
     } catch (e) {
       debugPrint('Error following user: $e');
       Get.snackbar('Error', 'Failed to follow user. Please try again.');
@@ -571,15 +708,20 @@ class SupabaseService extends GetxService {
         throw Exception('User not authenticated');
       }
 
-      // Update the following list in Supabase
+      // Call the unfollow_user function in Supabase with the updated parameter names
       await client.rpc(
         'unfollow_user',
-        params: {'follower_id': userId, 'following_id': targetUserId},
+        params: {
+          'p_follower_id': userId,
+          'p_following_id': targetUserId,
+        },
       );
 
       debugPrint('Unfollowed user: $targetUserId');
 
-      // We'll rely on the realtime update to update our local state
+      // Fetch latest following data to ensure UI is up-to-date
+      await _accountDataProvider.loadFollowing(userId);
+      
     } catch (e) {
       debugPrint('Error unfollowing user: $e');
       Get.snackbar('Error', 'Failed to unfollow user. Please try again.');
@@ -597,26 +739,20 @@ class SupabaseService extends GetxService {
       final Map<String, dynamic> processedData = Map<String, dynamic>.from(
         followersData,
       );
-      // Ensure 'count' exists and is an integer
-      if (processedData['count'] == null) {
-        processedData['count'] =
-            processedData['users'] is List
-                ? (processedData['users'] as List).length
-                : 0;
+      
+      // Convert old JSON format to new list format
+      final List<Map<String, dynamic>> followersList = [];
+      if (processedData['users'] is List) {
+        final List<String> userIds = List<String>.from(processedData['users']);
+        for (final userId in userIds) {
+          followersList.add({
+            'follower_id': userId,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        }
       }
 
-      // Ensure 'users' exists and is a list of strings
-      if (processedData['users'] == null) {
-        processedData['users'] = <String>[];
-      } else if (processedData['users'] is List) {
-        // Convert any non-string elements to strings
-        processedData['users'] =
-            (processedData['users'] as List)
-                .map((item) => item.toString())
-                .toList();
-      }
-
-      _accountDataProvider.updateFollowers(processedData);
+      _accountDataProvider.updateFollowers(followersList);
     } catch (e) {
       debugPrint('Error processing followers data: $e');
       // Default structure is already initialized
@@ -634,26 +770,20 @@ class SupabaseService extends GetxService {
       final Map<String, dynamic> processedData = Map<String, dynamic>.from(
         followingData,
       );
-      // Ensure 'count' exists and is an integer
-      if (processedData['count'] == null) {
-        processedData['count'] =
-            processedData['users'] is List
-                ? (processedData['users'] as List).length
-                : 0;
+      
+      // Convert old JSON format to new list format
+      final List<Map<String, dynamic>> followingList = [];
+      if (processedData['users'] is List) {
+        final List<String> userIds = List<String>.from(processedData['users']);
+        for (final userId in userIds) {
+          followingList.add({
+            'following_id': userId,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        }
       }
 
-      // Ensure 'users' exists and is a list of strings
-      if (processedData['users'] == null) {
-        processedData['users'] = <String>[];
-      } else if (processedData['users'] is List) {
-        // Convert any non-string elements to strings
-        processedData['users'] =
-            (processedData['users'] as List)
-                .map((item) => item.toString())
-                .toList();
-      }
-
-      _accountDataProvider.updateFollowing(processedData);
+      _accountDataProvider.updateFollowing(followingList);
     } catch (e) {
       debugPrint('Error processing following data: $e');
       // Default structure is already initialized

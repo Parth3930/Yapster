@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/core/theme/theme_controller.dart';
 import 'package:yapster/app/core/values/colors.dart';
 
 class CustomInput extends StatefulWidget {
@@ -74,68 +72,57 @@ class _CustomInputState extends State<CustomInput> {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
-
-    return Obx(() {
-      final isDarkMode = themeController.isDarkMode;
-
-      return TextFormField(
-        controller: widget.controller,
-        initialValue: widget.initialValue,
-        obscureText: widget.obscureText,
-        keyboardType: widget.keyboardType,
-        validator: widget.validator,
-        onChanged: widget.onChanged,
-        maxLines: widget.maxLines,
-        minLines: widget.minLines,
-        readOnly: widget.readOnly,
-        autofocus: widget.autofocus,
-        focusNode: _focusNode,
-        style: TextStyle(
+    return TextFormField(
+      controller: widget.controller,
+      initialValue: widget.initialValue,
+      obscureText: widget.obscureText,
+      keyboardType: widget.keyboardType,
+      validator: widget.validator,
+      onChanged: widget.onChanged,
+      maxLines: widget.maxLines,
+      minLines: widget.minLines,
+      readOnly: widget.readOnly,
+      autofocus: widget.autofocus,
+      focusNode: _focusNode,
+      style: TextStyle(
+        fontFamily: GoogleFonts.roboto().fontFamily,
+        color: Colors.white,
+      ),
+      decoration: InputDecoration(
+        labelText: widget.label,
+        hintText: widget.hintText,
+        prefixIcon: widget.prefixIcon,
+        suffixIcon: widget.suffixIcon,
+        contentPadding:
+            widget.contentPadding ??
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        labelStyle: TextStyle(
           fontFamily: GoogleFonts.roboto().fontFamily,
-          color: isDarkMode ? AppColors.textWhite : AppColors.textDark,
+          color: Colors.grey[500],
         ),
-        decoration: InputDecoration(
-          labelText: widget.label,
-          hintText: widget.hintText,
-          prefixIcon: widget.prefixIcon,
-          suffixIcon: widget.suffixIcon,
-          contentPadding:
-              widget.contentPadding ??
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          labelStyle: TextStyle(
-            fontFamily: GoogleFonts.roboto().fontFamily,
-            color: isDarkMode ? const Color(0xffC4C4C4) : Colors.black,
-          ),
-          hintStyle: TextStyle(
-            fontFamily: GoogleFonts.roboto().fontFamily,
-            color: isDarkMode ? AppColors.textLightDark : AppColors.textLight,
-          ),
-          filled: true,
-          fillColor:
-              _hasFocus
-                  ? (isDarkMode ? AppColors.cardDark : AppColors.cardLight)
-                  : Colors.transparent,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide(
-              color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide(color: AppColors.primaryColor, width: 2),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide(color: AppColors.error),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide(color: AppColors.error, width: 2),
-          ),
+        hintStyle: TextStyle(
+          fontFamily: GoogleFonts.roboto().fontFamily,
+          color: Colors.grey[400],
         ),
-      );
-    });
+        filled: true,
+        fillColor: _hasFocus ? AppColors.cardDark : Colors.transparent,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: Colors.grey[700]!),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: AppColors.primaryColor, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: AppColors.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: AppColors.error, width: 2),
+        ),
+      ),
+    );
   }
 }

@@ -10,9 +10,11 @@ class AccountDataProvider extends GetxController {
   final RxString email = ''.obs;
   final RxString googleAvatar = ''.obs;
 
-  // Primary data structures
-  final RxMap<String, dynamic> followers = <String, dynamic>{}.obs;
-  final RxMap<String, dynamic> following = <String, dynamic>{}.obs;
+  // Followers and following data
+  final RxList<Map<String, dynamic>> followers = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> following = <Map<String, dynamic>>[].obs;
+  final RxInt followerCount = 0.obs;
+  final RxInt followingCount = 0.obs;
 
   // Posts data from separate posts table
   final RxList<Map<String, dynamic>> posts = <Map<String, dynamic>>[].obs;
@@ -30,8 +32,6 @@ class AccountDataProvider extends GetxController {
       <String, Map<String, dynamic>>{}.obs;
 
   // Helper getters for easy access
-  int get followersCount => followers['count'] as int? ?? 0;
-  int get followingCount => following['count'] as int? ?? 0;
   int get postsCount => userPostData['post_count'] as int? ?? 0;
 
   // Post type counts (calculated from posts list)
@@ -40,8 +40,9 @@ class AccountDataProvider extends GetxController {
   int get gifsCount => posts.where((post) => post['post_type'] == 'gif').length;
   int get stickersCount => posts.where((post) => post['post_type'] == 'sticker').length;
 
-  List<String> get followersList => List<String>.from(followers['users'] ?? []);
-  List<String> get followingList => List<String>.from(following['users'] ?? []);
+  // Get lists of user IDs for followers/following
+  List<String> get followerIds => followers.map((f) => f['follower_id'] as String).toList();
+  List<String> get followingIds => following.map((f) => f['following_id'] as String).toList();
 
   // Category-specific post lists
   List<Map<String, dynamic>> get threadsList => 
@@ -60,33 +61,29 @@ class AccountDataProvider extends GetxController {
   List<Map<String, dynamic>> get allPosts => posts;
 
   // Fast lookup methods - O(1) operations
-  bool isFollower(String username) => _followersMap[username] ?? false;
-  bool isFollowing(String username) => _followingMap[username] ?? false;
+  bool isFollower(String userId) => _followersMap[userId] ?? false;
+  bool isFollowing(String userId) => _followingMap[userId] ?? false;
   Map<String, dynamic>? getPost(String postId) => _postsMap[postId];
 
   // Initialize all data structures with default values
   void initializeDefaultStructures() {
-    // Default followers structure
-    if (followers.isEmpty || followers['users'] == null) {
-      followers.value = {'count': 0, 'users': <String>[]};
+    // Initialize lists if empty
+    if (followers.isEmpty) {
+      followers.value = [];
     }
 
-    // Default following structure
-    if (following.isEmpty || following['users'] == null) {
-      following.value = {'count': 0, 'users': <String>[]};
+    if (following.isEmpty) {
+      following.value = [];
     }
 
-    // Initialize posts list if empty
     if (posts.isEmpty) {
       posts.value = [];
     }
     
-    // Initialize user post data if empty
     if (userPostData.isEmpty) {
       userPostData.value = {'post_count': 0};
     }
     
-    // Initialize searches structure if empty
     if (searches.isEmpty) {
       searches.value = [];
     }
@@ -98,14 +95,17 @@ class AccountDataProvider extends GetxController {
     _rebuildSearchesMap();
   }
 
-  // Update methods that keep HashMaps in sync
-  void updateFollowers(Map<String, dynamic> newFollowers) {
+  // Update entire followers list
+  void updateFollowers(List<Map<String, dynamic>> newFollowers) {
     followers.value = newFollowers;
+    followerCount.value = newFollowers.length;
     _rebuildFollowersMap();
   }
 
-  void updateFollowing(Map<String, dynamic> newFollowing) {
+  // Update entire following list
+  void updateFollowing(List<Map<String, dynamic>> newFollowing) {
     following.value = newFollowing;
+    followingCount.value = newFollowing.length;
     _rebuildFollowingMap();
   }
 
@@ -120,44 +120,41 @@ class AccountDataProvider extends GetxController {
     userPostData.value = newUserPostData;
   }
 
-  // Methods to add/remove individual items
-  void addFollower(String username) {
-    if (!isFollower(username)) {
-      final List<String> users = List<String>.from(followers['users'] ?? []);
-      users.add(username);
-      followers['users'] = users;
-      followers['count'] = users.length;
-      _followersMap[username] = true;
+  // Add a follower to the list (usually from realtime updates)
+  void addFollower(Map<String, dynamic> follower) {
+    if (follower['follower_id'] != null && !isFollower(follower['follower_id'])) {
+      followers.add(follower);
+      _followersMap[follower['follower_id']] = true;
+      followerCount.value = followers.length;
     }
   }
 
-  void removeFollower(String username) {
-    if (isFollower(username)) {
-      final List<String> users = List<String>.from(followers['users'] ?? []);
-      users.remove(username);
-      followers['users'] = users;
-      followers['count'] = users.length;
-      _followersMap.remove(username);
+  // Remove a follower from the list (usually from realtime updates)
+  void removeFollower(String userId) {
+    final index = followers.indexWhere((f) => f['follower_id'] == userId);
+    if (index != -1) {
+      followers.removeAt(index);
+      _followersMap.remove(userId);
+      followerCount.value = followers.length;
     }
   }
 
-  void addFollowing(String username) {
-    if (!isFollowing(username)) {
-      final List<String> users = List<String>.from(following['users'] ?? []);
-      users.add(username);
-      following['users'] = users;
-      following['count'] = users.length;
-      _followingMap[username] = true;
+  // Add a following to the list (usually from realtime updates)
+  void addFollowing(Map<String, dynamic> followingUser) {
+    if (followingUser['following_id'] != null && !isFollowing(followingUser['following_id'])) {
+      following.add(followingUser);
+      _followingMap[followingUser['following_id']] = true;
+      followingCount.value = following.length;
     }
   }
 
-  void removeFollowing(String username) {
-    if (isFollowing(username)) {
-      final List<String> users = List<String>.from(following['users'] ?? []);
-      users.remove(username);
-      following['users'] = users;
-      following['count'] = users.length;
-      _followingMap.remove(username);
+  // Remove a following from the list (usually from realtime updates)
+  void removeFollowing(String userId) {
+    final index = following.indexWhere((f) => f['following_id'] == userId);
+    if (index != -1) {
+      following.removeAt(index);
+      _followingMap.remove(userId);
+      followingCount.value = following.length;
     }
   }
 
@@ -186,15 +183,19 @@ class AccountDataProvider extends GetxController {
   // Private methods to rebuild HashMaps from primary structures
   void _rebuildFollowersMap() {
     _followersMap.clear();
-    for (final username in followersList) {
-      _followersMap[username] = true;
+    for (final follower in followers) {
+      if (follower['follower_id'] != null) {
+        _followersMap[follower['follower_id']] = true;
+      }
     }
   }
 
   void _rebuildFollowingMap() {
     _followingMap.clear();
-    for (final username in followingList) {
-      _followingMap[username] = true;
+    for (final followingUser in following) {
+      if (followingUser['following_id'] != null) {
+        _followingMap[followingUser['following_id']] = true;
+      }
     }
   }
 
@@ -222,12 +223,154 @@ class AccountDataProvider extends GetxController {
     avatar.value = '';
     email.value = '';
     googleAvatar.value = '';
+    followers.clear();
+    following.clear();
+    followerCount.value = 0;
+    followingCount.value = 0;
     searches.clear();
     posts.clear();
     userPostData.value = {'post_count': 0};
     
     // Reset social data structures to defaults
     initializeDefaultStructures();
+  }
+
+  /// Load followers data for the current user
+  Future<void> loadFollowers(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      
+      debugPrint('Loading followers for user $userId');
+      
+      // First, count followers directly from the follows table
+      final countResponse = await supabaseService.client
+        .from('follows')
+        .select()
+        .eq('following_id', userId);
+      
+      final int directFollowerCount = (countResponse as List).length;
+      debugPrint('Direct follower count from follows table: $directFollowerCount');
+      
+      // Then get detailed follower info from the RPC function
+      final response = await supabaseService.client.rpc(
+        'get_followers',
+        params: {'p_user_id': userId},
+      );
+      
+      debugPrint('Followers RPC response: $response');
+        
+      if (response != null) {
+        final followersList = List<Map<String, dynamic>>.from(response);
+        
+        // Verify we have the correct data structure
+        for (var follower in followersList.take(3)) {
+          debugPrint('Follower sample: $follower');
+        }
+        
+        followers.value = followersList;
+        followerCount.value = followersList.length;
+        _rebuildFollowersMap();
+        
+        // If counts don't match, show warning
+        if (followersList.length != directFollowerCount) {
+          debugPrint('WARNING: Follower count mismatch - RPC: ${followersList.length}, Direct: $directFollowerCount');
+        }
+        
+        debugPrint('Set follower count to: ${followerCount.value}');
+      } else {
+        debugPrint('Empty response from get_followers RPC, using direct count');
+        followers.value = [];
+        followerCount.value = directFollowerCount;
+      }
+    } catch (e) {
+      debugPrint('Error loading followers: $e');
+      // Try direct count as fallback
+      try {
+        final supabaseService = Get.find<SupabaseService>();
+        final countResponse = await supabaseService.client
+          .from('follows')
+          .select()
+          .eq('following_id', userId);
+          
+        final int directFollowerCount = (countResponse as List).length;
+        followers.value = [];
+        followerCount.value = directFollowerCount;
+        debugPrint('Set follower count from fallback: $directFollowerCount');
+      } catch (fallbackError) {
+        debugPrint('Fallback follower count also failed: $fallbackError');
+        followers.value = [];
+        followerCount.value = 0;
+      }
+    }
+  }
+
+  /// Load following data for the current user
+  Future<void> loadFollowing(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      
+      debugPrint('Loading following for user $userId');
+      
+      // First, count following directly from the follows table
+      final countResponse = await supabaseService.client
+        .from('follows')
+        .select()
+        .eq('follower_id', userId);
+      
+      final int directFollowingCount = (countResponse as List).length;
+      debugPrint('Direct following count from follows table: $directFollowingCount');
+      
+      // Then get detailed following info from the RPC function
+      final response = await supabaseService.client.rpc(
+        'get_following',
+        params: {'p_user_id': userId},
+      );
+      
+      debugPrint('Following RPC response: $response');
+        
+      if (response != null) {
+        final followingList = List<Map<String, dynamic>>.from(response);
+        
+        // Verify we have the correct data structure
+        for (var following in followingList.take(3)) {
+          debugPrint('Following sample: $following');
+        }
+        
+        following.value = followingList;
+        followingCount.value = followingList.length;
+        _rebuildFollowingMap();
+        
+        // If counts don't match, show warning
+        if (followingList.length != directFollowingCount) {
+          debugPrint('WARNING: Following count mismatch - RPC: ${followingList.length}, Direct: $directFollowingCount');
+        }
+        
+        debugPrint('Set following count to: ${followingCount.value}');
+      } else {
+        debugPrint('Empty response from get_following RPC, using direct count');
+        following.value = [];
+        followingCount.value = directFollowingCount;
+      }
+    } catch (e) {
+      debugPrint('Error loading following: $e');
+      // Try direct count as fallback
+      try {
+        final supabaseService = Get.find<SupabaseService>();
+        final countResponse = await supabaseService.client
+          .from('follows')
+          .select()
+          .eq('follower_id', userId);
+          
+        final int directFollowingCount = (countResponse as List).length;
+        following.value = [];
+        followingCount.value = directFollowingCount;
+        debugPrint('Set following count from fallback: $directFollowingCount');
+      } catch (fallbackError) {
+        debugPrint('Fallback following count also failed: $fallbackError');
+        following.value = [];
+        followingCount.value = 0;
+      }
+    }
   }
   
   /// Load user posts from the posts table
@@ -249,7 +392,7 @@ class AccountDataProvider extends GetxController {
       userPostData['post_count'] = postsList.length;
       
       debugPrint('Loaded ${posts.length} posts for user $userId');
-        } catch (e) {
+    } catch (e) {
       debugPrint('Error loading user posts: $e');
       posts.value = [];
     }

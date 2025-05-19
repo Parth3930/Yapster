@@ -6,6 +6,8 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/routes/app_pages.dart';
+import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
+import 'package:yapster/app/core/models/follow_type.dart';
 
 class ProfileController extends GetxController {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
@@ -391,5 +393,61 @@ class ProfileController extends GetxController {
     usernameController.dispose();
     bioController.dispose();
     super.onClose();
+  }
+
+  // Refreshes follower and following counts for the current user
+  Future<void> refreshFollowData() async {
+    try {
+      final userId = _supabaseService.currentUser.value?.id;
+      if (userId == null) return;
+      
+      debugPrint('Refreshing followers and following data for current user');
+      
+      // Refresh followers and following lists
+      await _accountDataProvider.loadFollowers(userId);
+      await _accountDataProvider.loadFollowing(userId);
+      
+      debugPrint('Follow data refreshed successfully');
+    } catch (e) {
+      debugPrint('Error refreshing follow data: $e');
+    }
+  }
+  
+  // Opens a list of followers for the current user
+  void openFollowersList() {
+    final userId = _supabaseService.currentUser.value?.id;
+    if (userId == null) return;
+    
+    final nickname = _accountDataProvider.nickname.value.isEmpty 
+        ? 'User' 
+        : _accountDataProvider.nickname.value;
+        
+    Get.to(
+      () => FollowListView(
+        userId: userId,
+        type: FollowType.followers,
+        title: '$nickname\'s Followers',
+      ),
+      transition: Transition.rightToLeft,
+    );
+  }
+  
+  // Opens a list of users that the current user is following
+  void openFollowingList() {
+    final userId = _supabaseService.currentUser.value?.id;
+    if (userId == null) return;
+    
+    final nickname = _accountDataProvider.nickname.value.isEmpty 
+        ? 'User' 
+        : _accountDataProvider.nickname.value;
+        
+    Get.to(
+      () => FollowListView(
+        userId: userId,
+        type: FollowType.following,
+        title: '$nickname is Following',
+      ),
+      transition: Transition.rightToLeft,
+    );
   }
 }

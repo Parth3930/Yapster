@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/core/theme/theme_controller.dart';
 import 'package:yapster/app/core/values/colors.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
@@ -14,7 +13,6 @@ class EditProfileView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = Get.find<ThemeController>();
     final profileController = Get.find<ProfileController>();
 
     return Theme(
@@ -34,12 +32,13 @@ class EditProfileView extends StatelessWidget {
                 child: Column(
                   children: [
                     SizedBox(height: 30),
-                    Obx(
-                      () => ProfileAvatarWidget(
-                        selectedImage: profileController.selectedImage.value,
-                        onTap: () async => await profileController.pickImage(),
-                        isLoaded: profileController.isAvatarLoaded.value,
-                      ),
+                    GetX<ProfileController>(
+                      builder:
+                          (controller) => ProfileAvatarWidget(
+                            selectedImage: controller.selectedImage.value,
+                            onTap: () async => await controller.pickImage(),
+                            isLoaded: controller.isAvatarLoaded.value,
+                          ),
                     ),
                     SizedBox(height: ProfileConstants.defaultSpacing * 2),
                     Padding(
@@ -102,24 +101,22 @@ class EditProfileView extends StatelessWidget {
                 ),
               ),
             ),
-            Obx(
-              () =>
-                  profileController.isLoading.value
-                      ? CircularProgressIndicator(
-                        color: ProfileConstants.primaryBlue,
-                      )
-                      : CustomButton(
-                        text: "Update Profile",
-                        width: 300,
-                        backgroundColor: ProfileConstants.primaryBlue,
-                        textColor:
-                            themeController.isDarkMode
-                                ? AppColors.textWhite
-                                : AppColors.textDark,
-                        onPressed: () async {
-                          await profileController.updateFullProfile();
-                        },
-                      ),
+            GetX<ProfileController>(
+              builder:
+                  (controller) =>
+                      controller.isLoading.value
+                          ? CircularProgressIndicator(
+                            color: ProfileConstants.primaryBlue,
+                          )
+                          : CustomButton(
+                            text: "Update Profile",
+                            width: 300,
+                            backgroundColor: ProfileConstants.primaryBlue,
+                            textColor: AppColors.textDark,
+                            onPressed: () async {
+                              await controller.updateFullProfile();
+                            },
+                          ),
             ),
             SizedBox(height: 40),
           ],
