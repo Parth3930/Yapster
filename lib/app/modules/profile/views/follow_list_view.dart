@@ -17,8 +17,8 @@ class FollowListView extends StatefulWidget {
     required this.userId,
     required this.type,
     required this.title,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<FollowListView> createState() => _FollowListViewState();

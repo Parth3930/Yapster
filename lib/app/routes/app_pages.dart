@@ -6,6 +6,8 @@ import 'package:yapster/app/modules/chat/bindings/chat_binding.dart';
 import 'package:yapster/app/modules/chat/views/chat_view.dart';
 import 'package:yapster/app/modules/create/bindings/create_binding.dart';
 import 'package:yapster/app/modules/create/views/create_view.dart';
+import 'package:yapster/app/modules/error/bindings/error_binding.dart';
+import 'package:yapster/app/modules/error/views/error_view.dart';
 import 'package:yapster/app/modules/explore/bindings/explore_binding.dart';
 import 'package:yapster/app/modules/explore/views/explore_view.dart';
 import 'package:yapster/app/modules/notifications/bindings/notifications_binding.dart';
@@ -168,6 +170,14 @@ class AppPages {
       opaque: true,
       preventDuplicates: true,
       popGesture: false,
+    ),
+    GetPage(
+      name: _Paths.ERROR,
+      page: () => const ErrorView(),
+      binding: ErrorBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
     ),
   ];
 }

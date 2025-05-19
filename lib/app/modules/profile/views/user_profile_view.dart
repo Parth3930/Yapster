@@ -5,6 +5,7 @@ import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 
 class UserProfileView extends StatelessWidget {
   final Map<String, dynamic> userData;
@@ -21,22 +22,93 @@ class UserProfileView extends StatelessWidget {
     final controller = Get.find<ExploreController>();
     final String userId = userData['user_id'] ?? '';
 
-    // Make follower count observable
+    // Make follower count observable for UI updates
     final RxInt followerCount = RxInt(userData['follower_count'] ?? 0);
+    final RxBool isLoadingFollow = true.obs;  // Start with loading state
+    
+    // Track follow state with a reactive variable - initialize with cached value
+    final RxBool isFollowing = RxBool(controller.isFollowingUser(userId));
 
     // Debug avatar info
     debugPrint('Building user profile with avatar: ${userData['avatar']}');
     debugPrint('Google avatar: ${userData['google_avatar']}');
 
     // Force refresh follower and following counts whenever the view is built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      controller.refreshUserFollowData(userId);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        // First check the follow state directly from the database
+        final actualFollowState = await controller.refreshFollowState(userId);
+        isFollowing.value = actualFollowState;
+        debugPrint('Initial follow state: ${isFollowing.value}');
+        
+        // Then update the follower count
+        await controller.refreshUserFollowData(userId).then((_) {
+          // Update the follower count based on the refreshed data
+          followerCount.value = controller.selectedUserProfile['follower_count'] ?? followerCount.value;
+          debugPrint('Profile refreshed - Updated follower count: ${followerCount.value}');
+        });
+      } finally {
+        // Allow button interaction after data is fetched
+        isLoadingFollow.value = false;
+      }
     });
+    
+    // Function to update follower count based on database values
+    Future<void> updateFollowerCount() async {
+      try {
+        // Get the actual count directly from the database
+        final response = await Get.find<SupabaseService>().client
+            .from('follows')
+            .select()
+            .eq('following_id', userId);
+            
+        final int actualFollowerCount = response.length;
+        
+        // Check if current follower count doesn't match the actual count
+        if (followerCount.value != actualFollowerCount) {
+          debugPrint('Updating follower count from ${followerCount.value} to $actualFollowerCount');
+          
+          // Update the local observable count
+          followerCount.value = actualFollowerCount;
+          
+          // Also update the userData map for consistency
+          userData['follower_count'] = actualFollowerCount;
+          
+          // Instead of directly updating the profile, use the controller's server-side function
+          try {
+            await controller.updateFollowerCountServerSide(userId, actualFollowerCount);
+          } catch (e) {
+            debugPrint('Server-side follower count update failed: $e');
+            // UI is already updated, so we can continue
+          }
+        }
+        
+        debugPrint('Follower count directly updated from DB: $actualFollowerCount');
+        
+        // Add a retry mechanism if the follower count is still not updated correctly
+        // This ensures a more robust count update
+        if (controller.selectedUserProfile.isNotEmpty && 
+            controller.selectedUserProfile['user_id'] == userId &&
+            controller.selectedUserProfile['follower_count'] != actualFollowerCount) {
+          
+          debugPrint('Updating selectedUserProfile follower count to $actualFollowerCount');
+          controller.selectedUserProfile['follower_count'] = actualFollowerCount;
+          
+          // Force UI update
+          controller.update();
+        }
+      } catch (e) {
+        debugPrint('Error updating follower count: $e');
+      }
+    }
 
     return Scaffold(
       appBar: CustomAppBar(title: "Profile"),
       body: RefreshIndicator(
-        onRefresh: () => controller.refreshUserFollowData(userId),
+        onRefresh: () async {
+          await controller.refreshUserFollowData(userId);
+          await updateFollowerCount();
+        },
         color: Color(0xff0060FF),
         child: Column(
           children: [
@@ -96,38 +168,33 @@ class UserProfileView extends StatelessWidget {
                   // Follow/Unfollow button
                   Obx(
                     () => ElevatedButton(
-                      onPressed: () async {
-                        // Get the previous state to determine if we're following or unfollowing
-                        final wasFollowing = controller.isFollowingUser(userId);
-                        
-                        // Show loading indicator using EasyLoading
-                        EasyLoading.show(status: 'Processing...');
-                        
-                        // Toggle follow state
-                        await controller.toggleFollowUser(userId);
-                        
-                        // Close loading indicator
-                        EasyLoading.dismiss();
-                        
-                        // Instantly update follower count in the UI
-                        if (wasFollowing) {
-                          // Unfollow - decrease count
-                          if (followerCount.value > 0) {
-                            followerCount.value--;
-                            userData['follower_count'] = followerCount.value;
-                          }
-                        } else {
-                          // Follow - increase count
-                          followerCount.value++;
-                          userData['follower_count'] = followerCount.value;
+                      onPressed: isLoadingFollow.value ? null : () async {
+                        try {
+                          // Set loading state
+                          isLoadingFollow.value = true;
+                          
+                          // Get the previous state
+                          final wasFollowing = isFollowing.value;
+                          debugPrint('Toggle follow - Current state: ' + (wasFollowing ? 'Following' : 'Not following'));
+                          
+                          // Toggle follow state
+                          await controller.toggleFollowUser(userId);
+                          
+                          // Update follower count directly from the database for accuracy
+                          await updateFollowerCount();
+                          
+                          // Update the follow state after the action
+                          isFollowing.value = await controller.refreshFollowState(userId);
+                          
+                          debugPrint('Follow/unfollow action completed - New follower count: ${followerCount.value}, New follow state: ${isFollowing.value}');
+                        } finally {
+                          // Always reset loading state
+                          isLoadingFollow.value = false;
                         }
-                        
-                        // Force UI refresh to update the button state
-                        controller.update();
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
-                            controller.isFollowingUser(userId)
+                            isFollowing.value
                                 ? Colors.grey[800]
                                 : Color(0xff0060FF),
                         minimumSize: Size(double.infinity, 40),
@@ -138,18 +205,30 @@ class UserProfileView extends StatelessWidget {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            controller.isFollowingUser(userId)
-                                ? Icons.check
-                                : Icons.add,
-                            size: 16,
-                            color: Colors.white,
-                          ),
+                          if (isLoadingFollow.value)
+                            SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              )
+                            )
+                          else
+                            Icon(
+                              isFollowing.value
+                                  ? Icons.check
+                                  : Icons.add,
+                              size: 16,
+                              color: Colors.white,
+                            ),
                           SizedBox(width: 8),
                           Text(
-                            controller.isFollowingUser(userId)
-                                ? "Unfollow"
-                                : "Follow",
+                            isLoadingFollow.value
+                                ? "Processing..."
+                                : isFollowing.value
+                                    ? "Unfollow"
+                                    : "Follow",
                             style: TextStyle(color: Colors.white),
                           ),
                         ],
@@ -247,7 +326,7 @@ class UserProfileView extends StatelessWidget {
   }
 
   Widget _buildFollowersStats(int followerCount) {
-    debugPrint('Displaying follower count: $followerCount');
+    debugPrint('Displaying follower count in UI: $followerCount');
     return _buildStatColumn(followerCount.toString(), 'Followers');
   }
 

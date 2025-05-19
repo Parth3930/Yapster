@@ -7,6 +7,7 @@ import 'package:yapster/app/routes/app_pages.dart';
 import '../controllers/profile_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 
 class ProfileView extends GetView<ProfileController> {
   const ProfileView({super.key});
@@ -14,15 +15,22 @@ class ProfileView extends GetView<ProfileController> {
   @override
   Widget build(BuildContext context) {
     final accountDataProvider = Get.find<AccountDataProvider>();
-    // Preload avatar images when view is built
+
+    // This will run when the view is built or becomes visible after navigation
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Preload avatar images  
       if (accountDataProvider.avatar.value.isNotEmpty ||
           accountDataProvider.googleAvatar.value.isNotEmpty) {
         AvatarUtils.preloadAvatarImages(accountDataProvider);
         controller.isAvatarLoaded.value = true;
       }
-      // Force refresh follower/following counts
+      
+      // IMPORTANT: Always refresh follower/following counts directly from database
       controller.refreshFollowData();
+      
+      // Debug info to verify counts
+      debugPrint('Profile View: Current follower count: ${accountDataProvider.followerCount}');
+      debugPrint('Profile View: Current following count: ${accountDataProvider.followingCount}');
     });
 
     return Scaffold(
@@ -133,7 +141,8 @@ class ProfileView extends GetView<ProfileController> {
                                 : accountDataProvider.bio.string,
                             style: TextStyle(
                               fontSize: 15,
-                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[500],
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -255,6 +264,22 @@ class ProfileView extends GetView<ProfileController> {
         children: [
           Obx(
             () {
+              // Force a database count check whenever this widget is built
+              final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
+              if (currentUserId != null) {
+                // Calculate and update the followingCount directly from the database
+                Get.find<SupabaseService>().client.from('follows')
+                  .select()
+                  .eq('follower_id', currentUserId)
+                  .then((response) {
+                    final actualCount = (response as List).length;
+                    if (provider.followingCount.value != actualCount) {
+                      debugPrint('Updating following count from ${provider.followingCount.value} to $actualCount');
+                      provider.followingCount.value = actualCount;
+                    }
+                  });
+              }
+              
               debugPrint('Displaying following count: ${provider.followingCount}');
               return Text(
                 provider.followingCount.toString(),

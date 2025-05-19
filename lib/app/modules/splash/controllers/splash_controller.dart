@@ -5,10 +5,13 @@ import '../../../core/utils/supabase_service.dart';
 import '../../../routes/app_pages.dart';
 
 class SplashController extends GetxController {
-  final SupabaseService _supabaseService = Get.find<SupabaseService>();
   final _accountDataProvider = Get.find<AccountDataProvider>();
   final RxBool isLoading = false.obs;
   final RxBool isInitialized = false.obs;
+  
+  // Don't find SupabaseService immediately on initialization
+  late SupabaseService _supabaseService;
+  bool _serviceChecked = false;
 
   @override
   void onInit() {
@@ -21,6 +24,14 @@ class SplashController extends GetxController {
     try {
       debugPrint('Starting auth check and navigation');
       isLoading.value = true;
+
+      // Check if services are ready
+      if (!await _ensureServicesReady()) {
+        // Services not ready yet, retry in a moment
+        await Future.delayed(const Duration(milliseconds: 500));
+        checkAuthAndNavigate();
+        return;
+      }
 
       // Check if Supabase client has a current user
       final currentUser = _supabaseService.client.auth.currentUser;
@@ -96,11 +107,42 @@ class SplashController extends GetxController {
       Get.offAllNamed(Routes.HOME);
     } catch (e) {
       debugPrint('Error in splash controller: $e');
-      _supabaseService.isAuthenticated.value = false;
-      Get.offAllNamed(Routes.LOGIN);
+      // Handle case where SupabaseService might not be initialized yet
+      if (_serviceChecked) {
+        try {
+          _supabaseService.isAuthenticated.value = false;
+        } catch (_) {
+          // Ignore if service is not available
+        }
+        Get.offAllNamed(Routes.LOGIN);
+      } else {
+        // If services not ready yet, retry after a delay
+        await Future.delayed(const Duration(milliseconds: 500));
+        checkAuthAndNavigate();
+      }
     } finally {
       isLoading.value = false;
       isInitialized.value = true;
+    }
+  }
+
+  // Helper method to safely check if services are ready
+  Future<bool> _ensureServicesReady() async {
+    if (_serviceChecked) return true;
+    
+    // Check if SupabaseService is available
+    if (!Get.isRegistered<SupabaseService>()) {
+      debugPrint('SupabaseService not available yet, waiting...');
+      return false;
+    }
+    
+    try {
+      _supabaseService = Get.find<SupabaseService>();
+      _serviceChecked = true;
+      return true;
+    } catch (e) {
+      debugPrint('Error finding SupabaseService: $e');
+      return false;
     }
   }
 }

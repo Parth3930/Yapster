@@ -34,6 +34,12 @@ class ProfileController extends GetxController {
     preloadAvatarImages();
     _loadLastUpdateTimeFromPrefs();
     fetchUserData();
+    
+    // Force refresh follower/following counts from the database
+    // This will ensure the UI shows the correct counts
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      refreshFollowData();
+    });
   }
   
   /// Loads the last username update time from SharedPreferences
@@ -403,11 +409,53 @@ class ProfileController extends GetxController {
       
       debugPrint('Refreshing followers and following data for current user');
       
-      // Refresh followers and following lists
+      // Directly query the database for follower count
+      final followerResponse = await _supabaseService.client
+        .from('follows')
+        .select()
+        .eq('following_id', userId);
+      
+      final int followerCount = (followerResponse as List).length;
+      
+      // Directly query the database for following count
+      final followingResponse = await _supabaseService.client
+        .from('follows')
+        .select()
+        .eq('follower_id', userId);
+      
+      final int followingCount = (followingResponse as List).length;
+      
+      debugPrint('DIRECT DATABASE COUNT - followers: $followerCount, following: $followingCount');
+      
+      // Update the counts in the accountDataProvider
+      _accountDataProvider.followerCount.value = followerCount;
+      _accountDataProvider.followingCount.value = followingCount;
+      
+      // Update the counts in the database
+      await _supabaseService.client
+        .from('profiles')
+        .update({
+          'follower_count': followerCount,
+          'following_count': followingCount
+        })
+        .eq('user_id', userId);
+      
+      // Also refresh the detailed follower and following lists for complete data
       await _accountDataProvider.loadFollowers(userId);
       await _accountDataProvider.loadFollowing(userId);
       
-      debugPrint('Follow data refreshed successfully');
+      // Verify the values again after loadFollowers/loadFollowing
+      debugPrint('AFTER RELOAD - AccountDataProvider follower count: ${_accountDataProvider.followerCount.value}');
+      debugPrint('AFTER RELOAD - AccountDataProvider following count: ${_accountDataProvider.followingCount.value}');
+      
+      // Make sure the values are consistent by doing a final direct update
+      _accountDataProvider.followerCount.value = followerCount;
+      _accountDataProvider.followingCount.value = followingCount;
+      
+      debugPrint('Follow data refreshed successfully. Follower count: $followerCount, Following count: $followingCount');
+      
+      // Force UI update
+      update();
     } catch (e) {
       debugPrint('Error refreshing follow data: $e');
     }

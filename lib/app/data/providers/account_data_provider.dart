@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:flutter/foundation.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
+import 'package:yapster/app/core/utils/db_cache_service.dart';
 
 class AccountDataProvider extends GetxController {
   final RxString username = ''.obs;
@@ -239,49 +240,40 @@ class AccountDataProvider extends GetxController {
   Future<void> loadFollowers(String userId) async {
     try {
       final supabaseService = Get.find<SupabaseService>();
+      final dbCacheService = Get.find<DbCacheService>();
       
       debugPrint('Loading followers for user $userId');
       
-      // First, count followers directly from the follows table
-      final countResponse = await supabaseService.client
-        .from('follows')
-        .select()
-        .eq('following_id', userId);
-      
-      final int directFollowerCount = (countResponse as List).length;
-      debugPrint('Direct follower count from follows table: $directFollowerCount');
-      
-      // Then get detailed follower info from the RPC function
-      final response = await supabaseService.client.rpc(
-        'get_followers',
-        params: {'p_user_id': userId},
+      // Get followers from cache or fetch from API
+      final followersList = await dbCacheService.getFollowers(
+        userId,
+        () async {
+          // Fetch followers from the database
+          final response = await supabaseService.client.rpc(
+            'get_followers',
+            params: {'p_user_id': userId},
+          );
+          
+          if (response == null) {
+            // Fallback to direct count
+            final countResponse = await supabaseService.client
+              .from('follows')
+              .select()
+              .eq('following_id', userId);
+            
+            return [];
+          }
+          
+          return List<Map<String, dynamic>>.from(response);
+        },
       );
       
-      debugPrint('Followers RPC response: $response');
-        
-      if (response != null) {
-        final followersList = List<Map<String, dynamic>>.from(response);
-        
-        // Verify we have the correct data structure
-        for (var follower in followersList.take(3)) {
-          debugPrint('Follower sample: $follower');
-        }
-        
-        followers.value = followersList;
-        followerCount.value = followersList.length;
-        _rebuildFollowersMap();
-        
-        // If counts don't match, show warning
-        if (followersList.length != directFollowerCount) {
-          debugPrint('WARNING: Follower count mismatch - RPC: ${followersList.length}, Direct: $directFollowerCount');
-        }
-        
-        debugPrint('Set follower count to: ${followerCount.value}');
-      } else {
-        debugPrint('Empty response from get_followers RPC, using direct count');
-        followers.value = [];
-        followerCount.value = directFollowerCount;
-      }
+      // Update the data
+      followers.value = followersList;
+      followerCount.value = followersList.length;
+      _rebuildFollowersMap();
+      
+      debugPrint('Set follower count to: ${followerCount.value}');
     } catch (e) {
       debugPrint('Error loading followers: $e');
       // Try direct count as fallback
@@ -308,49 +300,40 @@ class AccountDataProvider extends GetxController {
   Future<void> loadFollowing(String userId) async {
     try {
       final supabaseService = Get.find<SupabaseService>();
+      final dbCacheService = Get.find<DbCacheService>();
       
       debugPrint('Loading following for user $userId');
       
-      // First, count following directly from the follows table
-      final countResponse = await supabaseService.client
-        .from('follows')
-        .select()
-        .eq('follower_id', userId);
-      
-      final int directFollowingCount = (countResponse as List).length;
-      debugPrint('Direct following count from follows table: $directFollowingCount');
-      
-      // Then get detailed following info from the RPC function
-      final response = await supabaseService.client.rpc(
-        'get_following',
-        params: {'p_user_id': userId},
+      // Get following from cache or fetch from API
+      final followingList = await dbCacheService.getFollowing(
+        userId,
+        () async {
+          // Fetch following from the database
+          final response = await supabaseService.client.rpc(
+            'get_following',
+            params: {'p_user_id': userId},
+          );
+          
+          if (response == null) {
+            // Fallback to direct count
+            final countResponse = await supabaseService.client
+              .from('follows')
+              .select()
+              .eq('follower_id', userId);
+              
+            return [];
+          }
+          
+          return List<Map<String, dynamic>>.from(response);
+        },
       );
       
-      debugPrint('Following RPC response: $response');
-        
-      if (response != null) {
-        final followingList = List<Map<String, dynamic>>.from(response);
-        
-        // Verify we have the correct data structure
-        for (var following in followingList.take(3)) {
-          debugPrint('Following sample: $following');
-        }
-        
-        following.value = followingList;
-        followingCount.value = followingList.length;
-        _rebuildFollowingMap();
-        
-        // If counts don't match, show warning
-        if (followingList.length != directFollowingCount) {
-          debugPrint('WARNING: Following count mismatch - RPC: ${followingList.length}, Direct: $directFollowingCount');
-        }
-        
-        debugPrint('Set following count to: ${followingCount.value}');
-      } else {
-        debugPrint('Empty response from get_following RPC, using direct count');
-        following.value = [];
-        followingCount.value = directFollowingCount;
-      }
+      // Update the data
+      following.value = followingList;
+      followingCount.value = followingList.length;
+      _rebuildFollowingMap();
+      
+      debugPrint('Set following count to: ${followingCount.value}');
     } catch (e) {
       debugPrint('Error loading following: $e');
       // Try direct count as fallback
@@ -377,14 +360,23 @@ class AccountDataProvider extends GetxController {
   Future<void> loadUserPosts(String userId) async {
     try {
       final supabaseService = Get.find<SupabaseService>();
+      final dbCacheService = Get.find<DbCacheService>();
       
-      final response = await supabaseService.client
-        .from('posts')
-        .select()
-        .eq('user_id', userId)
-        .order('created_at', ascending: false);
-        
-      final postsList = List<Map<String, dynamic>>.from(response);
+      // Get posts from cache or fetch from API
+      final postsList = await dbCacheService.getUserPosts(
+        userId,
+        () async {
+          // Fetch posts from the database
+          final response = await supabaseService.client
+            .from('posts')
+            .select()
+            .eq('user_id', userId)
+            .order('created_at', ascending: false);
+            
+          return List<Map<String, dynamic>>.from(response);
+        },
+      );
+      
       posts.value = postsList;
       _rebuildPostsMap();
       
@@ -398,21 +390,31 @@ class AccountDataProvider extends GetxController {
     }
   }
   
-  /// Load searches from database
+  /// Load searches from database with caching
   Future<void> loadSearches() async {
     try {
       final supabaseService = Get.find<SupabaseService>();
-      final userId = supabaseService.currentUser.value?.id;
+      final dbCacheService = Get.find<DbCacheService>();
       
+      final userId = supabaseService.currentUser.value?.id;
       if (userId == null) return;
       
-      final userData = await supabaseService.client
-        .from('profiles')
-        .select('searches')
-        .eq('user_id', userId)
-        .single();
-        
-      if (userData.isNotEmpty && userData['searches'] != null) {
+      // Try to get profile data from cache or API
+      final userData = await dbCacheService.getUserProfile(
+        userId,
+        () async {
+          // Fetch from database
+          final profile = await supabaseService.client
+            .from('profiles')
+            .select('searches')
+            .eq('user_id', userId)
+            .single();
+            
+          return profile;
+        }
+      );
+      
+      if (userData != null && userData.isNotEmpty && userData['searches'] != null) {
         List<dynamic> searchesList = userData['searches'];
         searches.value = List<Map<String, dynamic>>.from(
           searchesList.map((item) => Map<String, dynamic>.from(item))

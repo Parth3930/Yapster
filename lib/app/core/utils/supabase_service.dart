@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,12 +6,20 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
+import 'package:yapster/app/core/utils/db_cache_service.dart';
 import '../../routes/app_pages.dart';
 
 class SupabaseService extends GetxService {
   static SupabaseService get to => Get.find<SupabaseService>();
   AccountDataProvider get _accountDataProvider =>
       Get.find<AccountDataProvider>();
+  
+  // Get cache service for optimizations
+  DbCacheService? _dbCacheService;
+  DbCacheService get dbCacheService {
+    _dbCacheService ??= Get.find<DbCacheService>();
+    return _dbCacheService!;
+  }
 
   late final SupabaseClient client;
 
@@ -26,6 +35,20 @@ class SupabaseService extends GetxService {
   // Realtime subscriptions
   RealtimeChannel? _profileSubscription;
   final RxBool isRealtimeConnected = false.obs;
+
+  // Batch request settings
+  static const int maxBatchSize = 20;
+  static const Duration batchTimeWindow = Duration(milliseconds: 300);
+  final Map<String, List<Future<dynamic> Function()>> _pendingBatches = {};
+  final Map<String, Timer> _batchTimers = {};
+
+  // Rate limiting - prevent excessive calls
+  final Map<String, DateTime> _lastRequestTime = {};
+  static const Duration minRequestInterval = Duration(seconds: 2);
+
+  // Request optimization settings
+  static const bool _optimizeFeedRequests = true;
+  static const bool _usePreemptiveLoading = true;
 
   /// Initializes the Supabase service by loading environment variables and setting up the Supabase client
   Future<SupabaseService> init() async {
@@ -46,8 +69,12 @@ class SupabaseService extends GetxService {
         throw Exception('Missing Supabase URL or Anon Key in environment');
       }
 
-      // Initialize Supabase
-      await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+      // Initialize Supabase with optimal settings for mobile
+      await Supabase.initialize(
+        url: supabaseUrl, 
+        anonKey: supabaseAnonKey,
+        debug: false, // Disable debug logs in production
+      );
 
       client = Supabase.instance.client;
       currentUser.value = client.auth.currentUser;
@@ -106,6 +133,7 @@ class SupabaseService extends GetxService {
   }
 
   /// Sets up realtime subscriptions for the authenticated user's profile data
+  /// with optimized settings to reduce bandwidth usage
   void _setupRealtimeSubscriptions() {
     if (!isInitialized.value || currentUser.value == null) {
       debugPrint(
@@ -122,6 +150,7 @@ class SupabaseService extends GetxService {
 
     try {
       // Create a new subscription to the profiles table for this user
+      // but only subscribe to critical fields
       _profileSubscription = client
           .channel('public:profiles')
           .onPostgresChanges(
@@ -135,7 +164,7 @@ class SupabaseService extends GetxService {
             ),
             callback: (payload) {
               debugPrint(
-                'Received realtime profile update: ${payload.newRecord}',
+                'Received realtime profile update',
               );
               _handleProfileUpdate(
                 Map<String, dynamic>.from(payload.newRecord),
@@ -163,87 +192,8 @@ class SupabaseService extends GetxService {
             }
           });
 
-      // Create a separate subscription for posts table
-      client
-          .channel('public:posts')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.all, // Listen to all events
-            schema: 'public',
-            table: 'posts',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'user_id',
-              value: userId,
-            ),
-            callback: (payload) {
-              if (payload.eventType == PostgresChangeEvent.insert) {
-                debugPrint('Received new post: ${payload.newRecord}');
-                final newPost = Map<String, dynamic>.from(payload.newRecord);
-                _accountDataProvider.addPost(newPost);
-              } else if (payload.eventType == PostgresChangeEvent.delete) {
-                debugPrint('Received post deletion: ${payload.oldRecord}');
-                final oldPost = Map<String, dynamic>.from(payload.oldRecord);
-                if (oldPost['id'] != null) {
-                  _accountDataProvider.removePost(oldPost['id'].toString());
-                }
-              }
-            },
-          )
-          .subscribe((status, [err]) {
-            debugPrint('Realtime status for posts: $status, error: $err');
-          });
-          
-      // Subscribe to follows table for new followers (when this user is followed)
-      client
-          .channel('public:follows_as_following')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'follows',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'following_id',
-              value: userId,
-            ),
-            callback: (payload) {
-              debugPrint('Received follows update (as following): ${payload.eventType}');
-              
-              // Refresh followers list to keep UI in sync
-              _accountDataProvider.loadFollowers(userId).then((_) {
-                // Notify UI of change
-                debugPrint('Follower count updated to: ${_accountDataProvider.followerCount.value}');
-              });
-            },
-          )
-          .subscribe((status, [err]) {
-            debugPrint('Realtime status for follows_as_following: $status, error: $err');
-          });
-          
-      // Subscribe to follows table for new following (when this user follows someone)
-      client
-          .channel('public:follows_as_follower')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'follows',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'follower_id',
-              value: userId,
-            ),
-            callback: (payload) {
-              debugPrint('Received follows update (as follower): ${payload.eventType}');
-              
-              // Refresh following list to keep UI in sync
-              _accountDataProvider.loadFollowing(userId).then((_) {
-                // Notify UI of change
-                debugPrint('Following count updated to: ${_accountDataProvider.followingCount.value}');
-              });
-            },
-          )
-          .subscribe((status, [err]) {
-            debugPrint('Realtime status for follows_as_follower: $status, error: $err');
-          });
+      // Only subscribe to essential realtime events
+      // For other data like posts, use cached data with periodic refreshes
     } catch (e) {
       debugPrint('Error setting up realtime subscriptions: $e');
       isRealtimeConnected.value = false;
@@ -810,5 +760,204 @@ class SupabaseService extends GetxService {
     }
 
     return enhancedPost;
+  }
+
+  /// Optimize database fetch with caching and batching
+  Future<T> optimizedDbFetch<T>({
+    required String cacheKey,
+    required String cacheType,
+    required Future<T> Function() fetchFn,
+    Duration? maxAge,
+  }) async {
+    // Check rate limiting to prevent excessive calls
+    final now = DateTime.now();
+    final lastRequest = _lastRequestTime[cacheKey];
+    if (lastRequest != null && now.difference(lastRequest) < minRequestInterval) {
+      debugPrint('Rate limiting request: $cacheKey - Using cached data');
+      // Try to get from cache
+      try {
+        if (dbCacheService.isCachingEnabled.value) {
+          // Use direct fetch since we can't access private methods
+          switch (cacheType) {
+            case 'user_profile':
+              final result = await dbCacheService.getUserProfile(
+                cacheKey.split('_').last, 
+                () async => null,
+              );
+              if (result != null) return result as T;
+              break;
+            case 'user_posts':
+              final result = await dbCacheService.getUserPosts(
+                cacheKey.split('_').last,
+                () async => <Map<String, dynamic>>[],
+              );
+              if (result.isNotEmpty) return result as T;
+              break;
+            case 'followers':
+              final result = await dbCacheService.getFollowers(
+                cacheKey.split('_').last,
+                () async => <Map<String, dynamic>>[],
+              );
+              if (result.isNotEmpty) return result as T;
+              break;
+            case 'following':
+              final result = await dbCacheService.getFollowing(
+                cacheKey.split('_').last,
+                () async => <Map<String, dynamic>>[],
+              );
+              if (result.isNotEmpty) return result as T;
+              break;
+          }
+        }
+      } catch (_) {}
+    }
+    
+    // Update last request time
+    _lastRequestTime[cacheKey] = now;
+    
+    // For batch-eligible requests, add to batch queue
+    if (_shouldBatchRequest(cacheType)) {
+      return _addToBatch(cacheKey, cacheType, fetchFn);
+    }
+    
+    // For regular requests, use cache service
+    try {
+      switch (cacheType) {
+        case 'user_profile':
+          final result = await dbCacheService.getUserProfile(cacheKey.split('_').last, fetchFn as Future<Map<String, dynamic>?> Function());
+          return result as T;
+        case 'user_posts':
+          final result = await dbCacheService.getUserPosts(cacheKey.split('_').last, fetchFn as Future<List<Map<String, dynamic>>> Function());
+          return result as T;
+        case 'followers':
+          final result = await dbCacheService.getFollowers(cacheKey.split('_').last, fetchFn as Future<List<Map<String, dynamic>>> Function());
+          return result as T;
+        case 'following':
+          final result = await dbCacheService.getFollowing(cacheKey.split('_').last, fetchFn as Future<List<Map<String, dynamic>>> Function());
+          return result as T;
+        default:
+          return fetchFn();
+      }
+    } catch (e) {
+      debugPrint('Error in optimizedDbFetch for $cacheKey: $e');
+      return fetchFn(); // Fall back to direct fetch if cache fails
+    }
+  }
+  
+  /// Determine if a request should be batched
+  bool _shouldBatchRequest(String cacheType) {
+    return cacheType == 'user_posts' || 
+           cacheType == 'feed' || 
+           cacheType == 'explore_feed';
+  }
+  
+  /// Add a request to a batching queue
+  Future<T> _addToBatch<T>(
+    String cacheKey, 
+    String cacheType, 
+    Future<T> Function() fetchFn,
+  ) async {
+    // Create completer to return a future
+    final completer = Completer<T>();
+    
+    // Initialize batch list if it doesn't exist
+    if (!_pendingBatches.containsKey(cacheType)) {
+      _pendingBatches[cacheType] = [];
+      
+      // Start a timer to execute batch
+      _batchTimers[cacheType] = Timer(batchTimeWindow, () {
+        _executeBatch(cacheType);
+      });
+    }
+    
+    // Add fetch function to batch
+    _pendingBatches[cacheType]!.add(() async {
+      try {
+        final result = await fetchFn();
+        completer.complete(result);
+        return result;
+      } catch (e) {
+        completer.completeError(e);
+        return null;
+      }
+    });
+    
+    return completer.future;
+  }
+  
+  /// Execute a batch of requests
+  Future<void> _executeBatch(String batchType) async {
+    final batch = _pendingBatches.remove(batchType) ?? [];
+    _batchTimers.remove(batchType);
+    
+    if (batch.isEmpty) return;
+    
+    debugPrint('Executing batch of ${batch.length} $batchType requests');
+    
+    try {
+      // Execute batch in parallel with a reasonable limit
+      final chunks = _chunkList(batch, maxBatchSize);
+      for (final chunk in chunks) {
+        await Future.wait(chunk.map((fn) => fn()));
+      }
+    } catch (e) {
+      debugPrint('Error executing batch: $e');
+    }
+  }
+  
+  /// Split a list into smaller chunks
+  List<List<T>> _chunkList<T>(List<T> list, int chunkSize) {
+    final result = <List<T>>[];
+    for (var i = 0; i < list.length; i += chunkSize) {
+      final end = (i + chunkSize < list.length) ? i + chunkSize : list.length;
+      result.add(list.sublist(i, end));
+    }
+    return result;
+  }
+
+  /// Preload commonly accessed data to improve app performance
+  Future<void> preloadCommonData() async {
+    if (!isAuthenticated.value) return;
+    
+    final userId = currentUser.value!.id;
+    
+    try {
+      // Load user data in parallel
+      await Future.wait([
+        // Preload user profile
+        optimizedDbFetch(
+          cacheKey: 'profile_$userId',
+          cacheType: 'user_profile',
+          fetchFn: () async {
+            return await client
+                .from('profiles')
+                .select()
+                .eq('user_id', userId)
+                .single();
+          },
+        ),
+        
+        // Preload posts
+        optimizedDbFetch(
+          cacheKey: 'posts_$userId',
+          cacheType: 'user_posts',
+          fetchFn: () async {
+            // Only fetch basic data needed for feed view
+            final response = await client
+                .from('posts')
+                .select('id,created_at,post_type,title')
+                .eq('user_id', userId)
+                .order('created_at', ascending: false)
+                .limit(20);
+                
+            return List<Map<String, dynamic>>.from(response);
+          },
+        ),
+      ]);
+      
+      debugPrint('Preloaded common user data');
+    } catch (e) {
+      debugPrint('Error preloading data: $e');
+    }
   }
 }

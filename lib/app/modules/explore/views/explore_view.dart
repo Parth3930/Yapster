@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -150,14 +151,17 @@ class UserListItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      user['username'] != null ? '@${user['username']}' : '',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      (user['nickname'] != null && user['nickname'].toString().isNotEmpty) 
+                          ? user['nickname'] 
+                          : 'Yapper',
+                          style: TextStyle(fontFamily: GoogleFonts.inter().fontFamily, fontSize: 16, fontWeight: FontWeight.bold),
                     ),
-                    if (user['nickname'] != null &&
-                        user['nickname'].toString().isNotEmpty)
+                    
+                    if (user['username'] != null &&
+                        user['username'].toString().isNotEmpty)
                       Text(
-                        user['nickname'],
-                        style: TextStyle(color: Colors.grey[500]),
+                        '@${user['username']}',
+                        style:  TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[500]),
                       ),
                   ],
                 ),
@@ -200,13 +204,13 @@ class UserListItem extends StatelessWidget {
       radius: 24,
       backgroundColor: Colors.grey[300],
       backgroundImage: hasRegularAvatar
-          ? CachedNetworkImageProvider(user['avatar'])
+              ? CachedNetworkImageProvider(user['avatar'])
           : hasGoogleAvatar
               ? CachedNetworkImageProvider(user['google_avatar'])
               : null,
       child: (!hasRegularAvatar && !hasGoogleAvatar)
-          ? const Icon(Icons.person, color: Colors.white)
-          : null,
+              ? const Icon(Icons.person, color: Colors.white)
+              : null,
     );
   }
 }

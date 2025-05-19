@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/core/values/colors.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/global_widgets/custom_input.dart';
@@ -112,7 +111,7 @@ class EditProfileView extends StatelessWidget {
                             text: "Update Profile",
                             width: 300,
                             backgroundColor: ProfileConstants.primaryBlue,
-                            textColor: AppColors.textDark,
+                            textColor: Colors.white,
                             onPressed: () async {
                               await controller.updateFullProfile();
                             },
