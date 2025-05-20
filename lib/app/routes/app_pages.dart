@@ -4,6 +4,7 @@ import 'package:yapster/app/modules/account_setup/views/account_avatar.dart';
 import 'package:yapster/app/modules/account_setup/views/account_username_view.dart';
 import 'package:yapster/app/modules/chat/bindings/chat_binding.dart';
 import 'package:yapster/app/modules/chat/views/chat_view.dart';
+import 'package:yapster/app/modules/chat/views/chat_detail_view.dart';
 import 'package:yapster/app/modules/create/bindings/create_binding.dart';
 import 'package:yapster/app/modules/create/views/create_view.dart';
 import 'package:yapster/app/modules/error/bindings/error_binding.dart';
@@ -122,6 +123,14 @@ class AppPages {
       opaque: true,
       preventDuplicates: true,
       popGesture: false,
+    ),
+    GetPage(
+      name: _Paths.CHAT_DETAIL,
+      page: () => const ChatDetailView(),
+      binding: ChatBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
     ),
     GetPage(
       name: _Paths.EXPLORE,

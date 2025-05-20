@@ -4,7 +4,6 @@ import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 
 class UserProfileView extends StatelessWidget {
@@ -175,7 +174,7 @@ class UserProfileView extends StatelessWidget {
                           
                           // Get the previous state
                           final wasFollowing = isFollowing.value;
-                          debugPrint('Toggle follow - Current state: ' + (wasFollowing ? 'Following' : 'Not following'));
+                          debugPrint('Toggle follow - Current state: ${wasFollowing ? 'Following' : 'Not following'}');
                           
                           // Toggle follow state
                           await controller.toggleFollowUser(userId);

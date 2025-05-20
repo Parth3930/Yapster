@@ -7,6 +7,7 @@ import 'app/core/utils/storage_service.dart';
 import 'app/core/utils/api_service.dart';
 import 'app/core/utils/supabase_service.dart';
 import 'app/core/utils/db_cache_service.dart';
+import 'app/core/utils/encryption_service.dart';
 import 'app/data/providers/account_data_provider.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:flutter/services.dart';
@@ -103,6 +104,21 @@ Future<void> _initRemainingServices() async {
     });
     debugPrint('SupabaseService initialized in ${stopwatch.elapsedMilliseconds}ms');
     
+    // Initialize encryption service if user is logged in
+    final supabaseService = Get.find<SupabaseService>();
+    if (supabaseService.isAuthenticated.value && supabaseService.currentUser.value?.id != null) {
+      final userId = supabaseService.currentUser.value!.id;
+      await Get.putAsync(() => EncryptionService().init(userId))
+          .timeout(const Duration(seconds: 5), onTimeout: () {
+        throw TimeoutException('EncryptionService initialization timed out');
+      });
+      debugPrint('EncryptionService initialized in ${stopwatch.elapsedMilliseconds}ms');
+    } else {
+      // Still register the service without initialization
+      Get.put(EncryptionService());
+      debugPrint('EncryptionService registered (not initialized yet, waiting for login)');
+    }
+    
     // Initialize connectivity monitoring
     _setupConnectivityMonitoring();
     
@@ -179,6 +195,21 @@ class _MyAppState extends State<MyApp> {
       if (!Get.isRegistered<SupabaseService>()) {
         debugPrint('SupabaseService not found on hot reload, initializing');
         await Get.putAsync(() => SupabaseService().init());
+      }
+      
+      // Check if EncryptionService is available, initialize if not and user is logged in
+      if (!Get.isRegistered<EncryptionService>()) {
+        debugPrint('EncryptionService not found on hot reload');
+        // Register service without initialization
+        Get.put(EncryptionService());
+        
+        // Initialize if user is logged in
+        final supabaseService = Get.find<SupabaseService>();
+        if (supabaseService.isAuthenticated.value && supabaseService.currentUser.value?.id != null) {
+          final userId = supabaseService.currentUser.value!.id;
+          await Get.find<EncryptionService>().init(userId);
+          debugPrint('EncryptionService initialized on hot reload');
+        }
       }
     } catch (e) {
       debugPrint('Error ensuring services on hot reload: $e');

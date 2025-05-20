@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import '../controllers/error_controller.dart';
 
 class ErrorView extends GetView<ErrorController> {
-  const ErrorView({Key? key}) : super(key: key);
+  const ErrorView({super.key});
 
   @override
   Widget build(BuildContext context) {

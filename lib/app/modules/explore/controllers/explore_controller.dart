@@ -435,7 +435,7 @@ class ExploreController extends GetxController {
         .eq('follower_id', currentUserId)
         .eq('following_id', userId);
       
-      final bool isFollowing = response.length > 0;
+      final bool isFollowing = response.isNotEmpty;
       
       // If we're following but it's not in our cache, update the cache
       if (isFollowing && !_accountDataProvider.isFollowing(userId)) {

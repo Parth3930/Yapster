@@ -9,6 +9,7 @@ abstract class Routes {
   static const ACCOUNT_AVATAR_SETUP = _Paths.ACCOUNT_AVATAR_SETUP;
   static const PROFILE = _Paths.PROFILE;
   static const CHAT = _Paths.CHAT;
+  static const CHAT_DETAIL = _Paths.CHAT_DETAIL;
   static const EXPLORE = _Paths.EXPLORE;
   static const CREATE = _Paths.CREATE;
   static const EDIT_PROFILE = _Paths.EDIT_PROFILE;
@@ -25,6 +26,7 @@ abstract class _Paths {
   static const ACCOUNT_AVATAR_SETUP = '/account-setup-avatar';
   static const PROFILE = '/profile';
   static const CHAT = '/chat';
+  static const CHAT_DETAIL = '/chat/detail';
   static const EXPLORE = '/explore';
   static const CREATE = '/create';
   static const EDIT_PROFILE = '/edit-profile';
