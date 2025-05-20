@@ -46,10 +46,6 @@ class SupabaseService extends GetxService {
   final Map<String, DateTime> _lastRequestTime = {};
   static const Duration minRequestInterval = Duration(seconds: 2);
 
-  // Request optimization settings
-  static const bool _optimizeFeedRequests = true;
-  static const bool _usePreemptiveLoading = true;
-
   /// Initializes the Supabase service by loading environment variables and setting up the Supabase client
   Future<SupabaseService> init() async {
     try {

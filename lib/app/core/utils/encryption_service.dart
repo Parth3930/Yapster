@@ -33,8 +33,8 @@ class EncryptionService extends GetxService {
     if (_userId == null) return;
     
     // Check if we already have keys stored
-    String? storedKey = await _storageService.getString('encryption_key_$_userId');
-    String? storedIv = await _storageService.getString('encryption_iv_$_userId');
+    String? storedKey = _storageService.getString('encryption_key_$_userId');
+    String? storedIv = _storageService.getString('encryption_iv_$_userId');
     
     if (storedKey != null && storedIv != null) {
       // Use stored keys
@@ -69,8 +69,8 @@ class EncryptionService extends GetxService {
     }
     
     // Check if we have stored keys for this chat
-    String? storedKey = await _storageService.getString('chat_key_$chatId');
-    String? storedIv = await _storageService.getString('chat_iv_$chatId');
+    String? storedKey = _storageService.getString('chat_key_$chatId');
+    String? storedIv = _storageService.getString('chat_iv_$chatId');
     
     encrypt.Key chatKey;
     encrypt.IV chatIV;
@@ -82,11 +82,11 @@ class EncryptionService extends GetxService {
     } else {
       // Generate deterministic keys based on chat ID
       // This ensures all participants generate the same key
-      final keyBytes = sha256.convert(utf8.encode(chatId + 'yapster_chat_salt')).bytes;
+      final keyBytes = sha256.convert(utf8.encode('${chatId}yapster_chat_salt')).bytes;
       chatKey = encrypt.Key(Uint8List.fromList(keyBytes));
       
       // Create a deterministic IV from the chat ID
-      final ivHash = sha256.convert(utf8.encode(chatId + 'iv_salt')).bytes;
+      final ivHash = sha256.convert(utf8.encode('${chatId}iv_salt')).bytes;
       final ivBytes = ivHash.sublist(0, 16); // Take first 16 bytes for IV
       chatIV = encrypt.IV(Uint8List.fromList(ivBytes));
       

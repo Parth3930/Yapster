@@ -396,19 +396,17 @@ class ChatController extends GetxController with WidgetsBindingObserver {
             .eq('user_id', userId)
             .single();
             
-        if (response != null) {
-          debugPrint('Found profile for chat user: $response');
-          
-          // Add to following list for easy access in UI
-          accountProvider.following.add({
-            'following_id': userId,
-            'username': response['username'] ?? 'User',
-            'avatar': response['avatar'],
-            'google_avatar': response['google_avatar'],
-            'nickname': response['nickname'],
-          });
-        }
-      }
+        debugPrint('Found profile for chat user: $response');
+        
+        // Add to following list for easy access in UI
+        accountProvider.following.add({
+          'following_id': userId,
+          'username': response['username'] ?? 'User',
+          'avatar': response['avatar'],
+          'google_avatar': response['google_avatar'],
+          'nickname': response['nickname'],
+        });
+            }
     } catch (e) {
       debugPrint('Error loading user profile for chat: $e');
     }

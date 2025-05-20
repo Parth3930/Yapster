@@ -20,7 +20,7 @@ class AccountDataProvider extends GetxController {
   // Posts data from separate posts table
   final RxList<Map<String, dynamic>> posts = <Map<String, dynamic>>[].obs;
   final RxMap<String, dynamic> userPostData = <String, dynamic>{}.obs;
-  
+
   // Recent searches
   final RxList<Map<String, dynamic>> searches = <Map<String, dynamic>>[].obs;
 
@@ -36,26 +36,31 @@ class AccountDataProvider extends GetxController {
   int get postsCount => userPostData['post_count'] as int? ?? 0;
 
   // Post type counts (calculated from posts list)
-  int get threadsCount => posts.where((post) => post['post_type'] == 'text').length;
-  int get imagesCount => posts.where((post) => post['post_type'] == 'image').length;
+  int get threadsCount =>
+      posts.where((post) => post['post_type'] == 'text').length;
+  int get imagesCount =>
+      posts.where((post) => post['post_type'] == 'image').length;
   int get gifsCount => posts.where((post) => post['post_type'] == 'gif').length;
-  int get stickersCount => posts.where((post) => post['post_type'] == 'sticker').length;
+  int get stickersCount =>
+      posts.where((post) => post['post_type'] == 'sticker').length;
 
   // Get lists of user IDs for followers/following
-  List<String> get followerIds => followers.map((f) => f['follower_id'] as String).toList();
-  List<String> get followingIds => following.map((f) => f['following_id'] as String).toList();
+  List<String> get followerIds =>
+      followers.map((f) => f['follower_id'] as String).toList();
+  List<String> get followingIds =>
+      following.map((f) => f['following_id'] as String).toList();
 
   // Category-specific post lists
-  List<Map<String, dynamic>> get threadsList => 
+  List<Map<String, dynamic>> get threadsList =>
       posts.where((post) => post['post_type'] == 'text').toList();
-  
-  List<Map<String, dynamic>> get imagesList => 
+
+  List<Map<String, dynamic>> get imagesList =>
       posts.where((post) => post['post_type'] == 'image').toList();
-  
-  List<Map<String, dynamic>> get gifsList => 
+
+  List<Map<String, dynamic>> get gifsList =>
       posts.where((post) => post['post_type'] == 'gif').toList();
-  
-  List<Map<String, dynamic>> get stickersList => 
+
+  List<Map<String, dynamic>> get stickersList =>
       posts.where((post) => post['post_type'] == 'sticker').toList();
 
   // All posts (already in posts RxList)
@@ -80,11 +85,11 @@ class AccountDataProvider extends GetxController {
     if (posts.isEmpty) {
       posts.value = [];
     }
-    
+
     if (userPostData.isEmpty) {
       userPostData.value = {'post_count': 0};
     }
-    
+
     if (searches.isEmpty) {
       searches.value = [];
     }
@@ -123,7 +128,8 @@ class AccountDataProvider extends GetxController {
 
   // Add a follower to the list (usually from realtime updates)
   void addFollower(Map<String, dynamic> follower) {
-    if (follower['follower_id'] != null && !isFollower(follower['follower_id'])) {
+    if (follower['follower_id'] != null &&
+        !isFollower(follower['follower_id'])) {
       followers.add(follower);
       _followersMap[follower['follower_id']] = true;
       followerCount.value = followers.length;
@@ -142,7 +148,8 @@ class AccountDataProvider extends GetxController {
 
   // Add a following to the list (usually from realtime updates)
   void addFollowing(Map<String, dynamic> followingUser) {
-    if (followingUser['following_id'] != null && !isFollowing(followingUser['following_id'])) {
+    if (followingUser['following_id'] != null &&
+        !isFollowing(followingUser['following_id'])) {
       following.add(followingUser);
       _followingMap[followingUser['following_id']] = true;
       followingCount.value = following.length;
@@ -164,9 +171,10 @@ class AccountDataProvider extends GetxController {
     if (post['id'] != null) {
       posts.add(post);
       _postsMap[post['id'].toString()] = post;
-      
+
       // Update the post count
-      userPostData['post_count'] = (userPostData['post_count'] as int? ?? 0) + 1;
+      userPostData['post_count'] =
+          (userPostData['post_count'] as int? ?? 0) + 1;
     }
   }
 
@@ -175,9 +183,10 @@ class AccountDataProvider extends GetxController {
     if (_postsMap.containsKey(postId)) {
       posts.removeWhere((post) => post['id'].toString() == postId);
       _postsMap.remove(postId);
-      
+
       // Update the post count
-      userPostData['post_count'] = (userPostData['post_count'] as int? ?? 0) - 1;
+      userPostData['post_count'] =
+          (userPostData['post_count'] as int? ?? 0) - 1;
     }
   }
 
@@ -231,7 +240,7 @@ class AccountDataProvider extends GetxController {
     searches.clear();
     posts.clear();
     userPostData.value = {'post_count': 0};
-    
+
     // Reset social data structures to defaults
     initializeDefaultStructures();
   }
@@ -241,38 +250,35 @@ class AccountDataProvider extends GetxController {
     try {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
-      
+
       debugPrint('Loading followers for user $userId');
-      
+
       // Get followers from cache or fetch from API
-      final followersList = await dbCacheService.getFollowers(
-        userId,
-        () async {
-          // Fetch followers from the database
-          final response = await supabaseService.client.rpc(
-            'get_followers',
-            params: {'p_user_id': userId},
-          );
-          
-          if (response == null) {
-            // Fallback to direct count
-            final countResponse = await supabaseService.client
+      final followersList = await dbCacheService.getFollowers(userId, () async {
+        // Fetch followers from the database
+        final response = await supabaseService.client.rpc(
+          'get_followers',
+          params: {'p_user_id': userId},
+        );
+
+        if (response == null) {
+          // Fallback to direct count
+          final countResponse = await supabaseService.client
               .from('follows')
               .select()
               .eq('following_id', userId);
-            
-            return [];
-          }
-          
-          return List<Map<String, dynamic>>.from(response);
-        },
-      );
-      
+
+          return [];
+        }
+
+        return List<Map<String, dynamic>>.from(response);
+      });
+
       // Update the data
       followers.value = followersList;
       followerCount.value = followersList.length;
       _rebuildFollowersMap();
-      
+
       debugPrint('Set follower count to: ${followerCount.value}');
     } catch (e) {
       debugPrint('Error loading followers: $e');
@@ -280,10 +286,10 @@ class AccountDataProvider extends GetxController {
       try {
         final supabaseService = Get.find<SupabaseService>();
         final countResponse = await supabaseService.client
-          .from('follows')
-          .select()
-          .eq('following_id', userId);
-          
+            .from('follows')
+            .select()
+            .eq('following_id', userId);
+
         final int directFollowerCount = (countResponse as List).length;
         followers.value = [];
         followerCount.value = directFollowerCount;
@@ -301,38 +307,35 @@ class AccountDataProvider extends GetxController {
     try {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
-      
+
       debugPrint('Loading following for user $userId');
-      
+
       // Get following from cache or fetch from API
-      final followingList = await dbCacheService.getFollowing(
-        userId,
-        () async {
-          // Fetch following from the database
-          final response = await supabaseService.client.rpc(
-            'get_following',
-            params: {'p_user_id': userId},
-          );
-          
-          if (response == null) {
-            // Fallback to direct count
-            final countResponse = await supabaseService.client
+      final followingList = await dbCacheService.getFollowing(userId, () async {
+        // Fetch following from the database
+        final response = await supabaseService.client.rpc(
+          'get_following',
+          params: {'p_user_id': userId},
+        );
+
+        if (response == null) {
+          // Fallback to direct count
+          final countResponse = await supabaseService.client
               .from('follows')
               .select()
               .eq('follower_id', userId);
-              
-            return [];
-          }
-          
-          return List<Map<String, dynamic>>.from(response);
-        },
-      );
-      
+
+          return [];
+        }
+
+        return List<Map<String, dynamic>>.from(response);
+      });
+
       // Update the data
       following.value = followingList;
       followingCount.value = followingList.length;
       _rebuildFollowingMap();
-      
+
       debugPrint('Set following count to: ${followingCount.value}');
     } catch (e) {
       debugPrint('Error loading following: $e');
@@ -340,10 +343,10 @@ class AccountDataProvider extends GetxController {
       try {
         final supabaseService = Get.find<SupabaseService>();
         final countResponse = await supabaseService.client
-          .from('follows')
-          .select()
-          .eq('follower_id', userId);
-          
+            .from('follows')
+            .select()
+            .eq('follower_id', userId);
+
         final int directFollowingCount = (countResponse as List).length;
         following.value = [];
         followingCount.value = directFollowingCount;
@@ -355,69 +358,66 @@ class AccountDataProvider extends GetxController {
       }
     }
   }
-  
+
   /// Load user posts from the posts table
   Future<void> loadUserPosts(String userId) async {
     try {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
-      
+
       // Get posts from cache or fetch from API
-      final postsList = await dbCacheService.getUserPosts(
-        userId,
-        () async {
-          // Fetch posts from the database
-          final response = await supabaseService.client
+      final postsList = await dbCacheService.getUserPosts(userId, () async {
+        // Fetch posts from the database
+        final response = await supabaseService.client
             .from('posts')
             .select()
             .eq('user_id', userId)
             .order('created_at', ascending: false);
-            
-          return List<Map<String, dynamic>>.from(response);
-        },
-      );
-      
+
+        return List<Map<String, dynamic>>.from(response);
+      });
+
       posts.value = postsList;
       _rebuildPostsMap();
-      
+
       // Update post count in user_posts data
       userPostData['post_count'] = postsList.length;
-      
+
       debugPrint('Loaded ${posts.length} posts for user $userId');
     } catch (e) {
       debugPrint('Error loading user posts: $e');
       posts.value = [];
     }
   }
-  
+
   /// Load searches from database with caching
   Future<void> loadSearches() async {
     try {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
-      
+
       final userId = supabaseService.currentUser.value?.id;
       if (userId == null) return;
-      
+
       // Try to get profile data from cache or API
-      final userData = await dbCacheService.getUserProfile(
-        userId,
-        () async {
-          // Fetch from database
-          final profile = await supabaseService.client
-            .from('profiles')
-            .select('searches')
-            .eq('user_id', userId)
-            .single();
-            
-          return profile;
-        }
-      );
-      
-      if (userData != null && userData.isNotEmpty && userData['searches'] != null) {
+      final userData = await dbCacheService.getUserProfile(userId, () async {
+        // Fetch from database
+        final profile =
+            await supabaseService.client
+                .from('profiles')
+                .select('searches')
+                .eq('user_id', userId)
+                .single();
+
+        return profile;
+      });
+
+      if (userData != null &&
+          userData.isNotEmpty &&
+          userData['searches'] != null) {
         List<dynamic> searchesList = userData['searches'];
         searches.value = List<Map<String, dynamic>>.from(
-          searchesList.map((item) => Map<String, dynamic>.from(item))
+          searchesList.map((item) => Map<String, dynamic>.from(item)),
         );
         _rebuildSearchesMap();
         debugPrint('Loaded ${searches.length} recent searches');
@@ -428,36 +428,37 @@ class AccountDataProvider extends GetxController {
       searches.value = [];
     }
   }
-  
+
   /// Update searches in memory and database
   Future<void> updateSearches(List<Map<String, dynamic>> newSearches) async {
     try {
       searches.value = List<Map<String, dynamic>>.from(newSearches);
       _rebuildSearchesMap();
-      
+
       // Update in database
       final supabaseService = Get.find<SupabaseService>();
       final userId = supabaseService.currentUser.value?.id;
-      
+
       if (userId == null) return;
-      
+
       await supabaseService.client
-        .from('profiles')
-        .update({'searches': searches})
-        .eq('user_id', userId);
-        
+          .from('profiles')
+          .update({'searches': searches})
+          .eq('user_id', userId);
+
       debugPrint('Updated searches in database');
     } catch (e) {
       debugPrint('Error updating searches: $e');
     }
   }
-  
+
   /// Check if a user exists in recent searches
   bool hasUserInSearches(String userId) => _searchesMap.containsKey(userId);
-  
+
   /// Get a user from recent searches by ID
-  Map<String, dynamic>? getUserFromSearches(String userId) => _searchesMap[userId];
-  
+  Map<String, dynamic>? getUserFromSearches(String userId) =>
+      _searchesMap[userId];
+
   /// Rebuild the searches map for O(1) lookups
   void _rebuildSearchesMap() {
     _searchesMap.clear();

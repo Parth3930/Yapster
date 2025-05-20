@@ -165,44 +165,42 @@ class ChatDetailView extends GetView<ChatController> {
           .eq('user_id', userId)
           .single();
       
-      if (response != null) {
-        debugPrint('Chat user profile found: $response');
-        // Store this in account provider for access in message bubbles
-        final accountProvider = Get.find<AccountDataProvider>();
+      debugPrint('Chat user profile found: $response');
+      // Store this in account provider for access in message bubbles
+      final accountProvider = Get.find<AccountDataProvider>();
+      
+      // Create a new follow entry for this user if not already in lists
+      final isInFollowing = accountProvider.following
+          .any((user) => user['following_id'] == userId);
+      final isInFollowers = accountProvider.followers
+          .any((user) => user['follower_id'] == userId);
+          
+      if (!isInFollowing && !isInFollowers) {
+        debugPrint('Adding chat user to temporary following list');
         
-        // Create a new follow entry for this user if not already in lists
-        final isInFollowing = accountProvider.following
-            .any((user) => user['following_id'] == userId);
-        final isInFollowers = accountProvider.followers
-            .any((user) => user['follower_id'] == userId);
-            
-        if (!isInFollowing && !isInFollowers) {
-          debugPrint('Adding chat user to temporary following list');
-          
-          // Get avatar and ensure it's a valid URL
-          final String? avatar = response['avatar'];
-          final String? googleAvatar = response['google_avatar'];
-          
-          // Don't pass invalid URLs to the UI
-          final validAvatar = (avatar != null && 
-                               avatar != "skiped" && 
-                               avatar != "null" && 
-                               avatar.contains("://")) ? avatar : null;
-          
-          // Temporarily add to following list for avatar display
-          accountProvider.following.add({
-            'following_id': userId,
-            'username': response['username'],
-            'avatar': validAvatar,
-            'google_avatar': googleAvatar,
-            'nickname': response['nickname'],
-          });
-          
-          // Force UI update to show the new avatar
-          Get.forceAppUpdate();
-        }
+        // Get avatar and ensure it's a valid URL
+        final String? avatar = response['avatar'];
+        final String? googleAvatar = response['google_avatar'];
+        
+        // Don't pass invalid URLs to the UI
+        final validAvatar = (avatar != null && 
+                             avatar != "skiped" && 
+                             avatar != "null" && 
+                             avatar.contains("://")) ? avatar : null;
+        
+        // Temporarily add to following list for avatar display
+        accountProvider.following.add({
+          'following_id': userId,
+          'username': response['username'],
+          'avatar': validAvatar,
+          'google_avatar': googleAvatar,
+          'nickname': response['nickname'],
+        });
+        
+        // Force UI update to show the new avatar
+        Get.forceAppUpdate();
       }
-    } catch (e) {
+        } catch (e) {
       debugPrint('Error fetching chat user profile: $e');
     }
   }
@@ -495,9 +493,9 @@ class ChatDetailView extends GetView<ChatController> {
                 radius: 12.5, // 25px diameter
                 backgroundColor: Colors.black,
                 backgroundImage: hasRegularAvatar
-                    ? CachedNetworkImageProvider(regularAvatar!)
+                    ? CachedNetworkImageProvider(regularAvatar)
                     : hasGoogleAvatar
-                        ? CachedNetworkImageProvider(googleAvatar!)
+                        ? CachedNetworkImageProvider(googleAvatar)
                         : null,
                 child: (!hasRegularAvatar && !hasGoogleAvatar)
                     ? const Icon(Icons.person, size: 12, color: Colors.white)
@@ -522,43 +520,41 @@ class ChatDetailView extends GetView<ChatController> {
           .eq('user_id', userId)
           .single();
       
-      if (response != null) {
-        // Add to account provider for next render
-        final accountProvider = Get.find<AccountDataProvider>();
+      // Add to account provider for next render
+      final accountProvider = Get.find<AccountDataProvider>();
+      
+      // Check if we need to add to following list
+      final isInFollowing = accountProvider.following
+          .any((user) => user['following_id'] == userId);
+      final isInFollowers = accountProvider.followers
+          .any((user) => user['follower_id'] == userId);
+          
+      if (!isInFollowing && !isInFollowers) {
+        // Process avatar URLs
+        final String? avatar = response['avatar'];
+        final String? googleAvatar = response['google_avatar'];
         
-        // Check if we need to add to following list
-        final isInFollowing = accountProvider.following
-            .any((user) => user['following_id'] == userId);
-        final isInFollowers = accountProvider.followers
-            .any((user) => user['follower_id'] == userId);
-            
-        if (!isInFollowing && !isInFollowers) {
-          // Process avatar URLs
-          final String? avatar = response['avatar'];
-          final String? googleAvatar = response['google_avatar'];
-          
-          // Sanitize avatar URL to prevent errors
-          final validAvatar = (avatar != null && 
-                               avatar != "skiped" && 
-                               avatar != "null" && 
-                               avatar.contains("://")) ? avatar : null;
-          
-          // Add to following list for access in message bubbles with valid avatar
-          accountProvider.following.add({
-            'following_id': userId,
-            'username': response['username'],
-            'avatar': validAvatar,
-            'google_avatar': googleAvatar,
-            'nickname': response['nickname'],
-          });
-          
-          // Trigger rebuild
-          Get.forceAppUpdate();
-        }
+        // Sanitize avatar URL to prevent errors
+        final validAvatar = (avatar != null && 
+                             avatar != "skiped" && 
+                             avatar != "null" && 
+                             avatar.contains("://")) ? avatar : null;
         
-        return response;
+        // Add to following list for access in message bubbles with valid avatar
+        accountProvider.following.add({
+          'following_id': userId,
+          'username': response['username'],
+          'avatar': validAvatar,
+          'google_avatar': googleAvatar,
+          'nickname': response['nickname'],
+        });
+        
+        // Trigger rebuild
+        Get.forceAppUpdate();
       }
-    } catch (e) {
+      
+      return response;
+        } catch (e) {
       debugPrint('Error getting chat user profile: $e');
     }
     return null;

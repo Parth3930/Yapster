@@ -353,38 +353,51 @@ class _FollowListViewState extends State<FollowListView> {
   }
   
   Widget _buildUserAvatar(Map<String, dynamic> user) {
-    // Check if user has regular avatar
-    final hasRegularAvatar = user['avatar'] != null && 
-                           user['avatar'].toString().isNotEmpty && 
-                           user['avatar'] != "skiped" &&
-                           user['avatar'].toString() != "skiped" &&
-                           user['avatar'].toString() != "null";
+    // Check if user has regular avatar - make sure to handle "skiped" value
+    final String? avatarUrl = user['avatar'];
+    final bool hasSkippedAvatar = avatarUrl == "skiped" || avatarUrl == "null";
+    
+    final bool hasRegularAvatar = 
+        avatarUrl != null && 
+        avatarUrl.isNotEmpty && 
+        !hasSkippedAvatar;
                            
     // Check if user has Google avatar
-    final hasGoogleAvatar = user['google_avatar'] != null && 
-                          user['google_avatar'].toString().isNotEmpty &&
-                          user['google_avatar'].toString() != "null";
+    final String? googleAvatarUrl = user['google_avatar'];
+    final bool hasGoogleAvatar = 
+        googleAvatarUrl != null && 
+        googleAvatarUrl.isNotEmpty && 
+        googleAvatarUrl != "null";
+    
+    // If regular avatar is skipped but Google avatar exists, use Google avatar
+    final bool shouldUseGoogleAvatar = 
+        (hasSkippedAvatar || !hasRegularAvatar) && hasGoogleAvatar;
     
     return CircleAvatar(
       radius: 24,
       backgroundColor: Colors.grey[300],
       backgroundImage: hasRegularAvatar
-          ? CachedNetworkImageProvider(user['avatar'])
-          : hasGoogleAvatar
-              ? CachedNetworkImageProvider(user['google_avatar'])
+          ? CachedNetworkImageProvider(avatarUrl!)
+          : shouldUseGoogleAvatar
+              ? CachedNetworkImageProvider(googleAvatarUrl!)
               : null,
-      child: (!hasRegularAvatar && !hasGoogleAvatar)
+      child: (!hasRegularAvatar && !shouldUseGoogleAvatar)
           ? const Icon(Icons.person, color: Colors.white)
           : null,
     );
   }
   
   Widget _buildFollowButton(String userId, bool isFollowing) {
+    // If we're already following this user, don't show the button at all
+    if (isFollowing) {
+      return const SizedBox.shrink(); // Hide button completely
+    }
+
+    // For followers list, show "Follow Back" instead of "Follow"
+    final String buttonText = widget.type == FollowType.followers ? 'Follow Back' : 'Follow';
+
     return ElevatedButton(
       onPressed: () async {
-        // Get the previous state to determine if we're following or unfollowing
-        final wasFollowing = _exploreController.isFollowingUser(userId);
-        
         // Show loading indicator using EasyLoading
         EasyLoading.show(status: 'Processing...');
         
@@ -398,8 +411,7 @@ class _FollowListViewState extends State<FollowListView> {
         setState(() {});
       },
       style: ElevatedButton.styleFrom(
-        backgroundColor:
-            isFollowing ? Colors.grey[800] : Color(0xff0060FF),
+        backgroundColor: Color(0xff0060FF),
         minimumSize: Size(90, 32),
         padding: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
@@ -407,7 +419,7 @@ class _FollowListViewState extends State<FollowListView> {
         ),
       ),
       child: Text(
-        isFollowing ? 'Following' : 'Follow',
+        buttonText,
         style: TextStyle(color: Colors.white, fontSize: 12),
       ),
     );

@@ -88,7 +88,7 @@ class ExploreController extends GetxController {
       }
 
       debugPrint('Searching for users with query: $query');
-      
+
       // Get current user ID to filter them out from results
       final currentUserId = _supabaseService.currentUser.value?.id;
 
@@ -101,11 +101,14 @@ class ExploreController extends GetxController {
           .limit(20);
 
       // Convert to list and filter out current user
-      List<Map<String, dynamic>> results = List<Map<String, dynamic>>.from(response);
-      
+      List<Map<String, dynamic>> results = List<Map<String, dynamic>>.from(
+        response,
+      );
+
       // Remove current user from search results if they appear
       if (currentUserId != null) {
-        results = results.where((user) => user['user_id'] != currentUserId).toList();
+        results =
+            results.where((user) => user['user_id'] != currentUserId).toList();
         debugPrint('Filtered out current user from search results');
       }
 
@@ -197,17 +200,20 @@ class ExploreController extends GetxController {
       // Make sure we have complete user data
       if (!user.containsKey('google_avatar')) {
         // Fetch complete profile data if we don't have google_avatar
-        final userData = await _supabaseService.client
-          .from('profiles')
-          .select('user_id, username, nickname, avatar, google_avatar')
-          .eq('user_id', user['user_id'])
-          .single();
-          
+        final userData =
+            await _supabaseService.client
+                .from('profiles')
+                .select('user_id, username, nickname, avatar, google_avatar')
+                .eq('user_id', user['user_id'])
+                .single();
+
         // Update user with complete data
         user = Map<String, dynamic>.from(userData);
-        debugPrint('Updated user data with complete profile including Google avatar');
-            }
-      
+        debugPrint(
+          'Updated user data with complete profile including Google avatar',
+        );
+      }
+
       // Check if user is already in recent searches
       final existingIndex = recentSearches.indexWhere(
         (item) => item['user_id'] == user['user_id'],
@@ -278,7 +284,7 @@ class ExploreController extends GetxController {
     try {
       isLoadingUserProfile.value = true;
       debugPrint('Loading profile for user ID: $userId');
-      
+
       // Force refresh of followers/following data before loading profile
       if (userId == _supabaseService.currentUser.value?.id) {
         // For current user, reload their followers and following
@@ -300,18 +306,23 @@ class ExploreController extends GetxController {
 
       // For current user, update the google_avatar if it's empty in DB but available locally
       if (userId == _supabaseService.currentUser.value?.id) {
-        if ((userData['google_avatar'] == null || userData['google_avatar'].toString().isEmpty) &&
+        if ((userData['google_avatar'] == null ||
+                userData['google_avatar'].toString().isEmpty) &&
             _accountDataProvider.googleAvatar.value.isNotEmpty) {
-          
           // Update local data
           userData['google_avatar'] = _accountDataProvider.googleAvatar.value;
-          debugPrint('Added current user Google avatar: ${_accountDataProvider.googleAvatar.value}');
-          
+          debugPrint(
+            'Added current user Google avatar: ${_accountDataProvider.googleAvatar.value}',
+          );
+
           // Update in database for future use
-          await _supabaseService.client.from('profiles').update({
-            'google_avatar': _accountDataProvider.googleAvatar.value
-          }).eq('user_id', userId);
-          
+          await _supabaseService.client
+              .from('profiles')
+              .update({
+                'google_avatar': _accountDataProvider.googleAvatar.value,
+              })
+              .eq('user_id', userId);
+
           debugPrint('Updated Google avatar in database');
         }
       }
@@ -322,16 +333,16 @@ class ExploreController extends GetxController {
           .from('follows')
           .select()
           .eq('following_id', userId);
-      
+
       final int followerCount = (followerResponse as List).length;
       debugPrint('Calculated follower count: $followerCount');
-      
+
       // For the viewed profile's following count
       final followingResponse = await _supabaseService.client
           .from('follows')
           .select()
           .eq('follower_id', userId);
-      
+
       final int followingCount = (followingResponse as List).length;
       debugPrint('Calculated following count: $followingCount');
 
@@ -409,15 +420,65 @@ class ExploreController extends GetxController {
   // Check if the current user is following the selected user
   bool isFollowingUser(String userId) {
     if (selectedUserProfile.isEmpty || userId.isEmpty) return false;
-    
+
     // First check in the AccountDataProvider for cached state (fast check)
     if (_accountDataProvider.isFollowing(userId)) {
       return true;
     }
-    
+
     // If not found in cache, we need to ensure we have the most up-to-date data
     // This will be handled by refreshFollowState which is called when the view is built
     return false;
+  }
+
+  // Check if the selected user is following the current user
+  Future<bool> isUserFollowingCurrentUser(String userId) async {
+    try {
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId == null || userId.isEmpty) return false;
+
+      debugPrint(
+        'Checking if user $userId is following current user $currentUserId',
+      );
+
+      // Check directly in the follows table
+      final response = await _supabaseService.client
+          .from('follows')
+          .select()
+          .eq('follower_id', userId)
+          .eq('following_id', currentUserId);
+
+      final bool isFollowing = response.isNotEmpty;
+      debugPrint('User $userId following current user: $isFollowing');
+
+      return isFollowing;
+    } catch (e) {
+      debugPrint('Error checking if user is following current user: $e');
+      return false;
+    }
+  }
+
+  // Check if two users are mutually following each other
+  Future<bool> areMutualFollowers(String userId) async {
+    try {
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId == null || userId.isEmpty) return false;
+
+      // Check if current user is following the user
+      final isFollowing = await refreshFollowState(userId);
+
+      // Check if the user is following the current user
+      final isFollowedBy = await isUserFollowingCurrentUser(userId);
+
+      debugPrint(
+        'Mutual follow check: current user following $userId: $isFollowing, $userId following current user: $isFollowedBy',
+      );
+
+      return isFollowing && isFollowedBy;
+    } catch (e) {
+      debugPrint('Error checking mutual followers: $e');
+      return false;
+    }
   }
 
   // Refresh the follow state for a specific user - can be called when a view is built to ensure accurate UI
@@ -425,30 +486,32 @@ class ExploreController extends GetxController {
     try {
       final currentUserId = _supabaseService.currentUser.value?.id;
       if (currentUserId == null || userId.isEmpty) return false;
-      
+
       debugPrint('Refreshing follow state for target user: $userId');
-      
+
       // Check directly in the follows table
       final response = await _supabaseService.client
-        .from('follows')
-        .select()
-        .eq('follower_id', currentUserId)
-        .eq('following_id', userId);
-      
+          .from('follows')
+          .select()
+          .eq('follower_id', currentUserId)
+          .eq('following_id', userId);
+
       final bool isFollowing = response.isNotEmpty;
-      
+
       // If we're following but it's not in our cache, update the cache
       if (isFollowing && !_accountDataProvider.isFollowing(userId)) {
-        debugPrint('Found follow relationship in DB that was missing from cache');
-        
+        debugPrint(
+          'Found follow relationship in DB that was missing from cache',
+        );
+
         final followingData = {
           'following_id': userId,
           'created_at': DateTime.now().toIso8601String(),
         };
-        
+
         _accountDataProvider.addFollowing(followingData);
       }
-      
+
       debugPrint('Current follow state for $userId: $isFollowing');
       return isFollowing;
     } catch (e) {
@@ -458,36 +521,40 @@ class ExploreController extends GetxController {
   }
 
   // Call a server-side function to update follower counts (bypasses RLS)
-  Future<void> updateFollowerCountServerSide(String targetUserId, int newCount) async {
+  Future<void> updateFollowerCountServerSide(
+    String targetUserId,
+    int newCount,
+  ) async {
     try {
-      debugPrint('Calling server-side function to update follower count for $targetUserId to $newCount');
-      
+      debugPrint(
+        'Calling server-side function to update follower count for $targetUserId to $newCount',
+      );
+
       // Call a Supabase RPC function that has admin privileges to update the count
       // This bypasses Row-Level Security restrictions
       await _supabaseService.client.rpc(
         'update_follower_count',
-        params: {
-          'f_count': newCount,
-          't_user_id': targetUserId
-        }
+        params: {'f_count': newCount, 't_user_id': targetUserId},
       );
-      
+
       debugPrint('Server-side follower count update completed');
-      
+
       // Update the local UI state to reflect the new count
-      if (selectedUserProfile.isNotEmpty && selectedUserProfile['user_id'] == targetUserId) {
+      if (selectedUserProfile.isNotEmpty &&
+          selectedUserProfile['user_id'] == targetUserId) {
         selectedUserProfile['follower_count'] = newCount;
         debugPrint('Updated selectedUserProfile follower count to: $newCount');
       }
-      
+
       // Force UI update
       update();
     } catch (e) {
       debugPrint('Error updating follower count server-side: $e');
-      
+
       // Even if the server-side update fails, we can still update the UI
       // since the follows table has the correct count
-      if (selectedUserProfile.isNotEmpty && selectedUserProfile['user_id'] == targetUserId) {
+      if (selectedUserProfile.isNotEmpty &&
+          selectedUserProfile['user_id'] == targetUserId) {
         selectedUserProfile['follower_count'] = newCount;
         debugPrint('Updated UI follower count despite server error: $newCount');
       }
@@ -501,130 +568,137 @@ class ExploreController extends GetxController {
     try {
       debugPrint('========== FOLLOW/UNFOLLOW START ==========');
       debugPrint('Target userId: $userId');
-      
+
       // Get current state
       final isFollowing = isFollowingUser(userId);
       final currentUserId = _supabaseService.currentUser.value?.id;
-      
+
       if (currentUserId == null) {
         EasyLoading.showError('User not authenticated');
         return;
       }
-      
+
       // Prevent following your own profile
       if (userId == currentUserId) {
         debugPrint('Cannot follow your own profile');
         EasyLoading.showError('You cannot follow your own profile');
         return;
       }
-      
-      debugPrint('Current user: $currentUserId, currently following: $isFollowing');
+
+      debugPrint(
+        'Current user: $currentUserId, currently following: $isFollowing',
+      );
 
       // Show a loading indicator
       EasyLoading.show(status: 'Processing...');
 
       // Get BEFORE counts for comparison
-      final beforeFollowerCount = (await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('following_id', userId)).length;
-          
-      final beforeFollowingCount = (await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('follower_id', currentUserId)).length;
-          
-      debugPrint('BEFORE - Target user followers: $beforeFollowerCount, Current user following: $beforeFollowingCount');
+      final beforeFollowerCount =
+          (await _supabaseService.client
+              .from('follows')
+              .select()
+              .eq('following_id', userId)).length;
+
+      final beforeFollowingCount =
+          (await _supabaseService.client
+              .from('follows')
+              .select()
+              .eq('follower_id', currentUserId)).length;
+
+      debugPrint(
+        'BEFORE - Target user followers: $beforeFollowerCount, Current user following: $beforeFollowingCount',
+      );
 
       if (isFollowing) {
         // UNFOLLOW FLOW
-        
+
         // 1. Delete the follow relationship
         await _supabaseService.client
-          .from('follows')
-          .delete()
-          .eq('follower_id', currentUserId)
-          .eq('following_id', userId);
-        
+            .from('follows')
+            .delete()
+            .eq('follower_id', currentUserId)
+            .eq('following_id', userId);
+
         debugPrint('Unfollow relationship deleted from database');
-        
+
         // 2. Directly count followers and following in database
         final followerResponse = await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('following_id', userId);
-        
+            .from('follows')
+            .select()
+            .eq('following_id', userId);
+
         final followingResponse = await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('follower_id', currentUserId);
-        
+            .from('follows')
+            .select()
+            .eq('follower_id', currentUserId);
+
         final int followerCount = (followerResponse as List).length;
         final int followingCount = (followingResponse as List).length;
-        
-        debugPrint('Actual counts in database - Target user followers: $followerCount, Current user following: $followingCount');
-        
+
+        debugPrint(
+          'Actual counts in database - Target user followers: $followerCount, Current user following: $followingCount',
+        );
+
         // 3. Update current user profile (we have permission for our own profile)
-        await _supabaseService.client
-          .from('profiles')
-          .upsert({
-            'user_id': currentUserId,
-            'following_count': followingCount
-          });
-          
+        await _supabaseService.client.from('profiles').upsert({
+          'user_id': currentUserId,
+          'following_count': followingCount,
+        });
+
         // 4. Update target user's follower count via server-side function
         await updateFollowerCountServerSide(userId, followerCount);
-        
+
         // 5. Update local state
         _accountDataProvider.removeFollowing(userId);
         _accountDataProvider.followingCount.value = followingCount;
-        
+
         // 6. Update UI
-        if (selectedUserProfile.isNotEmpty && selectedUserProfile['user_id'] == userId) {
+        if (selectedUserProfile.isNotEmpty &&
+            selectedUserProfile['user_id'] == userId) {
           selectedUserProfile['follower_count'] = followerCount;
-          debugPrint('Updated selectedUserProfile follower count to: $followerCount');
+          debugPrint(
+            'Updated selectedUserProfile follower count to: $followerCount',
+          );
         }
       } else {
         // FOLLOW FLOW
-        
+
         // 1. Create the follow relationship
-        await _supabaseService.client
-          .from('follows')
-          .insert({
-            'follower_id': currentUserId,
-            'following_id': userId,
-            'created_at': DateTime.now().toIso8601String(),
-          });
-        
+        await _supabaseService.client.from('follows').insert({
+          'follower_id': currentUserId,
+          'following_id': userId,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
         debugPrint('Follow relationship added to database');
-        
+
         // 2. Directly count followers and following in database
         final followerResponse = await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('following_id', userId);
-        
+            .from('follows')
+            .select()
+            .eq('following_id', userId);
+
         final followingResponse = await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('follower_id', currentUserId);
-        
+            .from('follows')
+            .select()
+            .eq('follower_id', currentUserId);
+
         final int followerCount = (followerResponse as List).length;
         final int followingCount = (followingResponse as List).length;
-        
-        debugPrint('Actual counts in database - Target user followers: $followerCount, Current user following: $followingCount');
-        
+
+        debugPrint(
+          'Actual counts in database - Target user followers: $followerCount, Current user following: $followingCount',
+        );
+
         // 3. Update current user profile (we have permission for our own profile)
-        await _supabaseService.client
-          .from('profiles')
-          .upsert({
-            'user_id': currentUserId,
-            'following_count': followingCount
-          });
-        
+        await _supabaseService.client.from('profiles').upsert({
+          'user_id': currentUserId,
+          'following_count': followingCount,
+        });
+
         // 4. Update target user's follower count via server-side function
         await updateFollowerCountServerSide(userId, followerCount);
-        
+
         // 5. Update local state
         final followingData = {
           'following_id': userId,
@@ -632,60 +706,77 @@ class ExploreController extends GetxController {
         };
         _accountDataProvider.addFollowing(followingData);
         _accountDataProvider.followingCount.value = followingCount;
-        
+
         // 6. Update UI
-        if (selectedUserProfile.isNotEmpty && selectedUserProfile['user_id'] == userId) {
+        if (selectedUserProfile.isNotEmpty &&
+            selectedUserProfile['user_id'] == userId) {
           selectedUserProfile['follower_count'] = followerCount;
-          debugPrint('Updated selectedUserProfile follower count to: $followerCount');
+          debugPrint(
+            'Updated selectedUserProfile follower count to: $followerCount',
+          );
         }
       }
 
       // Close loading indicator
       EasyLoading.dismiss();
-      
+
       // Add a delay to make sure database updates are processed
       await Future.delayed(Duration(milliseconds: 500));
-      
+
       // CRITICAL: Directly update both users with verified counts from the follows table
-      debugPrint('CRITICAL: Performing direct count update after follow/unfollow action');
-      
+      debugPrint(
+        'CRITICAL: Performing direct count update after follow/unfollow action',
+      );
+
       // Update current user (the one performing the follow/unfollow)
       await refreshUserFollowData(currentUserId);
-      
+
       // For the target user, just update the UI since we can't update the database directly
-      final updatedFollowerCount = (await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('following_id', userId)).length;
-          
-      if (selectedUserProfile.isNotEmpty && selectedUserProfile['user_id'] == userId) {
+      final updatedFollowerCount =
+          (await _supabaseService.client
+              .from('follows')
+              .select()
+              .eq('following_id', userId)).length;
+
+      if (selectedUserProfile.isNotEmpty &&
+          selectedUserProfile['user_id'] == userId) {
         selectedUserProfile['follower_count'] = updatedFollowerCount;
-        debugPrint('Final UI update - target user follower count: $updatedFollowerCount');
+        debugPrint(
+          'Final UI update - target user follower count: $updatedFollowerCount',
+        );
       }
-      
+
       // Explicitly update the AccountDataProvider to ensure the UI reflects the changes
-      _accountDataProvider.followerCount.value = (await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('following_id', currentUserId)).length;
-          
-      _accountDataProvider.followingCount.value = (await _supabaseService.client
-          .from('follows')
-          .select()
-          .eq('follower_id', currentUserId)).length;
-      
-      debugPrint('CRITICAL: Final follower count: ${_accountDataProvider.followerCount}');
-      debugPrint('CRITICAL: Final following count: ${_accountDataProvider.followingCount}');
-      
+      _accountDataProvider.followerCount.value =
+          (await _supabaseService.client
+              .from('follows')
+              .select()
+              .eq('following_id', currentUserId)).length;
+
+      _accountDataProvider.followingCount.value =
+          (await _supabaseService.client
+              .from('follows')
+              .select()
+              .eq('follower_id', currentUserId)).length;
+
+      debugPrint(
+        'CRITICAL: Final follower count: ${_accountDataProvider.followerCount}',
+      );
+      debugPrint(
+        'CRITICAL: Final following count: ${_accountDataProvider.followingCount}',
+      );
+
       // Try to update ProfileController if it exists
       try {
         final profileCtrl = Get.find<ProfileController>();
-        await profileCtrl.refreshFollowData();  // Use our enhanced method
+        await profileCtrl.refreshFollowData(); // Use our enhanced method
         debugPrint('CRITICAL: ProfileController refresh completed');
       } catch (e) {
-        debugPrint('CRITICAL: ProfileController not found, direct update completed');
+        debugPrint(
+          'CRITICAL: ProfileController not found, direct update completed',
+        );
       }
-      
+
       // Force UI update one last time
       update();
       debugPrint('========== FOLLOW/UNFOLLOW END ==========');
@@ -699,101 +790,116 @@ class ExploreController extends GetxController {
   Future<void> refreshUserFollowData(String userId) async {
     try {
       debugPrint('CRITICAL: Refreshing follow data for user: $userId');
-      
+
       // DIRECT COUNT: Calculate follower and following counts from follows table
       final List followersList = await _supabaseService.client
           .from('follows')
           .select('follower_id')
           .eq('following_id', userId);
-      
+
       final List followingList = await _supabaseService.client
           .from('follows')
           .select('following_id')
           .eq('follower_id', userId);
-      
+
       final int followerCount = followersList.length;
       final int followingCount = followingList.length;
-      
-      debugPrint('DIRECT COUNT from follows table - User $userId has $followerCount followers and is following $followingCount users');
-      
+
+      debugPrint(
+        'DIRECT COUNT from follows table - User $userId has $followerCount followers and is following $followingCount users',
+      );
+
       // Get current values from profiles table
-      final profileData = await _supabaseService.client
-          .from('profiles')
-          .select('follower_count, following_count')
-          .eq('user_id', userId)
-          .single();
-          
-      debugPrint('CURRENT profile data from database for $userId - followers: ${profileData['follower_count']}, following: ${profileData['following_count']}');
-      
+      final profileData =
+          await _supabaseService.client
+              .from('profiles')
+              .select('follower_count, following_count')
+              .eq('user_id', userId)
+              .single();
+
+      debugPrint(
+        'CURRENT profile data from database for $userId - followers: ${profileData['follower_count']}, following: ${profileData['following_count']}',
+      );
+
       // Check for discrepancy
-      if (profileData['follower_count'] != followerCount || profileData['following_count'] != followingCount) {
-        debugPrint('CRITICAL: Detected count discrepancy for user $userId - Updating database');
-        
+      if (profileData['follower_count'] != followerCount ||
+          profileData['following_count'] != followingCount) {
+        debugPrint(
+          'CRITICAL: Detected count discrepancy for user $userId - Updating database',
+        );
+
         // Force update in database with accurate counts using upsert
         // This ensures the record is created if it doesn't exist, or updated if it does
-        final response = await _supabaseService.client
-          .from('profiles')
-          .upsert({
-            'user_id': userId,
-            'follower_count': followerCount,
-            'following_count': followingCount
-          });
-          
+        final response = await _supabaseService.client.from('profiles').upsert({
+          'user_id': userId,
+          'follower_count': followerCount,
+          'following_count': followingCount,
+        });
+
         debugPrint('CRITICAL: Database update complete for user $userId');
-        
+
         // Add a small delay to ensure the update is processed
         await Future.delayed(Duration(milliseconds: 300));
-        
+
         // Verify the update
-        final updatedProfile = await _supabaseService.client
-          .from('profiles')
-          .select('follower_count, following_count')
-          .eq('user_id', userId)
-          .single();
-          
-        debugPrint('CRITICAL: VERIFIED profile data for $userId - followers: ${updatedProfile['follower_count']}, following: ${updatedProfile['following_count']}');
-        
+        final updatedProfile =
+            await _supabaseService.client
+                .from('profiles')
+                .select('follower_count, following_count')
+                .eq('user_id', userId)
+                .single();
+
+        debugPrint(
+          'CRITICAL: VERIFIED profile data for $userId - followers: ${updatedProfile['follower_count']}, following: ${updatedProfile['following_count']}',
+        );
+
         // If the update didn't work, try a more direct approach
         if (updatedProfile['follower_count'] != followerCount) {
-          debugPrint('CRITICAL: Update verification failed, trying direct SQL update');
-          
+          debugPrint(
+            'CRITICAL: Update verification failed, trying direct SQL update',
+          );
+
           // Try a more direct approach to update just the follower count
           await _supabaseService.client.rpc(
             'update_follower_count',
-            params: {
-              'user_id_param': userId,
-              'new_count': followerCount,
-            },
+            params: {'user_id_param': userId, 'new_count': followerCount},
           );
-          
+
           debugPrint('CRITICAL: Direct update for follower count attempted');
         }
       }
-      
-      // Check if this is the current user and update AccountDataProvider directly 
+
+      // Check if this is the current user and update AccountDataProvider directly
       final currentUserId = _supabaseService.currentUser.value?.id;
       if (userId == currentUserId) {
         // Update AccountDataProvider values directly
         _accountDataProvider.followerCount.value = followerCount;
         _accountDataProvider.followingCount.value = followingCount;
-        debugPrint('CRITICAL: Updated AccountDataProvider with follower count: $followerCount, following count: $followingCount');
+        debugPrint(
+          'CRITICAL: Updated AccountDataProvider with follower count: $followerCount, following count: $followingCount',
+        );
       }
-      
+
       // Update selectedUserProfile with new counts for UI
-      if (selectedUserProfile.isNotEmpty && selectedUserProfile['user_id'] == userId) {
+      if (selectedUserProfile.isNotEmpty &&
+          selectedUserProfile['user_id'] == userId) {
         // Store previous values for logging
         final prevFollowerCount = selectedUserProfile['follower_count'] ?? 0;
         final prevFollowingCount = selectedUserProfile['following_count'] ?? 0;
-        
+
         // Update with new values
         selectedUserProfile['follower_count'] = followerCount;
         selectedUserProfile['following_count'] = followingCount;
-        
+
         debugPrint('CRITICAL: Updated UI state for user $userId');
-        debugPrint('  - Followers changed from $prevFollowerCount to $followerCount');
-        debugPrint('  - Following changed from $prevFollowingCount to $followingCount');
+        debugPrint(
+          '  - Followers changed from $prevFollowerCount to $followerCount',
+        );
+        debugPrint(
+          '  - Following changed from $prevFollowingCount to $followingCount',
+        );
       }
-      
+
       // Force UI update
       update();
     } catch (e) {
@@ -804,10 +910,10 @@ class ExploreController extends GetxController {
   // Open a list of followers for a user
   void openFollowersList(String userId) {
     debugPrint('Opening followers list for user: $userId');
-    
+
     // Get the nickname to display on the followers page
     String nickname = selectedUserProfile['nickname'] ?? 'User';
-    
+
     // Create the followers page
     Get.to(
       () => FollowListView(
@@ -822,10 +928,10 @@ class ExploreController extends GetxController {
   // Open a list of users that a user is following
   void openFollowingList(String userId) {
     debugPrint('Opening following list for user: $userId');
-    
+
     // Get the nickname to display on the following page
     String nickname = selectedUserProfile['nickname'] ?? 'User';
-    
+
     // Create the following page
     Get.to(
       () => FollowListView(
@@ -838,130 +944,151 @@ class ExploreController extends GetxController {
   }
 
   // Helper method to verify database counts after update - made public for use by other controllers
-  Future<void> verifyDatabaseCounts(String currentUserId, String targetUserId) async {
+  Future<void> verifyDatabaseCounts(
+    String currentUserId,
+    String targetUserId,
+  ) async {
     try {
       debugPrint('DATABASE VERIFICATION - START');
-      
+
       // Get accurate count from follows table first - these are the TRUE values
       final followingList = await _supabaseService.client
           .from('follows')
           .select()
           .eq('follower_id', currentUserId);
-          
+
       final followerList = await _supabaseService.client
           .from('follows')
           .select()
           .eq('following_id', targetUserId);
-          
+
       final int followingCount = followingList.length;
       final int followerCount = followerList.length;
-          
+
       debugPrint('TRUE COUNT FROM FOLLOWS TABLE:');
       debugPrint('Current user following count: $followingCount');
       debugPrint('Target user follower count: $followerCount');
-      
+
       // Now get the current profile values
-      final currentUserProfile = await _supabaseService.client
-          .from('profiles')
-          .select('follower_count, following_count')
-          .eq('user_id', currentUserId)
-          .single();
-          
-      final targetUserProfile = await _supabaseService.client
-          .from('profiles')
-          .select('follower_count, following_count')
-          .eq('user_id', targetUserId)
-          .single();
-          
+      final currentUserProfile =
+          await _supabaseService.client
+              .from('profiles')
+              .select('follower_count, following_count')
+              .eq('user_id', currentUserId)
+              .single();
+
+      final targetUserProfile =
+          await _supabaseService.client
+              .from('profiles')
+              .select('follower_count, following_count')
+              .eq('user_id', targetUserId)
+              .single();
+
       debugPrint('CURRENT PROFILE DATA:');
-      debugPrint('Current user ($currentUserId) - followers: ${currentUserProfile['follower_count']}, following: ${currentUserProfile['following_count']}');
-      debugPrint('Target user ($targetUserId) - followers: ${targetUserProfile['follower_count']}, following: ${targetUserProfile['following_count']}');
-      
+      debugPrint(
+        'Current user ($currentUserId) - followers: ${currentUserProfile['follower_count']}, following: ${currentUserProfile['following_count']}',
+      );
+      debugPrint(
+        'Target user ($targetUserId) - followers: ${targetUserProfile['follower_count']}, following: ${targetUserProfile['following_count']}',
+      );
+
       // Fix any discrepancy in current user counts
       if (currentUserProfile['following_count'] != followingCount) {
         debugPrint('Fixing discrepancy in current user following count');
         await _supabaseService.client
-          .from('profiles')
-          .update({'following_count': followingCount})
-          .eq('user_id', currentUserId);
-          
+            .from('profiles')
+            .update({'following_count': followingCount})
+            .eq('user_id', currentUserId);
+
         // Wait a bit to ensure the update takes effect
         await Future.delayed(Duration(milliseconds: 300));
-          
+
         // Also update the AccountDataProvider directly
         _accountDataProvider.followingCount.value = followingCount;
-        
+
         // Verify update was successful
-        final verifiedCurrentUser = await _supabaseService.client
-          .from('profiles')
-          .select('following_count')
-          .eq('user_id', currentUserId)
-          .single();
-          
-        debugPrint('VERIFIED current user following count: ${verifiedCurrentUser['following_count']}');
+        final verifiedCurrentUser =
+            await _supabaseService.client
+                .from('profiles')
+                .select('following_count')
+                .eq('user_id', currentUserId)
+                .single();
+
+        debugPrint(
+          'VERIFIED current user following count: ${verifiedCurrentUser['following_count']}',
+        );
       }
-      
+
       // Fix any discrepancy in target user follower count
       if (targetUserProfile['follower_count'] != followerCount) {
-        debugPrint('CRITICAL FIX: Updating target user follower count from ${targetUserProfile['follower_count']} to $followerCount');
-        
+        debugPrint(
+          'CRITICAL FIX: Updating target user follower count from ${targetUserProfile['follower_count']} to $followerCount',
+        );
+
         // Attempt to update the database with correct count
         final response = await _supabaseService.client
-          .from('profiles')
-          .update({'follower_count': followerCount})
-          .eq('user_id', targetUserId);
-        
+            .from('profiles')
+            .update({'follower_count': followerCount})
+            .eq('user_id', targetUserId);
+
         debugPrint('Database update response: $response');
-        
+
         // Wait a bit to ensure the update takes effect
         await Future.delayed(Duration(milliseconds: 300));
-        
+
         // If this is the current user, update follower count in AccountDataProvider
         if (targetUserId == currentUserId) {
           _accountDataProvider.followerCount.value = followerCount;
         }
-        
+
         // Verify the update was successful
-        final verifiedTargetUser = await _supabaseService.client
-          .from('profiles')
-          .select('follower_count')
-          .eq('user_id', targetUserId)
-          .single();
-          
-        debugPrint('VERIFIED target user follower count: ${verifiedTargetUser['follower_count']}');
-        
+        final verifiedTargetUser =
+            await _supabaseService.client
+                .from('profiles')
+                .select('follower_count')
+                .eq('user_id', targetUserId)
+                .single();
+
+        debugPrint(
+          'VERIFIED target user follower count: ${verifiedTargetUser['follower_count']}',
+        );
+
         // If the update didn't work for some reason, force it with a direct upsert
         if (verifiedTargetUser['follower_count'] != followerCount) {
           debugPrint('WARNING: Initial update failed, trying direct upsert');
-          
-          await _supabaseService.client
-            .from('profiles')
-            .upsert({
-              'user_id': targetUserId,
-              'follower_count': followerCount
-            });
-            
+
+          await _supabaseService.client.from('profiles').upsert({
+            'user_id': targetUserId,
+            'follower_count': followerCount,
+          });
+
           await Future.delayed(Duration(milliseconds: 300));
-          
-          final finalCheck = await _supabaseService.client
-            .from('profiles')
-            .select('follower_count')
-            .eq('user_id', targetUserId)
-            .single();
-            
-          debugPrint('FINAL CHECK target user follower count: ${finalCheck['follower_count']}');
+
+          final finalCheck =
+              await _supabaseService.client
+                  .from('profiles')
+                  .select('follower_count')
+                  .eq('user_id', targetUserId)
+                  .single();
+
+          debugPrint(
+            'FINAL CHECK target user follower count: ${finalCheck['follower_count']}',
+          );
         }
-        
+
         // Also update selectedUserProfile if it matches the target user
-        if (selectedUserProfile.isNotEmpty && selectedUserProfile['user_id'] == targetUserId) {
-          debugPrint('Updating selectedUserProfile follower count from ${selectedUserProfile['follower_count']} to $followerCount');
+        if (selectedUserProfile.isNotEmpty &&
+            selectedUserProfile['user_id'] == targetUserId) {
+          debugPrint(
+            'Updating selectedUserProfile follower count from ${selectedUserProfile['follower_count']} to $followerCount',
+          );
           selectedUserProfile['follower_count'] = followerCount;
         }
       }
-      
+
       // Force UI update to reflect changes
       update();
-      
+
       debugPrint('DATABASE VERIFICATION - COMPLETE');
     } catch (e) {
       debugPrint('Error verifying database counts: $e');

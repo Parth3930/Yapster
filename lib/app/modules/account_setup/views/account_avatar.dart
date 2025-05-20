@@ -61,12 +61,11 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
                     CircleAvatar(
                       radius: 50,
                       backgroundColor: Colors.grey[300],
-                      backgroundImage: _getAvatarImage(
+                      backgroundImage: AvatarUtils.getAvatarImage(
                         controller.selectedImage.value,
                         accountDataProvider,
                       ),
-                      child:
-                          _shouldShowDefaultIcon(
+                      child: AvatarUtils.shouldShowDefaultIcon(
                                 controller.selectedImage.value,
                                 accountDataProvider,
                               )
@@ -117,20 +116,5 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
         ],
       ),
     );
-  }
-
-  // Using the centralized avatar utility methods
-  ImageProvider? _getAvatarImage(
-    XFile? selectedImage,
-    AccountDataProvider provider,
-  ) {
-    return AvatarUtils.getAvatarImage(selectedImage, provider);
-  }
-
-  bool _shouldShowDefaultIcon(
-    XFile? selectedImage,
-    AccountDataProvider provider,
-  ) {
-    return AvatarUtils.shouldShowDefaultIcon(selectedImage, provider);
   }
 }

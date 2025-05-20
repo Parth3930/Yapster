@@ -33,7 +33,7 @@ class ProfileAvatarWidget extends StatelessWidget {
             children: [
               // Avatar image with loading state
               !isLoaded &&
-                      !_shouldShowDefaultIcon(
+                      !AvatarUtils.shouldShowDefaultIcon(
                         selectedImage,
                         accountDataProvider,
                       )
@@ -50,12 +50,12 @@ class ProfileAvatarWidget extends StatelessWidget {
                   : CircleAvatar(
                     radius: radius,
                     backgroundColor: ProfileConstants.darkBackground,
-                    backgroundImage: _getAvatarImage(
+                    backgroundImage: AvatarUtils.getAvatarImage(
                       selectedImage,
                       accountDataProvider,
                     ),
                     child:
-                        _shouldShowDefaultIcon(
+                        AvatarUtils.shouldShowDefaultIcon(
                               selectedImage,
                               accountDataProvider,
                             )
@@ -96,21 +96,5 @@ class ProfileAvatarWidget extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  // Using centralized avatar utility methods with CachedNetworkImageProvider
-  ImageProvider? _getAvatarImage(
-    XFile? selectedImage,
-    AccountDataProvider provider,
-  ) {
-    return AvatarUtils.getAvatarImage(selectedImage, provider);
-  }
-
-  // Using centralized avatar utility method
-  bool _shouldShowDefaultIcon(
-    XFile? selectedImage,
-    AccountDataProvider provider,
-  ) {
-    return AvatarUtils.shouldShowDefaultIcon(selectedImage, provider);
   }
 }

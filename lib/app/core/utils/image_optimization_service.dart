@@ -12,7 +12,6 @@ class ImageOptimizationService extends GetxService {
   late final CacheManager _customCacheManager;
   
   // Image cache settings
-  final int _maxCacheSizeInMB = 100;
   final int _maxCacheEntries = 500;
   final Duration _cacheValidity = const Duration(days: 30);
   

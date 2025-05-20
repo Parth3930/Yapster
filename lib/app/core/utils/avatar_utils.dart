@@ -127,9 +127,9 @@ class AvatarUtils {
       return FileImage(File(selectedImage.path));
     } 
     
-    // First try profile avatar
+    // First try profile avatar (only if it's not marked as skipped)
     final profileAvatarUrl = provider.avatar.value;
-    if (isValidUrl(profileAvatarUrl)) {
+    if (profileAvatarUrl != "skiped" && isValidUrl(profileAvatarUrl)) {
       // Use cached image if available
       if (!_imageCache.containsKey(profileAvatarUrl)) {
         _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(profileAvatarUrl);
