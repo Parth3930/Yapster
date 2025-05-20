@@ -7,10 +7,12 @@ import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:yapster/app/core/utils/encryption_service.dart';
+import 'package:yapster/app/core/utils/chat_cache_service.dart';
 
 class ChatController extends GetxController with WidgetsBindingObserver {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
   final AccountDataProvider _accountDataProvider = Get.find<AccountDataProvider>();
+  final ChatCacheService _chatCacheService = Get.find<ChatCacheService>();
   late EncryptionService _encryptionService;
   
   // Getter for supabaseService to access from views
@@ -50,6 +52,12 @@ class ChatController extends GetxController with WidgetsBindingObserver {
   DateTime? _lastReadStatusUpdate;
   final _readStatusThrottleDuration = const Duration(seconds: 10);
   
+  // Performance optimization: batch operations
+  final bool _useBatchOperations = true;
+  
+  // Cache for decrypted messages to avoid repeated decryption
+  final Map<String, String> _decryptedContentCache = {};
+  
   @override
   void onInit() {
     super.onInit();
@@ -71,8 +79,10 @@ class ChatController extends GetxController with WidgetsBindingObserver {
     // Clear processed message IDs before loading anything
     _processedMessageIds.clear();
     
-    // Load data after initialization
-    loadRecentChats();
+    // Load data after initialization - try from cache first
+    _loadInitialDataFromCache();
+    
+    // Set up realtime subscription
     _setupRealtimeSubscription();
     
     // Start the message cleanup timer that runs once per hour
@@ -83,6 +93,19 @@ class ChatController extends GetxController with WidgetsBindingObserver {
     
     // Set initial active time
     _lastActiveTime = DateTime.now();
+  }
+  
+  // Load initial data from cache when controller starts
+  Future<void> _loadInitialDataFromCache() async {
+    // Load recent chats from cache to show immediately
+    final cachedChats = _chatCacheService.getCachedRecentChats();
+    if (cachedChats != null && cachedChats.isNotEmpty) {
+      recentChats.value = cachedChats;
+      debugPrint('Loaded ${cachedChats.length} chats from cache');
+    }
+    
+    // Then refresh from network
+    loadRecentChats();
   }
   
   @override
@@ -113,8 +136,8 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       if (timeDifference > 5) {
         debugPrint('App resumed after $timeDifference seconds - refreshing data');
         
-        // Refresh chat list
-        loadRecentChats();
+        // Refresh chat list - try cache first then network
+        _refreshChatsWithCacheFallback();
         
         // Check if we're in a chat and refresh if needed
         if (selectedChatId.isNotEmpty) {
@@ -127,6 +150,21 @@ class ChatController extends GetxController with WidgetsBindingObserver {
     } else if (state == AppLifecycleState.paused) {
       // App went to background
       _lastActiveTime = DateTime.now();
+    }
+  }
+  
+  // Load chats with cache fallback
+  Future<void> _refreshChatsWithCacheFallback() async {
+    // Try to refresh from network
+    final refreshSuccess = await loadRecentChats();
+    
+    // If network refresh failed, ensure we at least have cached data
+    if (!refreshSuccess && recentChats.isEmpty) {
+      final cachedChats = _chatCacheService.getCachedRecentChats();
+      if (cachedChats != null && cachedChats.isNotEmpty) {
+        recentChats.value = cachedChats;
+        debugPrint('Using cached chats as network refresh failed');
+      }
     }
   }
   
@@ -143,14 +181,33 @@ class ChatController extends GetxController with WidgetsBindingObserver {
         _cleanupChatSubscription();
         _subscribeToChat(chatId);
         
-        // Also refresh messages from server
-        loadMessages(chatId);
+        // Also refresh messages from server with cache fallback
+        _refreshMessagesWithCacheFallback(chatId);
       }
     } catch (e) {
       debugPrint('Error in chat subscription: $e');
       // If any error occurs, try to resubscribe from scratch
       _cleanupChatSubscription();
       _subscribeToChat(chatId);
+    }
+  }
+  
+  // Refresh messages with cache fallback
+  Future<void> _refreshMessagesWithCacheFallback(String chatId) async {
+    try {
+      // Try to load from network first
+      await loadMessages(chatId);
+    } catch (e) {
+      debugPrint('Error loading messages from network: $e');
+      
+      // Fallback to cache if available and not already loaded
+      if (messages.isEmpty) {
+        final cachedMessages = _chatCacheService.getCachedMessages(chatId);
+        if (cachedMessages != null && cachedMessages.isNotEmpty) {
+          messages.value = cachedMessages;
+          debugPrint('Using cached messages as network refresh failed');
+        }
+      }
     }
   }
   
@@ -177,21 +234,38 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       final currentUserId = _supabaseService.currentUser.value?.id;
       if (currentUserId == null) return;
       
+      // Check if we have this search result cached
+      final cacheKey = 'search_${query.toLowerCase()}';
+      final cachedSearchResults = _getCachedSearchResults(cacheKey);
+      
+      if (cachedSearchResults != null) {
+        searchResults.value = cachedSearchResults;
+        isSearching.value = false;
+        return;
+      }
+      
       // Combined search results list
       List<Map<String, dynamic>> results = [];
       
+      // Parallel search for better performance
+      final futures = <Future>[];
+      
       // 1. Search all users in database
-      final usersResponse = await _supabaseService.client
+      final userSearchFuture = _supabaseService.client
           .from('profiles')
           .select('user_id, username, nickname, avatar, google_avatar')
           .ilike('username', '%$query%')
           .neq('user_id', currentUserId)
-          .limit(10);
+          .limit(10)
+          .then((usersResponse) {
+            if (usersResponse.isNotEmpty) {
+              results.addAll(List<Map<String, dynamic>>.from(usersResponse));
+            }
+          });
       
-      if (usersResponse.isNotEmpty) {
-        results.addAll(List<Map<String, dynamic>>.from(usersResponse));
-      }
+      futures.add(userSearchFuture);
       
+      // Process local data in memory for faster results
       // 2. Search in following users
       if (_accountDataProvider.following.isNotEmpty) {
         final followingResults = _accountDataProvider.following.where((user) {
@@ -230,6 +304,9 @@ class ChatController extends GetxController with WidgetsBindingObserver {
         results.addAll(followerResults);
       }
       
+      // Wait for all search operations to complete
+      await Future.wait(futures);
+      
       // Remove duplicates (prefer following/follower entries over regular ones)
       final Map<String, Map<String, dynamic>> uniqueResults = {};
       
@@ -243,7 +320,12 @@ class ChatController extends GetxController with WidgetsBindingObserver {
         }
       }
       
-      searchResults.value = uniqueResults.values.toList();
+      final finalResults = uniqueResults.values.toList();
+      
+      // Cache the results for future use
+      _cacheSearchResults(cacheKey, finalResults);
+      
+      searchResults.value = finalResults;
     } catch (e) {
       debugPrint('Error searching users: $e');
     } finally {
@@ -251,16 +333,70 @@ class ChatController extends GetxController with WidgetsBindingObserver {
     }
   }
   
-  Future<void> loadRecentChats() async {
-    if (!_supabaseService.isAuthenticated.value) return;
+  // Cache search results in memory
+  void _cacheSearchResults(String cacheKey, List<Map<String, dynamic>> results) {
+    // Use a simple in-memory cache with a 5 minute TTL
+    final storage = Get.find<StorageService>();
+    final cacheData = {
+      'timestamp': DateTime.now().toIso8601String(),
+      'results': results
+    };
+    storage.saveObject(cacheKey, cacheData);
+  }
+  
+  // Get cached search results
+  List<Map<String, dynamic>>? _getCachedSearchResults(String cacheKey) {
+    try {
+      final storage = Get.find<StorageService>();
+      final cacheData = storage.getObject(cacheKey);
+      
+      if (cacheData != null) {
+        final timestamp = DateTime.parse(cacheData['timestamp']);
+        final now = DateTime.now();
+        
+        // Check if cache is still valid (5 minutes)
+        if (now.difference(timestamp).inMinutes < 5) {
+          return List<Map<String, dynamic>>.from(cacheData['results']);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error retrieving cached search results: $e');
+    }
     
+    return null;
+  }
+  
+  Future<bool> loadRecentChats() async {
+    if (!_supabaseService.isAuthenticated.value) return false;
+    
+    // Check cache first unless it's a forced refresh
+    final cachedChats = _chatCacheService.getCachedRecentChats();
+    if (cachedChats != null && cachedChats.isNotEmpty && !isLoadingChats.value) {
+      recentChats.value = cachedChats;
+      debugPrint('Using cached recent chats');
+      
+      // Refresh in background unless we're already loading
+      if (!isLoadingChats.value) {
+        _loadRecentChatsFromNetwork();
+      }
+      return true;
+    }
+    
+    // No valid cache, load from network
+    return await _loadRecentChatsFromNetwork();
+  }
+  
+  Future<bool> _loadRecentChatsFromNetwork() async {
     isLoadingChats.value = true;
     
     try {
       final currentUserId = _supabaseService.currentUser.value?.id;
-      if (currentUserId == null) return;
+      if (currentUserId == null) {
+        isLoadingChats.value = false;
+        return false;
+      }
       
-      // Use the new SQL function to get user chats with all necessary data
+      // Use the SQL function to get user chats with all necessary data
       final response = await _supabaseService.client
           .rpc('get_user_chats', params: {
             'user_id_param': currentUserId
@@ -269,30 +405,21 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       if (response != null) {
         final chatsList = List<Map<String, dynamic>>.from(response);
         
-        // Decrypt message content for previews
-        for (final chat in chatsList) {
-          if (chat['last_message'] != null && chat['last_message'].toString().isNotEmpty) {
-            try {
-              // Try to decrypt with chat-specific key first
-              if (chat['chat_id'] != null) {
-                chat['last_message'] = await _encryptionService.decryptMessageForChat(
-                  chat['last_message'],
-                  chat['chat_id']
-                );
-              } else {
-                // Fall back to legacy decryption
-                chat['last_message'] = _encryptionService.decryptMessage(chat['last_message']);
-              }
-            } catch (e) {
-              debugPrint('Could not decrypt message preview: $e');
-            }
-          }
-        }
+        // Decrypt message content for previews more efficiently
+        await _decryptChatPreviews(chatsList);
         
         recentChats.value = chatsList;
-        debugPrint('Loaded ${recentChats.length} chats');
+        
+        // Cache the results
+        _chatCacheService.cacheRecentChats(chatsList);
+        
+        debugPrint('Loaded and cached ${recentChats.length} chats');
+        isLoadingChats.value = false;
+        return true;
       } else {
         recentChats.value = [];
+        isLoadingChats.value = false;
+        return false;
       }
     } catch (e) {
       debugPrint('Error loading recent chats: $e');
@@ -303,8 +430,62 @@ class ChatController extends GetxController with WidgetsBindingObserver {
         backgroundColor: Colors.red.withOpacity(0.8),
         colorText: Colors.white
       );
-    } finally {
       isLoadingChats.value = false;
+      return false;
+    }
+  }
+  
+  // More efficient way to decrypt chat previews in parallel
+  Future<void> _decryptChatPreviews(List<Map<String, dynamic>> chats) async {
+    final decryptionFutures = <Future>[];
+    
+    for (final chat in chats) {
+      if (chat['last_message'] != null && chat['last_message'].toString().isNotEmpty) {
+        // Add each decryption task to our futures list
+        decryptionFutures.add(_decryptChatPreview(chat));
+      }
+    }
+    
+    // Wait for all decryption tasks to complete in parallel
+    await Future.wait(decryptionFutures);
+  }
+  
+  Future<void> _decryptChatPreview(Map<String, dynamic> chat) async {
+    if (chat['last_message'] == null || chat['last_message'].toString().isEmpty) {
+      return;
+    }
+    
+    try {
+      final encryptedMessage = chat['last_message'].toString();
+      final chatId = chat['chat_id'];
+      
+      // Check if we already have it decrypted in our cache
+      final cacheKey = '$chatId:$encryptedMessage';
+      if (_decryptedContentCache.containsKey(cacheKey)) {
+        chat['last_message'] = _decryptedContentCache[cacheKey];
+        return;
+      }
+      
+      // Try to decrypt with chat-specific key first
+      if (chatId != null) {
+        final decrypted = await _encryptionService.decryptMessageForChat(
+          encryptedMessage,
+          chatId
+        );
+        chat['last_message'] = decrypted;
+        
+        // Cache the decrypted result
+        _decryptedContentCache[cacheKey] = decrypted;
+      } else {
+        // Fall back to legacy decryption
+        final decrypted = _encryptionService.decryptMessage(encryptedMessage);
+        chat['last_message'] = decrypted;
+        
+        // Cache the decrypted result
+        _decryptedContentCache[cacheKey] = decrypted;
+      }
+    } catch (e) {
+      debugPrint('Could not decrypt message preview: $e');
     }
   }
   
@@ -350,6 +531,14 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       
       // Update selected chat
       selectedChatId.value = chatId;
+      
+      // Try preload messages from cache while loading from network
+      // This provides instant UI response while fresh data loads
+      final cachedMessages = await _chatCacheService.preloadMessagesFromStorage(chatId);
+      if (cachedMessages != null && cachedMessages.isNotEmpty) {
+        messages.value = cachedMessages;
+        debugPrint('Showed ${cachedMessages.length} cached messages while loading fresh data');
+      }
       
       // Load messages for this chat
       await loadMessages(chatId);
@@ -406,7 +595,7 @@ class ChatController extends GetxController with WidgetsBindingObserver {
           'google_avatar': response['google_avatar'],
           'nickname': response['nickname'],
         });
-            }
+      }
     } catch (e) {
       debugPrint('Error loading user profile for chat: $e');
     }
@@ -414,53 +603,136 @@ class ChatController extends GetxController with WidgetsBindingObserver {
   
   // Load messages for a chat
   Future<void> loadMessages(String chatId) async {
+    // Set loading state
     isSendingMessage.value = true;
     
     try {
+      // Check cache first for immediate UI update
+      final cachedMessages = _chatCacheService.getCachedMessages(chatId);
+      final bool useCache = cachedMessages != null && cachedMessages.isNotEmpty;
+      
+      if (useCache) {
+        // Update UI immediately from cache
+        messages.value = cachedMessages;
+        debugPrint('Loaded ${cachedMessages.length} messages from cache');
+        
+        // Lazy load from network if cache is fresh
+        final shouldRefreshFromNetwork = !_isCacheFresh(chatId);
+        if (shouldRefreshFromNetwork) {
+          // Continue loading from network in background
+          debugPrint('Cache is stale, refreshing from network in background');
+        } else {
+          // Cache is fresh enough, skip network load for now
+          isSendingMessage.value = false;
+          // Still set up subscription to ensure realtime updates
+          _subscribeToChat(chatId);
+          return;
+        }
+      }
+      
+      // Load from network
       final response = await _supabaseService.client
           .from('messages')
           .select()
           .eq('chat_id', chatId)
           .order('created_at');
       
-      if (response.isNotEmpty) {
+      if (response != null && response.isNotEmpty) {
         final messagesList = List<Map<String, dynamic>>.from(response);
         
         // Clear processed message IDs when loading messages
         _processedMessageIds.clear();
         
-        // Decrypt message content
-        for (var message in messagesList) {
-          // Store processed message IDs
-          if (message['message_id'] != null) {
-            _processedMessageIds.add(message['message_id'].toString());
-          }
-          
-          // Decrypt message content with chat-specific key
-          if (message['content'] != null && message['content'].toString().isNotEmpty) {
-            try {
-              message['content'] = await _encryptionService.decryptMessageForChat(message['content'], chatId);
-            } catch (e) {
-              // If decryption fails, try legacy decryption
-              try {
-                message['content'] = _encryptionService.decryptMessage(message['content']);
-              } catch (e2) {
-                debugPrint('Could not decrypt message: $e2');
-              }
-            }
-          }
-        }
+        // Decrypt message content in parallel for better performance
+        await _decryptMessages(messagesList, chatId);
         
+        // Update the messages list
         messages.value = messagesList;
-        debugPrint('Loaded ${messages.length} messages');
+        
+        // Cache the messages for future use
+        _chatCacheService.cacheMessages(chatId, messagesList);
+        
+        debugPrint('Loaded and cached ${messages.length} messages from network');
         
         // Subscribe to realtime updates for this chat
+        _subscribeToChat(chatId);
+      } else if (!useCache) {
+        // No messages from network and no cache - set empty list
+        messages.value = [];
+        debugPrint('No messages found for chat $chatId');
+        
+        // Still set up subscription to receive new messages
         _subscribeToChat(chatId);
       }
     } catch (e) {
       debugPrint('Error loading messages: $e');
+      // If we have cache, keep using it even if network failed
+      if (messages.isEmpty) {
+        final fallbackCache = _chatCacheService.getCachedMessages(chatId);
+        if (fallbackCache != null) {
+          messages.value = fallbackCache;
+          debugPrint('Using cached messages due to network error');
+        }
+      }
     } finally {
       isSendingMessage.value = false;
+    }
+  }
+  
+  // Decrypt messages in parallel for better performance
+  Future<void> _decryptMessages(List<Map<String, dynamic>> messagesList, String chatId) async {
+    final decryptionFutures = <Future>[];
+    
+    for (var message in messagesList) {
+      // Store processed message IDs
+      if (message['message_id'] != null) {
+        _processedMessageIds.add(message['message_id'].toString());
+      }
+      
+      // Skip decryption for empty content
+      if (message['content'] == null || message['content'].toString().isEmpty) {
+        continue;
+      }
+      
+      // Decrypt message content with chat-specific key
+      decryptionFutures.add(_decryptMessage(message, chatId));
+    }
+    
+    // Wait for all decryption operations to complete
+    await Future.wait(decryptionFutures);
+  }
+  
+  // Decrypt a single message
+  Future<void> _decryptMessage(Map<String, dynamic> message, String chatId) async {
+    try {
+      final encryptedContent = message['content'].toString();
+      
+      // Check decryption cache first
+      final cacheKey = '$chatId:$encryptedContent';
+      if (_decryptedContentCache.containsKey(cacheKey)) {
+        message['content'] = _decryptedContentCache[cacheKey];
+        return;
+      }
+      
+      // Decrypt with chat-specific key
+      final decrypted = await _encryptionService.decryptMessageForChat(encryptedContent, chatId);
+      message['content'] = decrypted;
+      
+      // Cache the decrypted content
+      _decryptedContentCache[cacheKey] = decrypted;
+    } catch (e) {
+      // If decryption fails, try legacy decryption
+      try {
+        final encryptedContent = message['content'].toString();
+        final decrypted = _encryptionService.decryptMessage(encryptedContent);
+        message['content'] = decrypted;
+        
+        // Cache the legacy decrypted content
+        final cacheKey = 'legacy:${message['content']}';
+        _decryptedContentCache[cacheKey] = decrypted;
+      } catch (e2) {
+        debugPrint('Could not decrypt message: $e2');
+      }
     }
   }
   
@@ -477,7 +749,7 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       return;
     }
     
-    debugPrint('Sending message to chat $chatId: $content');
+    debugPrint('Sending message to chat $chatId');
     isSendingMessage.value = true;
     
     try {
@@ -488,19 +760,23 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       // Encrypt the message content with chat-specific key
       final encryptedContent = await _encryptionService.encryptMessageForChat(content, chatId);
       
-      // Add message to database
-      debugPrint('Inserting encrypted message into database...');
-      final response = await _supabaseService.client.from('messages').insert({
+      // Create message object
+      final messageData = {
         'chat_id': chatId,
         'sender_id': currentUserId,
         'content': encryptedContent,
         'created_at': now,
         'expires_at': expiresAt,
-      }).select();
+      };
       
-      debugPrint('Message inserted, response: $response');
+      // Add message to database
+      debugPrint('Inserting encrypted message into database...');
+      final response = await _supabaseService.client
+          .from('messages')
+          .insert(messageData)
+          .select();
       
-      if (response.isNotEmpty) {
+      if (response != null && response.isNotEmpty) {
         // Add the message immediately to local state
         final newMessage = Map<String, dynamic>.from(response[0]);
         
@@ -514,18 +790,25 @@ class ChatController extends GetxController with WidgetsBindingObserver {
         // Use original content for display (not encrypted version)
         newMessage['content'] = content;
         
-        // Check if we're already tracking this message (could happen with search + chat)
+        // Cache the decrypted content for future reference
+        final cacheKey = '$chatId:$encryptedContent';
+        _decryptedContentCache[cacheKey] = content;
+        
+        // Check if we're already tracking this message
         final isDuplicate = _isDuplicateMessage(newMessage);
         if (!isDuplicate) {
           final newMessages = List<Map<String, dynamic>>.from(messages);
           newMessages.add(newMessage);
           messages.assignAll(newMessages); // Use assignAll instead of .value =
+          
+          // Update the cache
+          _chatCacheService.cacheMessages(chatId, messages);
         } else {
           debugPrint('Skipping duplicate of sent message in UI update');
         }
         
-        // Reload recent chats to update the chat list
-        loadRecentChats();
+        // Update recent chats cache to avoid having to reload from network
+        _updateRecentChatsAfterSend(chatId, content, currentUserId);
         
         // Clear the message input
         messageController.clear();
@@ -545,6 +828,177 @@ class ChatController extends GetxController with WidgetsBindingObserver {
     }
   }
   
+  // Update recent chats in memory after sending a message
+  void _updateRecentChatsAfterSend(String chatId, String content, String senderId) {
+    // Find the chat in recent chats
+    final chatIndex = recentChats.indexWhere((chat) => chat['chat_id'] == chatId);
+    
+    if (chatIndex >= 0) {
+      // Create a copy of the chat to update
+      final updatedChat = Map<String, dynamic>.from(recentChats[chatIndex]);
+      
+      // Update last message details
+      updatedChat['last_message'] = content;
+      updatedChat['last_message_time'] = DateTime.now().toIso8601String();
+      updatedChat['last_sender_id'] = senderId;
+      
+      // Replace the chat in the list
+      final updatedChats = List<Map<String, dynamic>>.from(recentChats);
+      updatedChats[chatIndex] = updatedChat;
+      
+      // Sort chats by most recent first
+      updatedChats.sort((a, b) {
+        final aTime = DateTime.tryParse(a['last_message_time'] ?? '') ?? DateTime(1970);
+        final bTime = DateTime.tryParse(b['last_message_time'] ?? '') ?? DateTime(1970);
+        return bTime.compareTo(aTime); // Newest first
+      });
+      
+      // Update the observable and cache
+      recentChats.value = updatedChats;
+      _chatCacheService.cacheRecentChats(updatedChats);
+      
+      debugPrint('Updated recent chats in cache after sending message');
+    } else {
+      // Chat not in recent chats yet, refresh from server
+      loadRecentChats();
+    }
+  }
+  
+  // Mark all messages in a chat as read - Optimized implementation
+  Future<void> markMessagesAsRead(String chatId) async {
+    try {
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId == null) {
+        debugPrint('Cannot mark messages as read: User not logged in');
+        return;
+      }
+      
+      // Throttle database calls to avoid excessive updates
+      final now = DateTime.now();
+      if (_lastReadStatusUpdate != null) {
+        final timeSinceLastUpdate = now.difference(_lastReadStatusUpdate!);
+        if (timeSinceLastUpdate < _readStatusThrottleDuration) {
+          debugPrint('Skipping database update due to throttling');
+          // Only update UI if we're skipping the database call
+          _updateLocalReadStatus(chatId, currentUserId);
+          return;
+        }
+      }
+      
+      // Update in memory first for immediate UI feedback
+      _updateLocalReadStatus(chatId, currentUserId);
+      
+      // Set last update time
+      _lastReadStatusUpdate = now;
+      
+      // Check if there are any unread messages
+      bool hasUnreadMessages = false;
+      for (final msg in messages) {
+        if (msg['chat_id'] == chatId && 
+            msg['sender_id'] != currentUserId && 
+            (msg['is_read'] == null || msg['is_read'] == false)) {
+          hasUnreadMessages = true;
+          break;
+        }
+      }
+      
+      if (!hasUnreadMessages) {
+        debugPrint('No unread messages found in memory');
+        return;
+      }
+      
+      debugPrint('Marking messages as read in chat: $chatId');
+      
+      // Use optimistic updates - assume success and update UI immediately
+      // Then perform database operation in background
+      try {
+        // Try to use the RPC function approach first (most efficient)
+        await _supabaseService.client.rpc(
+          'mark_messages_as_read',
+          params: {
+            'p_chat_id': chatId,
+            'p_user_id': currentUserId,
+          },
+        ).then((_) {
+          debugPrint('Successfully marked messages as read via RPC');
+        }).catchError((e) {
+          debugPrint('RPC function failed, falling back to direct update: $e');
+          
+          // Fall back to bulk update
+          return _supabaseService.client
+              .from('messages')
+              .update({'is_read': true})
+              .eq('chat_id', chatId)
+              .neq('sender_id', currentUserId)
+              .eq('is_read', false);
+        });
+        
+        // Update the cached messages to reflect read status
+        final updatedMessages = List<Map<String, dynamic>>.from(messages);
+        for (var i = 0; i < updatedMessages.length; i++) {
+          if (updatedMessages[i]['chat_id'] == chatId && 
+              updatedMessages[i]['sender_id'] != currentUserId) {
+            updatedMessages[i]['is_read'] = true;
+          }
+        }
+        
+        // Update cache with read status changed
+        _chatCacheService.cacheMessages(chatId, updatedMessages);
+        
+      } catch (e) {
+        debugPrint('Error marking messages as read: $e');
+        // Even if the server update fails, keep optimistic UI update
+      }
+    } catch (e) {
+      debugPrint('Error in markMessagesAsRead: $e');
+    }
+  }
+  
+  // Helper to update local UI without database calls
+  void _updateLocalReadStatus(String chatId, String currentUserId) {
+    bool anyUpdated = false;
+    for (var i = 0; i < messages.length; i++) {
+      final msg = messages[i];
+      if (msg['chat_id'] == chatId && 
+          msg['sender_id'] != currentUserId && 
+          (msg['is_read'] == null || msg['is_read'] == false)) {
+        final msgId = msg['message_id'];
+        debugPrint('Locally marking message $msgId as read');
+        messages[i] = {...msg, 'is_read': true};
+        anyUpdated = true;
+      }
+    }
+    
+    if (anyUpdated) {
+      // Force UI update 
+      messages.refresh();
+      Get.forceAppUpdate();
+      debugPrint('Updated local messages with read status');
+    }
+  }
+  
+  // Load user preferences from local storage
+  Future<void> _loadUserPreferences() async {
+    try {
+      final prefs = Get.find<StorageService>();
+      final dismissed = prefs.getBool('dismissed_expiry_banner') ?? false;
+      hasUserDismissedExpiryBanner.value = dismissed;
+    } catch (e) {
+      debugPrint('Error loading preferences: $e');
+    }
+  }
+  
+  // Dismiss the expiry banner and save preference
+  void dismissExpiryBanner() {
+    hasUserDismissedExpiryBanner.value = true;
+    try {
+      final prefs = Get.find<StorageService>();
+      prefs.saveBool('dismissed_expiry_banner', true);
+    } catch (e) {
+      debugPrint('Error saving preference: $e');
+    }
+  }
+  
   // Set up realtime subscription for messages
   void _setupRealtimeSubscription() {
     final currentUserId = _supabaseService.currentUser.value?.id;
@@ -556,15 +1010,32 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       debugPrint('Setting up global message subscription');
       
       // Subscribe to messages table to detect new messages for our chats
+      // Use a lighter approach that doesn't require full reload on every message
       _chatSubscription = _supabaseService.client
           .channel('public:messages')
           .onPostgresChanges(
             event: PostgresChangeEvent.insert,
             schema: 'public',
             table: 'messages',
-            callback: (_) {
-              // Reload recent chats when there's a new message
-              loadRecentChats();
+            callback: (payload) {
+              // Check if this message affects us
+              final chatId = payload.newRecord['chat_id'];
+              final senderId = payload.newRecord['sender_id'];
+              
+              // Skip if we're the sender (we already handled local updates)
+              if (senderId == currentUserId) {
+                return;
+              }
+              
+              // Check if this message is for a chat we're viewing
+              if (selectedChatId.value == chatId) {
+                // We'll handle this in the chat-specific subscription
+                return;
+              }
+              
+              // We received a message in a chat we're not currently viewing
+              // Just refresh recent chats to update unread counts and previews
+              _refreshRecentChatsAfterNewMessage(chatId);
             },
           )
           .onPostgresChanges(
@@ -572,16 +1043,13 @@ class ChatController extends GetxController with WidgetsBindingObserver {
             schema: 'public',
             table: 'messages',
             callback: (payload) {
-              // When a message is updated (like read status), refresh chat list
-              debugPrint('Global message update detected: ${payload.newRecord}');
-              loadRecentChats();
+              // For updates (usually read status), selectively refresh only what's needed
+              final chatId = payload.newRecord['chat_id'];
               
-              // If we have an active chat open and this message belongs to that chat
-              if (selectedChatId.isNotEmpty && 
-                  payload.newRecord['chat_id'] == selectedChatId.value) {
-                
-                // Reload messages to reflect the update
-                loadMessages(selectedChatId.value);
+              // Check if chat list needs refreshing due to this update
+              final shouldRefreshChats = _shouldRefreshChatsAfterUpdate(payload.newRecord);
+              if (shouldRefreshChats) {
+                _refreshRecentChatsAfterMessageUpdate(chatId);
               }
             },
           )
@@ -591,6 +1059,102 @@ class ChatController extends GetxController with WidgetsBindingObserver {
     }
   }
   
+  // Intelligently decide if we need to refresh chats list based on an update
+  bool _shouldRefreshChatsAfterUpdate(Map<String, dynamic> record) {
+    // Check if this update is for read status, which affects unread counts
+    if (record.containsKey('is_read')) {
+      return true;
+    }
+    
+    // Check if this is updating the last message in a chat
+    final chatId = record['chat_id'];
+    final messageId = record['message_id'];
+    
+    if (chatId != null) {
+      final chat = recentChats.firstWhereOrNull((c) => c['chat_id'] == chatId);
+      if (chat != null && chat['last_message_id'] == messageId) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  // Refresh recent chats after receiving a new message
+  void _refreshRecentChatsAfterNewMessage(String? chatId) {
+    if (chatId == null) return;
+    
+    // Check if we already have this chat in our list
+    final chatIndex = recentChats.indexWhere((chat) => chat['chat_id'] == chatId);
+    
+    if (chatIndex >= 0) {
+      // We have this chat, selectively update just this one instead of reload all
+      _loadSingleChatDetails(chatId).then((updatedChat) {
+        if (updatedChat != null) {
+          // Create updated list
+          final updatedChats = List<Map<String, dynamic>>.from(recentChats);
+          
+          // Replace the old chat data
+          updatedChats[chatIndex] = updatedChat;
+          
+          // Sort by most recent first
+          updatedChats.sort((a, b) {
+            final aTime = DateTime.tryParse(a['last_message_time'] ?? '') ?? DateTime(1970);
+            final bTime = DateTime.tryParse(b['last_message_time'] ?? '') ?? DateTime(1970);
+            return bTime.compareTo(aTime);
+          });
+          
+          // Update observable and cache
+          recentChats.value = updatedChats;
+          _chatCacheService.cacheRecentChats(updatedChats);
+          
+          debugPrint('Updated single chat in list after receiving message');
+        }
+      });
+    } else {
+      // Chat not in list, need full refresh
+      loadRecentChats();
+    }
+  }
+  
+  // Load details for a single chat
+  Future<Map<String, dynamic>?> _loadSingleChatDetails(String chatId) async {
+    try {
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId == null) return null;
+      
+      // Use RPC to get single chat details
+      final response = await _supabaseService.client
+          .rpc('get_single_chat', params: {
+            'chat_id_param': chatId,
+            'user_id_param': currentUserId
+          });
+      
+      if (response != null && response.isNotEmpty) {
+        final chat = Map<String, dynamic>.from(response[0]);
+        
+        // Decrypt the message preview if needed
+        if (chat['last_message'] != null && chat['last_message'].toString().isNotEmpty) {
+          await _decryptChatPreview(chat);
+        }
+        
+        return chat;
+      }
+    } catch (e) {
+      debugPrint('Error loading single chat details: $e');
+    }
+    
+    return null;
+  }
+  
+  // Update recent chats after a message update
+  void _refreshRecentChatsAfterMessageUpdate(String? chatId) {
+    if (chatId == null) return;
+    
+    // Use more efficient targeted update approach similar to new message case
+    _refreshRecentChatsAfterNewMessage(chatId);
+  }
+  
   // Subscribe to a specific chat for realtime message updates
   void _subscribeToChat(String chatId) {
     try {
@@ -598,6 +1162,10 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       _cleanupChatSubscription();
       
       debugPrint('Creating new real-time subscription for chat: $chatId');
+      
+      // Get current user ID
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId == null) return;
       
       // Create a new subscription with enhanced logging
       final chatChannel = _supabaseService.client
@@ -614,6 +1182,12 @@ class ChatController extends GetxController with WidgetsBindingObserver {
             callback: (payload) async {
               debugPrint('Realtime message received: ${payload.newRecord}');
               
+              // Skip if we're the sender (already handled locally)
+              if (payload.newRecord['sender_id'] == currentUserId) {
+                debugPrint('Skipping own message from realtime updates');
+                return;
+              }
+              
               // Add the new message to the messages list
               final newMessage = Map<String, dynamic>.from(payload.newRecord);
               final messageId = newMessage['message_id']?.toString();
@@ -627,56 +1201,15 @@ class ChatController extends GetxController with WidgetsBindingObserver {
               // Add to processed IDs to prevent future duplicates
               if (messageId != null) {
                 _processedMessageIds.add(messageId);
-                
-                // Log for debugging
-                debugPrint('Added message ID to processed list: $messageId');
-                debugPrint('Processed IDs count: ${_processedMessageIds.length}');
               }
               
-              // Decrypt message content with chat-specific key
-              if (newMessage['content'] != null && newMessage['content'].toString().isNotEmpty) {
-                try {
-                  newMessage['content'] = await _encryptionService.decryptMessageForChat(
-                    newMessage['content'], 
-                    chatId
-                  );
-                } catch (e) {
-                  // If chat-specific decryption fails, try legacy decryption
-                  try {
-                    newMessage['content'] = _encryptionService.decryptMessage(newMessage['content']);
-                  } catch (e2) {
-                    debugPrint('Could not decrypt realtime message: $e2');
-                  }
-                }
+              // Handle the new message
+              await _handleNewRealtimeMessage(newMessage, chatId);
+              
+              // Mark as read immediately if we're looking at this chat
+              if (selectedChatId.value == chatId) {
+                markMessagesAsRead(chatId);
               }
-              
-              // Extra check to prevent duplicates based on timestamps
-              final bool isDuplicate = _isDuplicateMessage(newMessage);
-              if (isDuplicate) {
-                debugPrint('Skipping duplicate message based on timestamp and content check');
-                return;
-              }
-              
-              debugPrint('Adding realtime message to UI: ${newMessage['content']}');
-              
-              // IMPROVED: More robust approach for updating UI
-              // 1. Add the message to the list
-              messages.add(newMessage);
-              // 2. Refresh the observable to notify listeners
-              messages.refresh();
-              // 3. Force UI update at app level to ensure UI is refreshed
-              Get.forceAppUpdate();
-              // 4. Since this method can run in background, post a callback to ensure UI refresh
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                debugPrint('Post-frame callback: updating UI with new message');
-                messages.refresh();
-                Get.forceAppUpdate();
-              });
-              
-              // Also reload recent chats to update the chat list
-              loadRecentChats();
-              
-              debugPrint('New message received and UI updated: ${newMessage['content']}');
             },
           )
           .onPostgresChanges(
@@ -689,54 +1222,10 @@ class ChatController extends GetxController with WidgetsBindingObserver {
               value: chatId,
             ),
             callback: (payload) async {
-              debugPrint('Realtime message update received: ${payload.newRecord}');
+              debugPrint('Realtime message update received');
               
-              // Get the updated message data
-              final updatedMessage = Map<String, dynamic>.from(payload.newRecord);
-              final messageId = updatedMessage['message_id']?.toString();
-              
-              if (messageId == null) {
-                debugPrint('No message ID found in update payload, skipping');
-                return;
-              }
-              
-              debugPrint('Processing message update for ID: $messageId, is_read: ${updatedMessage['is_read']}');
-              
-              // Update the corresponding message in our local list
-              bool updated = false;
-              for (var i = 0; i < messages.length; i++) {
-                final msg = messages[i];
-                final msgId = msg['message_id']?.toString();
-                
-                if (msgId == messageId) {
-                  // Preserve the decrypted content when updating
-                  updatedMessage['content'] = msg['content'];
-                  messages[i] = updatedMessage;
-                  updated = true;
-                  debugPrint('Updated message read status for ID: $messageId to ${updatedMessage['is_read']}');
-                  break;
-                }
-              }
-              
-              // IMPROVED: More robust update process
-              if (updated) {
-                // 1. Refresh observable to notify listeners
-                messages.refresh();
-                // 2. Force UI update at app level
-                Get.forceAppUpdate();
-                // 3. Post a callback to ensure UI is updated
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  messages.refresh();
-                  Get.forceAppUpdate();
-                  debugPrint('Post-frame callback: UI updated for read status change');
-                });
-                debugPrint('Message read status updated in UI');
-              } else {
-                debugPrint('Could not find message with ID: $messageId to update');
-              }
-              
-              // Also refresh recent chats in case the read status affects the UI there
-              loadRecentChats();
+              // Handle message updates (like read status changes)
+              await _handleMessageUpdate(payload.newRecord, chatId);
             },
           );
       
@@ -745,7 +1234,7 @@ class ChatController extends GetxController with WidgetsBindingObserver {
         debugPrint('Chat channel subscription status: $status, error: $error');
         if (error != null) {
           debugPrint('Error with chat subscription: $error');
-          // Try to resubscribe if there was an error
+          // Try to resubscribe if there was an error after a delay
           Future.delayed(const Duration(seconds: 2), () {
             debugPrint('Attempting to resubscribe after error');
             _resubscribeToChat(chatId);
@@ -769,9 +1258,94 @@ class ChatController extends GetxController with WidgetsBindingObserver {
     }
   }
   
-  // Helper method to check for duplicate messages with more robust checks
+  // Handle a new message from realtime subscription
+  Future<void> _handleNewRealtimeMessage(Map<String, dynamic> newMessage, String chatId) async {
+    try {
+      // Decrypt message content
+      if (newMessage['content'] != null && newMessage['content'].toString().isNotEmpty) {
+        try {
+          // Check decryption cache first
+          final encryptedContent = newMessage['content'].toString();
+          final cacheKey = '$chatId:$encryptedContent';
+          
+          if (_decryptedContentCache.containsKey(cacheKey)) {
+            newMessage['content'] = _decryptedContentCache[cacheKey];
+          } else {
+            // Decrypt with chat-specific key
+            final decrypted = await _encryptionService.decryptMessageForChat(
+              encryptedContent, 
+              chatId
+            );
+            newMessage['content'] = decrypted;
+            
+            // Cache for future use
+            _decryptedContentCache[cacheKey] = decrypted;
+          }
+        } catch (e) {
+          debugPrint('Could not decrypt realtime message: $e');
+        }
+      }
+      
+      // Check for duplicates
+      final isDuplicate = _isDuplicateMessage(newMessage);
+      if (isDuplicate) {
+        debugPrint('Skipping duplicate message');
+        return;
+      }
+      
+      // IMPROVED: More efficient UI updates
+      // 1. Create a copy of the current messages
+      final updatedMessages = List<Map<String, dynamic>>.from(messages);
+      // 2. Add the new message
+      updatedMessages.add(newMessage);
+      // 3. Update the observable list
+      messages.value = updatedMessages;
+      
+      // Update cache
+      _chatCacheService.cacheMessages(chatId, messages);
+      
+      debugPrint('Added new realtime message to chat');
+    } catch (e) {
+      debugPrint('Error handling realtime message: $e');
+    }
+  }
+  
+  // Handle message updates from realtime subscription
+  Future<void> _handleMessageUpdate(Map<String, dynamic> updatedMessage, String chatId) async {
+    try {
+      final messageId = updatedMessage['message_id']?.toString();
+      if (messageId == null) return;
+      
+      // Find and update the message in our local list
+      final index = messages.indexWhere((msg) => msg['message_id']?.toString() == messageId);
+      
+      if (index >= 0) {
+        // Get existing message
+        final existingMessage = messages[index];
+        
+        // Preserve decrypted content
+        updatedMessage['content'] = existingMessage['content'];
+        
+        // Update the message
+        final updatedMessages = List<Map<String, dynamic>>.from(messages);
+        updatedMessages[index] = updatedMessage;
+        
+        // Update observable
+        messages.value = updatedMessages;
+        
+        // Update cache
+        _chatCacheService.cacheMessages(chatId, messages);
+        
+        debugPrint('Updated message status in UI');
+      }
+    } catch (e) {
+      debugPrint('Error handling message update: $e');
+    }
+  }
+  
+  // Helper method to check for duplicate messages with robust checks
   bool _isDuplicateMessage(Map<String, dynamic> newMessage) {
-    // First check for ID-based duplicates (already handled above, but just in case)
+    // First check for ID-based duplicates
     if (newMessage['message_id'] != null && 
         messages.any((msg) => msg['message_id'] != null && msg['message_id'] == newMessage['message_id'])) {
       return true;
@@ -784,7 +1358,7 @@ class ChatController extends GetxController with WidgetsBindingObserver {
     final content = newMessage['content']?.toString() ?? '';
     final senderId = newMessage['sender_id'];
     
-    // Check if we have a message with the same content, sender, and recently sent
+    // Check if we have a message with the same content, sender, and sent within 5 seconds
     return messages.any((msg) {
       if (msg['sender_id'] != senderId) return false;
       if (msg['content'] != content) return false;
@@ -842,162 +1416,15 @@ class ChatController extends GetxController with WidgetsBindingObserver {
       debugPrint('Error deleting expired messages: $e');
     }
   }
-  
-  // Mark all messages in a chat as read - New implementation
-  Future<void> markMessagesAsRead(String chatId) async {
-    try {
-      final currentUserId = _supabaseService.currentUser.value?.id;
-      if (currentUserId == null) {
-        debugPrint('Cannot mark messages as read: User not logged in');
-        return;
-      }
-      
-      // Throttle database calls to avoid excessive updates
+
+  bool _isCacheFresh(String chatId) {
+    final cachedMessages = _chatCacheService.getCachedMessages(chatId);
+    if (cachedMessages != null && cachedMessages.isNotEmpty) {
       final now = DateTime.now();
-      if (_lastReadStatusUpdate != null) {
-        final timeSinceLastUpdate = now.difference(_lastReadStatusUpdate!);
-        if (timeSinceLastUpdate < _readStatusThrottleDuration) {
-          debugPrint('Skipping database update due to throttling');
-          // Only update UI if we're skipping the database call
-          _updateLocalReadStatus(chatId, currentUserId);
-          return;
-        }
-      }
-      
-      // Set last update time
-      _lastReadStatusUpdate = now;
-      
-      debugPrint('⚠️ ATTEMPTING TO MARK MESSAGES AS READ IN CHAT: $chatId');
-      
-      // Look for unread messages in this chat that are sent by others
-      final unreadMessages = await _supabaseService.client
-          .from('messages')
-          .select('*')
-          .eq('chat_id', chatId)
-          .neq('sender_id', currentUserId)
-          .eq('is_read', false);
-      
-      if (unreadMessages == null || unreadMessages.isEmpty) {
-        debugPrint('No unread messages found');
-        return;
-      }
-      
-      final List<Map<String, dynamic>> messages = List<Map<String, dynamic>>.from(unreadMessages);
-      
-      // Log first message to check structure
-      if (messages.isNotEmpty) {
-        debugPrint('First message structure: ${messages.first}');
-      }
-      
-      debugPrint('Found ${messages.length} unread messages');
-      
-      // Try using the RPC function approach, which is the most reliable
-      try {
-        debugPrint('⚠️ Attempting to use RPC function to mark messages as read');
-        final result = await _supabaseService.client.rpc(
-          'mark_messages_as_read',
-          params: {
-            'p_chat_id': chatId,
-            'p_user_id': currentUserId,
-          },
-        );
-        
-        debugPrint('RPC function result: $result');
-      } catch (e) {
-        debugPrint('⚠️ RPC function failed (you may need to create it in Supabase): $e');
-        
-        // Fall back to previous bulk update approach
-        try {
-          debugPrint('⚠️ Falling back to bulk update');
-          
-          // Attempt bulk update
-          final bulkResult = await _supabaseService.client
-              .from('messages')
-              .update({'is_read': true})
-              .eq('chat_id', chatId)
-              .neq('sender_id', currentUserId)
-              .eq('is_read', false);
-          
-          debugPrint('Bulk update result: $bulkResult');
-        } catch (bulkError) {
-          debugPrint('⚠️ Bulk update failed: $bulkError');
-          
-          // If bulk update fails, try individual updates
-          for (final message in messages) {
-            final String? messageId = message['message_id'] as String?;
-            
-            if (messageId == null) {
-              debugPrint('⚠️ Message ID is null, skipping update');
-              continue;
-            }
-            
-            debugPrint('⚠️ Updating individual message with ID: $messageId');
-            
-            try {
-              final result = await _supabaseService.client
-                  .from('messages')
-                  .update({'is_read': true})
-                  .eq('message_id', messageId);
-              
-              debugPrint('Individual update result: $result');
-            } catch (updateError) {
-              debugPrint('⚠️ Error updating individual message: $updateError');
-            }
-          }
-        }
-      }
-      
-      // Update local UI
-      _updateLocalReadStatus(chatId, currentUserId);
-      
-      debugPrint('⚠️ Completed marking messages as read');
-    } catch (e) {
-      debugPrint('⚠️ Error in markMessagesAsRead: $e');
+      final cachedTimestamp = DateTime.parse(cachedMessages[0]['created_at']);
+      final age = now.difference(cachedTimestamp).inSeconds;
+      return age < 120; // Assuming a 2-minute cache freshness
     }
-  }
-  
-  // Helper to update local UI without database calls
-  void _updateLocalReadStatus(String chatId, String currentUserId) {
-    bool anyUpdated = false;
-    for (var i = 0; i < messages.length; i++) {
-      final msg = messages[i];
-      if (msg['chat_id'] == chatId && 
-          msg['sender_id'] != currentUserId && 
-          (msg['is_read'] == null || msg['is_read'] == false)) {
-        final msgId = msg['message_id'];
-        debugPrint('Locally marking message $msgId as read');
-        messages[i] = {...msg, 'is_read': true};
-        anyUpdated = true;
-      }
-    }
-    
-    if (anyUpdated) {
-      // Force UI update 
-      messages.refresh();
-      Get.forceAppUpdate();
-      debugPrint('Updated local messages with read status');
-    }
-  }
-  
-  // Load user preferences from local storage
-  Future<void> _loadUserPreferences() async {
-    try {
-      final prefs = Get.find<StorageService>();
-      final dismissed = prefs.getBool('dismissed_expiry_banner') ?? false;
-      hasUserDismissedExpiryBanner.value = dismissed;
-    } catch (e) {
-      debugPrint('Error loading preferences: $e');
-    }
-  }
-  
-  // Dismiss the expiry banner and save preference
-  void dismissExpiryBanner() {
-    hasUserDismissedExpiryBanner.value = true;
-    try {
-      final prefs = Get.find<StorageService>();
-      prefs.saveBool('dismissed_expiry_banner', true);
-    } catch (e) {
-      debugPrint('Error saving preference: $e');
-    }
+    return false;
   }
 }

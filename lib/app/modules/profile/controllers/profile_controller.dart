@@ -109,7 +109,7 @@ class ProfileController extends GetxController {
         final userData =
             await _supabaseService.client
                 .from('profiles')
-                .select('nickname, username, bio, userNameUpdate, avatar')
+                .select('nickname, username, bio, userNameUpdate, avatar, google_avatar')
                 .eq('user_id', userId)
                 .single();
 
@@ -117,13 +117,21 @@ class ProfileController extends GetxController {
         _accountDataProvider.nickname.value = userData['nickname'] ?? '';
         _accountDataProvider.username.value = userData['username'] ?? '';
         _accountDataProvider.bio.value = userData['bio'] ?? '';
+        
+        // Update avatar
         if (userData['avatar'] != null) {
           _accountDataProvider.avatar.value = userData['avatar'];
-          
-          // Preload avatar after fetching
-          AvatarUtils.preloadAvatarImages(_accountDataProvider);
-          isAvatarLoaded.value = true;
         }
+        
+        // Update Google avatar if available
+        if (userData['google_avatar'] != null && userData['google_avatar'].toString().isNotEmpty) {
+          debugPrint('Setting Google avatar from DB: ${userData['google_avatar']}');
+          _accountDataProvider.googleAvatar.value = userData['google_avatar'];
+        }
+        
+        // Preload avatar after fetching
+        AvatarUtils.preloadAvatarImages(_accountDataProvider);
+        isAvatarLoaded.value = true;
 
         // Parse the username update timestamp if it exists in database
         // and we don't already have a more precise timestamp from SharedPreferences
@@ -354,6 +362,13 @@ class ProfileController extends GetxController {
     if (nickName != null) updateData['nickname'] = nickName;
     if (username != null) updateData['username'] = username;
     if (bio != null) updateData['bio'] = bio;
+    
+    // Ensure we preserve the Google avatar in the database
+    // This ensures it will be available as a fallback when avatar is "skiped"
+    if (_accountDataProvider.googleAvatar.value.isNotEmpty) {
+      updateData['google_avatar'] = _accountDataProvider.googleAvatar.value;
+      debugPrint('Preserving Google avatar in profile update: ${_accountDataProvider.googleAvatar.value}');
+    }
 
     // Update the username update timestamp if username was changed
     if (updateUsernameTimestamp) {

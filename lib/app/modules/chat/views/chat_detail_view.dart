@@ -6,6 +6,7 @@ import '../controllers/chat_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import 'package:yapster/app/routes/app_pages.dart';
+import 'package:yapster/app/core/utils/avatar_utils.dart';
 
 // Lifecycle observer to detect when app resumes from background
 class _AppLifecycleObserver extends WidgetsBindingObserver {
@@ -178,21 +179,18 @@ class ChatDetailView extends GetView<ChatController> {
       if (!isInFollowing && !isInFollowers) {
         debugPrint('Adding chat user to temporary following list');
         
-        // Get avatar and ensure it's a valid URL
+        // Process avatar URLs
         final String? avatar = response['avatar'];
         final String? googleAvatar = response['google_avatar'];
         
-        // Don't pass invalid URLs to the UI
-        final validAvatar = (avatar != null && 
-                             avatar != "skiped" && 
-                             avatar != "null" && 
-                             avatar.contains("://")) ? avatar : null;
+        // Log avatar values for debugging
+        debugPrint('Adding chat user with avatar: $avatar, google_avatar: $googleAvatar');
         
-        // Temporarily add to following list for avatar display
+        // Store both avatars without validation - let the display logic handle fallback
         accountProvider.following.add({
           'following_id': userId,
           'username': response['username'],
-          'avatar': validAvatar,
+          'avatar': avatar, // Store original value, even if "skiped"
           'google_avatar': googleAvatar,
           'nickname': response['nickname'],
         });
@@ -200,7 +198,7 @@ class ChatDetailView extends GetView<ChatController> {
         // Force UI update to show the new avatar
         Get.forceAppUpdate();
       }
-        } catch (e) {
+    } catch (e) {
       debugPrint('Error fetching chat user profile: $e');
     }
   }
@@ -395,24 +393,22 @@ class ChatDetailView extends GetView<ChatController> {
     debugPrint('Regular avatar: $regularAvatar');
     debugPrint('Google avatar: $googleAvatar');
     
-    // FIXED: More robust URL validation
-    // Check if regular avatar is valid (not null, not empty, not "skiped", and has a valid URL scheme)
-    final bool hasRegularAvatar = regularAvatar != null && 
-                          regularAvatar.isNotEmpty && 
-                          regularAvatar != "skiped" &&
-                          regularAvatar != "null" &&
-                          regularAvatar.contains("://") &&
-                          Uri.tryParse(regularAvatar)?.hasScheme == true;
-                           
-    // Check if Google avatar is valid (not null, not empty, and has a valid URL scheme)
-    final bool hasGoogleAvatar = googleAvatar != null && 
-                          googleAvatar.isNotEmpty &&
-                          googleAvatar != "null" &&
-                          googleAvatar.contains("://") &&
-                          Uri.tryParse(googleAvatar)?.hasScheme == true;
+    // Use AvatarUtils to determine the appropriate avatar image
+    ImageProvider? avatarImage;
     
-    debugPrint('Has regular avatar: $hasRegularAvatar');
-    debugPrint('Has Google avatar: $hasGoogleAvatar');
+    // Check if regular avatar is valid first
+    if (AvatarUtils.isValidUrl(regularAvatar)) {
+      avatarImage = CachedNetworkImageProvider(regularAvatar!);
+      debugPrint('Using regular avatar: $regularAvatar');
+    } 
+    // If regular avatar is invalid, try Google avatar
+    else if (AvatarUtils.isValidUrl(googleAvatar)) {
+      avatarImage = CachedNetworkImageProvider(googleAvatar!);
+      debugPrint('Using Google avatar fallback: $googleAvatar');
+    }
+    
+    // Has any valid avatar
+    final bool hasAnyAvatar = avatarImage != null;
     
     // Check if message is read
     final bool isRead = message['is_read'] == true;
@@ -492,12 +488,8 @@ class ChatDetailView extends GetView<ChatController> {
               child: CircleAvatar(
                 radius: 12.5, // 25px diameter
                 backgroundColor: Colors.black,
-                backgroundImage: hasRegularAvatar
-                    ? CachedNetworkImageProvider(regularAvatar)
-                    : hasGoogleAvatar
-                        ? CachedNetworkImageProvider(googleAvatar)
-                        : null,
-                child: (!hasRegularAvatar && !hasGoogleAvatar)
+                backgroundImage: avatarImage,
+                child: (!hasAnyAvatar)
                     ? const Icon(Icons.person, size: 12, color: Colors.white)
                     : null,
               ),
@@ -534,17 +526,13 @@ class ChatDetailView extends GetView<ChatController> {
         final String? avatar = response['avatar'];
         final String? googleAvatar = response['google_avatar'];
         
-        // Sanitize avatar URL to prevent errors
-        final validAvatar = (avatar != null && 
-                             avatar != "skiped" && 
-                             avatar != "null" && 
-                             avatar.contains("://")) ? avatar : null;
+        debugPrint('Got profile directly: avatar=$avatar, google=$googleAvatar');
         
-        // Add to following list for access in message bubbles with valid avatar
+        // Add to following list for access in message bubbles with unmodified avatar values
         accountProvider.following.add({
           'following_id': userId,
           'username': response['username'],
-          'avatar': validAvatar,
+          'avatar': avatar, // Store original value, even if "skiped"
           'google_avatar': googleAvatar,
           'nickname': response['nickname'],
         });
@@ -554,7 +542,7 @@ class ChatDetailView extends GetView<ChatController> {
       }
       
       return response;
-        } catch (e) {
+    } catch (e) {
       debugPrint('Error getting chat user profile: $e');
     }
     return null;

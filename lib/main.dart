@@ -8,6 +8,7 @@ import 'app/core/utils/api_service.dart';
 import 'app/core/utils/supabase_service.dart';
 import 'app/core/utils/db_cache_service.dart';
 import 'app/core/utils/encryption_service.dart';
+import 'app/core/utils/chat_cache_service.dart';
 import 'app/data/providers/account_data_provider.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:flutter/services.dart';
@@ -113,10 +114,20 @@ Future<void> _initRemainingServices() async {
         throw TimeoutException('EncryptionService initialization timed out');
       });
       debugPrint('EncryptionService initialized in ${stopwatch.elapsedMilliseconds}ms');
+      
+      // Initialize chat cache service (depends on encryption service)
+      final chatCacheService = ChatCacheService();
+      Get.put(chatCacheService);
+      await chatCacheService.init();
+      debugPrint('ChatCacheService initialized in ${stopwatch.elapsedMilliseconds}ms');
     } else {
       // Still register the service without initialization
       Get.put(EncryptionService());
       debugPrint('EncryptionService registered (not initialized yet, waiting for login)');
+      
+      // Register chat cache service as well
+      Get.put(ChatCacheService());
+      debugPrint('ChatCacheService registered (not initialized, waiting for login)');
     }
     
     // Initialize connectivity monitoring
@@ -210,6 +221,15 @@ class _MyAppState extends State<MyApp> {
           await Get.find<EncryptionService>().init(userId);
           debugPrint('EncryptionService initialized on hot reload');
         }
+      }
+      
+      // Check if ChatCacheService is available, initialize if not
+      if (!Get.isRegistered<ChatCacheService>()) {
+        debugPrint('ChatCacheService not found on hot reload, initializing');
+        final chatCacheService = ChatCacheService();
+        Get.put(chatCacheService);
+        await chatCacheService.init();
+        debugPrint('ChatCacheService initialized on hot reload');
       }
     } catch (e) {
       debugPrint('Error ensuring services on hot reload: $e');
