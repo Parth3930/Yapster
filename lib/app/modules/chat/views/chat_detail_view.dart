@@ -4,6 +4,23 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import '../controllers/chat_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:async';
+import 'package:yapster/app/routes/app_pages.dart';
+
+// Lifecycle observer to detect when app resumes from background
+class _AppLifecycleObserver extends WidgetsBindingObserver {
+  final VoidCallback onResume;
+  
+  _AppLifecycleObserver({required this.onResume});
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App lifecycle: resumed');
+      onResume();
+    }
+  }
+}
 
 class ChatDetailView extends GetView<ChatController> {
   const ChatDetailView({super.key});
@@ -16,14 +33,74 @@ class ChatDetailView extends GetView<ChatController> {
     final String otherUserId = args['other_user_id'] as String;
     final String username = args['username'] as String;
     
+    // Create the lifecycle observer
+    final lifecycleObserver = _AppLifecycleObserver(
+      onResume: () {
+        debugPrint('App resumed - refreshing messages');
+        // Force refresh messages from server when app resumes
+        controller.loadMessages(chatId);
+        // Make sure we immediately mark messages as read
+        controller.markMessagesAsRead(chatId);
+      },
+    );
+    
+    // Register app lifecycle observer to detect app resuming from background
+    WidgetsBinding.instance.addObserver(lifecycleObserver);
+    
+    // Use a simpler approach - let the controller handle cleanup
+    // The controller is already a WidgetsBindingObserver and will handle
+    // subscriptions and app lifecycle events automatically
+    
+    // Fetch profile for other user
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchOtherUserProfile(otherUserId);
+      
+      // Only trigger read status when the messages list actually changes
+      // Use a debounced approach to avoid excessive updates
+      DateTime? lastMessageUpdate;
+      ever(controller.messages, (_) {
+        final now = DateTime.now();
+        // Skip if last update was within 5 seconds
+        if (lastMessageUpdate != null && 
+            now.difference(lastMessageUpdate!).inSeconds < 5) {
+          return;
+        }
+        
+        lastMessageUpdate = now;
+        debugPrint('Message list changed - checking for unread messages');
+        controller.markMessagesAsRead(chatId);
+      });
+    });
+    
     // Load messages if not already loaded
     if (controller.selectedChatId.value != chatId) {
       controller.selectedChatId.value = chatId;
       controller.loadMessages(chatId);
     }
     
-    // Mark messages as read when chat is opened
+    // IMPROVED: Enhanced read status marking
+    // Initial mark as read when chat is opened
     controller.markMessagesAsRead(chatId);
+    
+    // Set up periodic check to mark messages as read (for when new messages arrive)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // This ensures we mark messages as read after the view is fully built
+      Future.delayed(const Duration(milliseconds: 500), () {
+        controller.markMessagesAsRead(chatId);
+      });
+      
+      // Set up a timer to periodically mark messages as read, but at a reasonable interval
+      // This will continue until the app is closed or navigated away
+      Timer.periodic(const Duration(seconds: 30), (timer) {
+        // Check if we're still on the chat detail route
+        if (Get.currentRoute.contains(Routes.CHAT_DETAIL)) {
+          controller.markMessagesAsRead(chatId);
+        } else {
+          // Cancel the timer if we've navigated away
+          timer.cancel();
+        }
+      });
+    });
     
     return Scaffold(
       backgroundColor: Colors.black, // Set black background
@@ -73,6 +150,61 @@ class ChatDetailView extends GetView<ChatController> {
         ],
       ),
     );
+  }
+  
+  // Fetch profile data for the other user
+  Future<void> _fetchOtherUserProfile(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      debugPrint('Fetching chat profile data for user: $userId');
+      
+      // Query the profiles table for this user
+      final response = await supabaseService.client
+          .from('profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+      
+      if (response != null) {
+        debugPrint('Chat user profile found: $response');
+        // Store this in account provider for access in message bubbles
+        final accountProvider = Get.find<AccountDataProvider>();
+        
+        // Create a new follow entry for this user if not already in lists
+        final isInFollowing = accountProvider.following
+            .any((user) => user['following_id'] == userId);
+        final isInFollowers = accountProvider.followers
+            .any((user) => user['follower_id'] == userId);
+            
+        if (!isInFollowing && !isInFollowers) {
+          debugPrint('Adding chat user to temporary following list');
+          
+          // Get avatar and ensure it's a valid URL
+          final String? avatar = response['avatar'];
+          final String? googleAvatar = response['google_avatar'];
+          
+          // Don't pass invalid URLs to the UI
+          final validAvatar = (avatar != null && 
+                               avatar != "skiped" && 
+                               avatar != "null" && 
+                               avatar.contains("://")) ? avatar : null;
+          
+          // Temporarily add to following list for avatar display
+          accountProvider.following.add({
+            'following_id': userId,
+            'username': response['username'],
+            'avatar': validAvatar,
+            'google_avatar': googleAvatar,
+            'nickname': response['nickname'],
+          });
+          
+          // Force UI update to show the new avatar
+          Get.forceAppUpdate();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching chat user profile: $e');
+    }
   }
   
   // Show encryption information dialog
@@ -135,7 +267,7 @@ class ChatDetailView extends GetView<ChatController> {
                     backgroundColor: Colors.blue,
                     minimumSize: const Size(double.infinity, 45),
                   ),
-                  child: const Text("GOT IT"),
+                  child: const Text("GOT IT", style: TextStyle(color: Colors.white),),
                 ),
               ],
             ),
@@ -225,28 +357,64 @@ class ChatDetailView extends GetView<ChatController> {
     final currentUser = supabaseService.currentUser.value;
     final AccountDataProvider accountDataProvider = Get.find<AccountDataProvider>();
     
-    // Get the appropriate avatar URL
-    String? avatarUrl;
+    // Variables to hold avatar info
+    String? regularAvatar;
+    String? googleAvatar;
     
     if (isMe && currentUser != null) {
-      // This is the current user's message - use their avatar
-      avatarUrl = accountDataProvider.avatar.value.isNotEmpty ? 
-                 accountDataProvider.avatar.value : 
-                 accountDataProvider.googleAvatar.value;
+      // Current user's message - use current user's avatar
+      regularAvatar = accountDataProvider.avatar.value;
+      googleAvatar = accountDataProvider.googleAvatar.value;
     } else {
-      // For other user's avatar, look in the following or followers list
+      // First check the following list
       final followingMatch = accountDataProvider.following
           .firstWhereOrNull((f) => f['following_id'] == otherUserId);
           
+      // Then check the followers list
       final followerMatch = accountDataProvider.followers
           .firstWhereOrNull((f) => f['follower_id'] == otherUserId);
       
       if (followingMatch != null) {
-        avatarUrl = followingMatch['avatar'] ?? followingMatch['google_avatar'];
+        regularAvatar = followingMatch['avatar'];
+        googleAvatar = followingMatch['google_avatar'];
+        debugPrint('Found other user in following list - avatar: $regularAvatar, google: $googleAvatar');
       } else if (followerMatch != null) {
-        avatarUrl = followerMatch['avatar'] ?? followerMatch['google_avatar'];
+        regularAvatar = followerMatch['avatar'];
+        googleAvatar = followerMatch['google_avatar'];
+        debugPrint('Found other user in followers list - avatar: $regularAvatar, google: $googleAvatar');
+      } else {
+        // If not found in lists, try to get directly from database (async, will update on next build)
+        _getChatUserProfile(otherUserId).then((profile) {
+          if (profile != null) {
+            debugPrint('Got profile directly: avatar=${profile['avatar']}, google=${profile['google_avatar']}');
+          }
+        });
       }
     }
+    
+    // Debug avatar info
+    debugPrint('Message bubble avatar info:');
+    debugPrint('Regular avatar: $regularAvatar');
+    debugPrint('Google avatar: $googleAvatar');
+    
+    // FIXED: More robust URL validation
+    // Check if regular avatar is valid (not null, not empty, not "skiped", and has a valid URL scheme)
+    final bool hasRegularAvatar = regularAvatar != null && 
+                          regularAvatar.isNotEmpty && 
+                          regularAvatar != "skiped" &&
+                          regularAvatar != "null" &&
+                          regularAvatar.contains("://") &&
+                          Uri.tryParse(regularAvatar)?.hasScheme == true;
+                           
+    // Check if Google avatar is valid (not null, not empty, and has a valid URL scheme)
+    final bool hasGoogleAvatar = googleAvatar != null && 
+                          googleAvatar.isNotEmpty &&
+                          googleAvatar != "null" &&
+                          googleAvatar.contains("://") &&
+                          Uri.tryParse(googleAvatar)?.hasScheme == true;
+    
+    debugPrint('Has regular avatar: $hasRegularAvatar');
+    debugPrint('Has Google avatar: $hasGoogleAvatar');
     
     // Check if message is read
     final bool isRead = message['is_read'] == true;
@@ -257,7 +425,7 @@ class ChatDetailView extends GetView<ChatController> {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Dismissible(
-        key: Key(message['id'] ?? DateTime.now().toString()),
+        key: Key(message['message_id'] ?? DateTime.now().toString()),
         // Only show background when message is from the current user
         background: shouldShowStatus ? Container(
           alignment: Alignment.centerRight,
@@ -284,14 +452,14 @@ class ChatDetailView extends GetView<ChatController> {
               margin: EdgeInsets.only(
                 top: 15, 
                 bottom: 8, 
-                left: isMe ? 8 : 24, // Add more space on left for other's avatar
-                right: isMe ? 24 : 8, // Add more space on right for user's avatar
+                left: isMe ? 8 : 24,
+                right: isMe ? 24 : 8,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
                 color: isMe 
                     ? Colors.blue 
-                    : Colors.grey.shade800, // Darker background for received messages
+                    : Colors.grey.shade800,
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
@@ -318,7 +486,7 @@ class ChatDetailView extends GetView<ChatController> {
               ),
             ),
             
-            // Avatar in top right/left corner
+            // Avatar in top right/left corner - FIXED to handle invalid URLs
             Positioned(
               top: 0,
               right: isMe ? 0 : null,
@@ -326,15 +494,74 @@ class ChatDetailView extends GetView<ChatController> {
               child: CircleAvatar(
                 radius: 12.5, // 25px diameter
                 backgroundColor: Colors.black,
-                backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
-                    ? CachedNetworkImageProvider(avatarUrl) as ImageProvider
-                    : const AssetImage('assets/images/default_avatar.png'),
+                backgroundImage: hasRegularAvatar
+                    ? CachedNetworkImageProvider(regularAvatar!)
+                    : hasGoogleAvatar
+                        ? CachedNetworkImageProvider(googleAvatar!)
+                        : null,
+                child: (!hasRegularAvatar && !hasGoogleAvatar)
+                    ? const Icon(Icons.person, size: 12, color: Colors.white)
+                    : null,
               ),
             ),
           ],
         ),
       ),
     );
+  }
+  
+  // Helper method to get a user profile directly from DB
+  Future<Map<String, dynamic>?> _getChatUserProfile(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      
+      // Query the profiles table for this user
+      final response = await supabaseService.client
+          .from('profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+      
+      if (response != null) {
+        // Add to account provider for next render
+        final accountProvider = Get.find<AccountDataProvider>();
+        
+        // Check if we need to add to following list
+        final isInFollowing = accountProvider.following
+            .any((user) => user['following_id'] == userId);
+        final isInFollowers = accountProvider.followers
+            .any((user) => user['follower_id'] == userId);
+            
+        if (!isInFollowing && !isInFollowers) {
+          // Process avatar URLs
+          final String? avatar = response['avatar'];
+          final String? googleAvatar = response['google_avatar'];
+          
+          // Sanitize avatar URL to prevent errors
+          final validAvatar = (avatar != null && 
+                               avatar != "skiped" && 
+                               avatar != "null" && 
+                               avatar.contains("://")) ? avatar : null;
+          
+          // Add to following list for access in message bubbles with valid avatar
+          accountProvider.following.add({
+            'following_id': userId,
+            'username': response['username'],
+            'avatar': validAvatar,
+            'google_avatar': googleAvatar,
+            'nickname': response['nickname'],
+          });
+          
+          // Trigger rebuild
+          Get.forceAppUpdate();
+        }
+        
+        return response;
+      }
+    } catch (e) {
+      debugPrint('Error getting chat user profile: $e');
+    }
+    return null;
   }
   
   Widget _buildMessageInput(String chatId) {
@@ -421,28 +648,5 @@ class ChatDetailView extends GetView<ChatController> {
         );
       }),
     );
-  }
-  
-  String _formatExpirationTime(String? expiresAt) {
-    if (expiresAt == null) return '';
-    
-    try {
-      final expirationTime = DateTime.parse(expiresAt);
-      final now = DateTime.now();
-      final difference = expirationTime.difference(now);
-      
-      final hours = difference.inHours;
-      final minutes = difference.inMinutes % 60;
-      
-      if (hours > 0) {
-        return 'Expires in ${hours}h ${minutes}m';
-      } else if (minutes > 0) {
-        return 'Expires in ${minutes}m';
-      } else {
-        return 'Expiring soon';
-      }
-    } catch (e) {
-      return 'Expiring soon';
-    }
   }
 } 

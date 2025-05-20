@@ -8,7 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:yapster/app/core/utils/encryption_service.dart';
 
-class ChatController extends GetxController {
+class ChatController extends GetxController with WidgetsBindingObserver {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
   final AccountDataProvider _accountDataProvider = Get.find<AccountDataProvider>();
   late EncryptionService _encryptionService;
@@ -43,9 +43,19 @@ class ChatController extends GetxController {
   // Preferences
   final RxBool hasUserDismissedExpiryBanner = false.obs;
   
+  // Lifecycle tracking
+  DateTime? _lastActiveTime;
+  
+  // Track when the last database update was attempted
+  DateTime? _lastReadStatusUpdate;
+  final _readStatusThrottleDuration = const Duration(seconds: 10);
+  
   @override
   void onInit() {
     super.onInit();
+    
+    // Register for app lifecycle events
+    WidgetsBinding.instance.addObserver(this);
     
     // Initialize encryption service with current user ID first
     final currentUserId = _supabaseService.currentUser.value?.id;
@@ -70,16 +80,78 @@ class ChatController extends GetxController {
     
     // Load user preferences
     _loadUserPreferences();
+    
+    // Set initial active time
+    _lastActiveTime = DateTime.now();
   }
   
   @override
   void onClose() {
+    // Unregister lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    
     searchController.removeListener(_onSearchChanged);
     searchController.dispose();
     messageController.dispose();
     _searchDebounce?.cancel();
     _cleanupRealtimeSubscription();
     super.onClose();
+  }
+  
+  // Handle app lifecycle changes
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    debugPrint('App lifecycle state changed: $state');
+    
+    if (state == AppLifecycleState.resumed) {
+      // App came back to foreground
+      final now = DateTime.now();
+      final lastActive = _lastActiveTime ?? now;
+      final timeDifference = now.difference(lastActive).inSeconds;
+      
+      // If app was in background for more than 5 seconds, refresh data
+      if (timeDifference > 5) {
+        debugPrint('App resumed after $timeDifference seconds - refreshing data');
+        
+        // Refresh chat list
+        loadRecentChats();
+        
+        // Check if we're in a chat and refresh if needed
+        if (selectedChatId.isNotEmpty) {
+          loadMessages(selectedChatId.value);
+          _resubscribeToChat(selectedChatId.value);
+        }
+      }
+      
+      _lastActiveTime = now;
+    } else if (state == AppLifecycleState.paused) {
+      // App went to background
+      _lastActiveTime = DateTime.now();
+    }
+  }
+  
+  // Re-establish subscription to current chat (if needed)
+  void _resubscribeToChat(String chatId) {
+    try {
+      if (_chatSubscription == null) {
+        debugPrint('No existing subscription, creating new chat subscription to: $chatId');
+        _subscribeToChat(chatId);
+      } else {
+        // Since we can't easily check if the subscription is active, 
+        // we'll just clean up and resubscribe to be safe
+        debugPrint('Refreshing chat subscription to ensure real-time updates');
+        _cleanupChatSubscription();
+        _subscribeToChat(chatId);
+        
+        // Also refresh messages from server
+        loadMessages(chatId);
+      }
+    } catch (e) {
+      debugPrint('Error in chat subscription: $e');
+      // If any error occurs, try to resubscribe from scratch
+      _cleanupChatSubscription();
+      _subscribeToChat(chatId);
+    }
   }
   
   void _onSearchChanged() {
@@ -116,7 +188,7 @@ class ChatController extends GetxController {
           .neq('user_id', currentUserId)
           .limit(10);
       
-      if (usersResponse != null) {
+      if (usersResponse.isNotEmpty) {
         results.addAll(List<Map<String, dynamic>>.from(usersResponse));
       }
       
@@ -201,7 +273,16 @@ class ChatController extends GetxController {
         for (final chat in chatsList) {
           if (chat['last_message'] != null && chat['last_message'].toString().isNotEmpty) {
             try {
-              chat['last_message'] = _encryptionService.decryptMessage(chat['last_message']);
+              // Try to decrypt with chat-specific key first
+              if (chat['chat_id'] != null) {
+                chat['last_message'] = await _encryptionService.decryptMessageForChat(
+                  chat['last_message'],
+                  chat['chat_id']
+                );
+              } else {
+                // Fall back to legacy decryption
+                chat['last_message'] = _encryptionService.decryptMessage(chat['last_message']);
+              }
             } catch (e) {
               debugPrint('Could not decrypt message preview: $e');
             }
@@ -233,6 +314,9 @@ class ChatController extends GetxController {
     if (currentUserId == null) return;
     
     try {
+      // First, ensure we have the other user's profile loaded
+      await _loadUserProfile(otherUserId);
+      
       // Check if chat already exists between these two users
       // We need to find chats where both users are participants
       final response = await _supabaseService.client
@@ -291,6 +375,45 @@ class ChatController extends GetxController {
     }
   }
   
+  // Load user profile and add to AccountDataProvider for UI access
+  Future<void> _loadUserProfile(String userId) async {
+    try {
+      final accountProvider = Get.find<AccountDataProvider>();
+      
+      // Check if we already have this user in our lists
+      final userInFollowing = accountProvider.following
+          .any((user) => user['following_id'] == userId);
+      final userInFollowers = accountProvider.followers
+          .any((user) => user['follower_id'] == userId);
+          
+      if (!userInFollowing && !userInFollowers) {
+        debugPrint('Loading profile for user ID: $userId');
+        
+        // Fetch from profiles table
+        final response = await _supabaseService.client
+            .from('profiles')
+            .select()
+            .eq('user_id', userId)
+            .single();
+            
+        if (response != null) {
+          debugPrint('Found profile for chat user: $response');
+          
+          // Add to following list for easy access in UI
+          accountProvider.following.add({
+            'following_id': userId,
+            'username': response['username'] ?? 'User',
+            'avatar': response['avatar'],
+            'google_avatar': response['google_avatar'],
+            'nickname': response['nickname'],
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading user profile for chat: $e');
+    }
+  }
+  
   // Load messages for a chat
   Future<void> loadMessages(String chatId) async {
     isSendingMessage.value = true;
@@ -302,7 +425,7 @@ class ChatController extends GetxController {
           .eq('chat_id', chatId)
           .order('created_at');
       
-      if (response != null) {
+      if (response.isNotEmpty) {
         final messagesList = List<Map<String, dynamic>>.from(response);
         
         // Clear processed message IDs when loading messages
@@ -311,17 +434,21 @@ class ChatController extends GetxController {
         // Decrypt message content
         for (var message in messagesList) {
           // Store processed message IDs
-          if (message['id'] != null) {
-            _processedMessageIds.add(message['id'].toString());
+          if (message['message_id'] != null) {
+            _processedMessageIds.add(message['message_id'].toString());
           }
           
-          // Decrypt message content
+          // Decrypt message content with chat-specific key
           if (message['content'] != null && message['content'].toString().isNotEmpty) {
             try {
-              message['content'] = _encryptionService.decryptMessage(message['content']);
+              message['content'] = await _encryptionService.decryptMessageForChat(message['content'], chatId);
             } catch (e) {
-              // If decryption fails, message might not be encrypted yet
-              debugPrint('Could not decrypt message: $e');
+              // If decryption fails, try legacy decryption
+              try {
+                message['content'] = _encryptionService.decryptMessage(message['content']);
+              } catch (e2) {
+                debugPrint('Could not decrypt message: $e2');
+              }
             }
           }
         }
@@ -360,8 +487,8 @@ class ChatController extends GetxController {
       final expiresAt = DateTime.now().add(const Duration(hours: 24)).toIso8601String();
       final now = DateTime.now().toIso8601String();
       
-      // Encrypt the message content
-      final encryptedContent = _encryptionService.encryptMessage(content);
+      // Encrypt the message content with chat-specific key
+      final encryptedContent = await _encryptionService.encryptMessageForChat(content, chatId);
       
       // Add message to database
       debugPrint('Inserting encrypted message into database...');
@@ -375,13 +502,13 @@ class ChatController extends GetxController {
       
       debugPrint('Message inserted, response: $response');
       
-      if (response is List && response.isNotEmpty) {
+      if (response.isNotEmpty) {
         // Add the message immediately to local state
         final newMessage = Map<String, dynamic>.from(response[0]);
         
         // Add message ID to processed list to prevent duplicates
-        if (newMessage['id'] != null) {
-          final messageId = newMessage['id'].toString();
+        if (newMessage['message_id'] != null) {
+          final messageId = newMessage['message_id'].toString();
           _processedMessageIds.add(messageId);
           debugPrint('Added sent message ID to processed list: $messageId');
         }
@@ -428,6 +555,8 @@ class ChatController extends GetxController {
     try {
       _cleanupRealtimeSubscription();
       
+      debugPrint('Setting up global message subscription');
+      
       // Subscribe to messages table to detect new messages for our chats
       _chatSubscription = _supabaseService.client
           .channel('public:messages')
@@ -438,6 +567,24 @@ class ChatController extends GetxController {
             callback: (_) {
               // Reload recent chats when there's a new message
               loadRecentChats();
+            },
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'messages',
+            callback: (payload) {
+              // When a message is updated (like read status), refresh chat list
+              debugPrint('Global message update detected: ${payload.newRecord}');
+              loadRecentChats();
+              
+              // If we have an active chat open and this message belongs to that chat
+              if (selectedChatId.isNotEmpty && 
+                  payload.newRecord['chat_id'] == selectedChatId.value) {
+                
+                // Reload messages to reflect the update
+                loadMessages(selectedChatId.value);
+              }
             },
           )
           .subscribe();
@@ -452,7 +599,9 @@ class ChatController extends GetxController {
       // First unsubscribe from any existing channel to avoid duplicate subscriptions
       _cleanupChatSubscription();
       
-      // Create a new subscription
+      debugPrint('Creating new real-time subscription for chat: $chatId');
+      
+      // Create a new subscription with enhanced logging
       final chatChannel = _supabaseService.client
           .channel('public:messages:$chatId')
           .onPostgresChanges(
@@ -464,10 +613,12 @@ class ChatController extends GetxController {
               column: 'chat_id',
               value: chatId,
             ),
-            callback: (payload) {
+            callback: (payload) async {
+              debugPrint('Realtime message received: ${payload.newRecord}');
+              
               // Add the new message to the messages list
               final newMessage = Map<String, dynamic>.from(payload.newRecord);
-              final messageId = newMessage['id']?.toString();
+              final messageId = newMessage['message_id']?.toString();
               
               // Skip if we've already processed this message ID
               if (messageId != null && _processedMessageIds.contains(messageId)) {
@@ -484,12 +635,20 @@ class ChatController extends GetxController {
                 debugPrint('Processed IDs count: ${_processedMessageIds.length}');
               }
               
-              // Decrypt message content
+              // Decrypt message content with chat-specific key
               if (newMessage['content'] != null && newMessage['content'].toString().isNotEmpty) {
                 try {
-                  newMessage['content'] = _encryptionService.decryptMessage(newMessage['content']);
+                  newMessage['content'] = await _encryptionService.decryptMessageForChat(
+                    newMessage['content'], 
+                    chatId
+                  );
                 } catch (e) {
-                  debugPrint('Could not decrypt realtime message: $e');
+                  // If chat-specific decryption fails, try legacy decryption
+                  try {
+                    newMessage['content'] = _encryptionService.decryptMessage(newMessage['content']);
+                  } catch (e2) {
+                    debugPrint('Could not decrypt realtime message: $e2');
+                  }
                 }
               }
               
@@ -500,42 +659,130 @@ class ChatController extends GetxController {
                 return;
               }
               
-              // Use more aggressive update method for UI refresh
-              final newMessages = List<Map<String, dynamic>>.from(messages);
-              newMessages.add(newMessage);
-              messages.assignAll(newMessages); // Use assignAll instead of .value =
+              debugPrint('Adding realtime message to UI: ${newMessage['content']}');
+              
+              // IMPROVED: More robust approach for updating UI
+              // 1. Add the message to the list
+              messages.add(newMessage);
+              // 2. Refresh the observable to notify listeners
+              messages.refresh();
+              // 3. Force UI update at app level to ensure UI is refreshed
+              Get.forceAppUpdate();
+              // 4. Since this method can run in background, post a callback to ensure UI refresh
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                debugPrint('Post-frame callback: updating UI with new message');
+                messages.refresh();
+                Get.forceAppUpdate();
+              });
               
               // Also reload recent chats to update the chat list
               loadRecentChats();
               
-              debugPrint('New message received: ${newMessage['content']}');
+              debugPrint('New message received and UI updated: ${newMessage['content']}');
+            },
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'chat_id',
+              value: chatId,
+            ),
+            callback: (payload) async {
+              debugPrint('Realtime message update received: ${payload.newRecord}');
+              
+              // Get the updated message data
+              final updatedMessage = Map<String, dynamic>.from(payload.newRecord);
+              final messageId = updatedMessage['message_id']?.toString();
+              
+              if (messageId == null) {
+                debugPrint('No message ID found in update payload, skipping');
+                return;
+              }
+              
+              debugPrint('Processing message update for ID: $messageId, is_read: ${updatedMessage['is_read']}');
+              
+              // Update the corresponding message in our local list
+              bool updated = false;
+              for (var i = 0; i < messages.length; i++) {
+                final msg = messages[i];
+                final msgId = msg['message_id']?.toString();
+                
+                if (msgId == messageId) {
+                  // Preserve the decrypted content when updating
+                  updatedMessage['content'] = msg['content'];
+                  messages[i] = updatedMessage;
+                  updated = true;
+                  debugPrint('Updated message read status for ID: $messageId to ${updatedMessage['is_read']}');
+                  break;
+                }
+              }
+              
+              // IMPROVED: More robust update process
+              if (updated) {
+                // 1. Refresh observable to notify listeners
+                messages.refresh();
+                // 2. Force UI update at app level
+                Get.forceAppUpdate();
+                // 3. Post a callback to ensure UI is updated
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  messages.refresh();
+                  Get.forceAppUpdate();
+                  debugPrint('Post-frame callback: UI updated for read status change');
+                });
+                debugPrint('Message read status updated in UI');
+              } else {
+                debugPrint('Could not find message with ID: $messageId to update');
+              }
+              
+              // Also refresh recent chats in case the read status affects the UI there
+              loadRecentChats();
             },
           );
       
       // Subscribe and store the channel reference
-      chatChannel.subscribe();
+      chatChannel.subscribe((status, error) {
+        debugPrint('Chat channel subscription status: $status, error: $error');
+        if (error != null) {
+          debugPrint('Error with chat subscription: $error');
+          // Try to resubscribe if there was an error
+          Future.delayed(const Duration(seconds: 2), () {
+            debugPrint('Attempting to resubscribe after error');
+            _resubscribeToChat(chatId);
+          });
+        }
+      });
       _chatSubscription = chatChannel;
+      
+      // Set a flag to track connection status
+      isChatConnected.value = true;
       
       debugPrint('Subscribed to chat: $chatId');
     } catch (e) {
       debugPrint('Error subscribing to chat: $e');
+      
+      // Try to resubscribe after a delay
+      Future.delayed(const Duration(seconds: 3), () {
+        debugPrint('Attempting to resubscribe after exception');
+        _subscribeToChat(chatId);
+      });
     }
   }
   
   // Helper method to check for duplicate messages with more robust checks
   bool _isDuplicateMessage(Map<String, dynamic> newMessage) {
     // First check for ID-based duplicates (already handled above, but just in case)
-    if (newMessage['id'] != null && 
-        messages.any((msg) => msg['id'] != null && msg['id'] == newMessage['id'])) {
+    if (newMessage['message_id'] != null && 
+        messages.any((msg) => msg['message_id'] != null && msg['message_id'] == newMessage['message_id'])) {
       return true;
     }
     
     // Get timestamps to check for messages sent in the last 5 seconds
-    final now = DateTime.now();
     final newMessageTime = DateTime.tryParse(newMessage['created_at'] ?? '');
     if (newMessageTime == null) return false;
     
-    final timeDifference = now.difference(newMessageTime).inSeconds.abs();
     final content = newMessage['content']?.toString() ?? '';
     final senderId = newMessage['sender_id'];
     
@@ -598,35 +845,139 @@ class ChatController extends GetxController {
     }
   }
   
-  // Mark all messages in a chat as read
+  // Mark all messages in a chat as read - New implementation
   Future<void> markMessagesAsRead(String chatId) async {
     try {
       final currentUserId = _supabaseService.currentUser.value?.id;
-      if (currentUserId == null) return;
+      if (currentUserId == null) {
+        debugPrint('Cannot mark messages as read: User not logged in');
+        return;
+      }
       
-      // Update all unread messages sent by the other user to read=true
-      await _supabaseService.client
+      // Throttle database calls to avoid excessive updates
+      final now = DateTime.now();
+      if (_lastReadStatusUpdate != null) {
+        final timeSinceLastUpdate = now.difference(_lastReadStatusUpdate!);
+        if (timeSinceLastUpdate < _readStatusThrottleDuration) {
+          debugPrint('Skipping database update due to throttling');
+          // Only update UI if we're skipping the database call
+          _updateLocalReadStatus(chatId, currentUserId);
+          return;
+        }
+      }
+      
+      // Set last update time
+      _lastReadStatusUpdate = now;
+      
+      debugPrint('⚠️ ATTEMPTING TO MARK MESSAGES AS READ IN CHAT: $chatId');
+      
+      // Look for unread messages in this chat that are sent by others
+      final unreadMessages = await _supabaseService.client
           .from('messages')
-          .update({ 'is_read': true })
+          .select('*')
           .eq('chat_id', chatId)
           .neq('sender_id', currentUserId)
           .eq('is_read', false);
       
-      // If we already have messages loaded, update them locally too
-      if (messages.isNotEmpty) {
-        final updatedMessages = messages.map((msg) {
-          if (msg['sender_id'] != currentUserId && msg['is_read'] == false) {
-            return {...msg, 'is_read': true};
-          }
-          return msg;
-        }).toList();
-        
-        messages.assignAll(updatedMessages);
+      if (unreadMessages == null || unreadMessages.isEmpty) {
+        debugPrint('No unread messages found');
+        return;
       }
       
-      debugPrint('Marked messages as read in chat $chatId');
+      final List<Map<String, dynamic>> messages = List<Map<String, dynamic>>.from(unreadMessages);
+      
+      // Log first message to check structure
+      if (messages.isNotEmpty) {
+        debugPrint('First message structure: ${messages.first}');
+      }
+      
+      debugPrint('Found ${messages.length} unread messages');
+      
+      // Try using the RPC function approach, which is the most reliable
+      try {
+        debugPrint('⚠️ Attempting to use RPC function to mark messages as read');
+        final result = await _supabaseService.client.rpc(
+          'mark_messages_as_read',
+          params: {
+            'p_chat_id': chatId,
+            'p_user_id': currentUserId,
+          },
+        );
+        
+        debugPrint('RPC function result: $result');
+      } catch (e) {
+        debugPrint('⚠️ RPC function failed (you may need to create it in Supabase): $e');
+        
+        // Fall back to previous bulk update approach
+        try {
+          debugPrint('⚠️ Falling back to bulk update');
+          
+          // Attempt bulk update
+          final bulkResult = await _supabaseService.client
+              .from('messages')
+              .update({'is_read': true})
+              .eq('chat_id', chatId)
+              .neq('sender_id', currentUserId)
+              .eq('is_read', false);
+          
+          debugPrint('Bulk update result: $bulkResult');
+        } catch (bulkError) {
+          debugPrint('⚠️ Bulk update failed: $bulkError');
+          
+          // If bulk update fails, try individual updates
+          for (final message in messages) {
+            final String? messageId = message['message_id'] as String?;
+            
+            if (messageId == null) {
+              debugPrint('⚠️ Message ID is null, skipping update');
+              continue;
+            }
+            
+            debugPrint('⚠️ Updating individual message with ID: $messageId');
+            
+            try {
+              final result = await _supabaseService.client
+                  .from('messages')
+                  .update({'is_read': true})
+                  .eq('message_id', messageId);
+              
+              debugPrint('Individual update result: $result');
+            } catch (updateError) {
+              debugPrint('⚠️ Error updating individual message: $updateError');
+            }
+          }
+        }
+      }
+      
+      // Update local UI
+      _updateLocalReadStatus(chatId, currentUserId);
+      
+      debugPrint('⚠️ Completed marking messages as read');
     } catch (e) {
-      debugPrint('Error marking messages as read: $e');
+      debugPrint('⚠️ Error in markMessagesAsRead: $e');
+    }
+  }
+  
+  // Helper to update local UI without database calls
+  void _updateLocalReadStatus(String chatId, String currentUserId) {
+    bool anyUpdated = false;
+    for (var i = 0; i < messages.length; i++) {
+      final msg = messages[i];
+      if (msg['chat_id'] == chatId && 
+          msg['sender_id'] != currentUserId && 
+          (msg['is_read'] == null || msg['is_read'] == false)) {
+        final msgId = msg['message_id'];
+        debugPrint('Locally marking message $msgId as read');
+        messages[i] = {...msg, 'is_read': true};
+        anyUpdated = true;
+      }
+    }
+    
+    if (anyUpdated) {
+      // Force UI update 
+      messages.refresh();
+      Get.forceAppUpdate();
+      debugPrint('Updated local messages with read status');
     }
   }
   

@@ -102,6 +102,21 @@ class AvatarUtils {
     }
   }
 
+  /// Checks if a URL is valid and usable
+  static bool isValidUrl(String? url) {
+    if (url == null || url.isEmpty || url == "skiped" || url == "null") {
+      return false;
+    }
+    
+    try {
+      final uri = Uri.parse(url);
+      return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+    } catch (e) {
+      debugPrint('Invalid URL in AvatarUtils.isValidUrl: $url');
+      return false;
+    }
+  }
+
   /// Determines the appropriate avatar image source based on available data
   /// Uses internal memory caching for faster loading
   static ImageProvider? getAvatarImage(
@@ -110,41 +125,49 @@ class AvatarUtils {
   ) {
     if (selectedImage != null) {
       return FileImage(File(selectedImage.path));
-    } else if (provider.avatar.value.isNotEmpty &&
-        provider.avatar.value != "skiped") {
-      final url = provider.avatar.value;
+    } 
+    
+    // First try profile avatar
+    final profileAvatarUrl = provider.avatar.value;
+    if (isValidUrl(profileAvatarUrl)) {
       // Use cached image if available
-      if (!_imageCache.containsKey(url)) {
-        _imageCache[url] = CachedNetworkImageProvider(url);
+      if (!_imageCache.containsKey(profileAvatarUrl)) {
+        _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(profileAvatarUrl);
       }
-      return _imageCache[url];
-    } else if (provider.googleAvatar.value.isNotEmpty) {
-      final url = provider.googleAvatar.value;
+      return _imageCache[profileAvatarUrl];
+    } 
+    
+    // Fall back to Google avatar
+    final googleAvatarUrl = provider.googleAvatar.value;
+    if (isValidUrl(googleAvatarUrl)) {
       // Use cached image if available
-      if (!_imageCache.containsKey(url)) {
-        _imageCache[url] = CachedNetworkImageProvider(url);
+      if (!_imageCache.containsKey(googleAvatarUrl)) {
+        _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(googleAvatarUrl);
       }
-      return _imageCache[url];
+      return _imageCache[googleAvatarUrl];
     }
+    
+    // No valid avatar found - return null instead of asset image
+    // Callers should handle null by showing a default icon
     return null;
   }
 
   /// Preloads avatar images to make them instantly available when needed
   static void preloadAvatarImages(AccountDataProvider provider) {
-    if (provider.avatar.value.isNotEmpty && provider.avatar.value != "skiped") {
-      // Preload user's avatar
-      final url = provider.avatar.value;
-      precacheImage(CachedNetworkImageProvider(url), Get.context!);
-      _imageCache[url] = CachedNetworkImageProvider(url);
-      debugPrint('Avatar preloaded: $url');
+    // Preload profile avatar if valid
+    final profileAvatarUrl = provider.avatar.value;
+    if (isValidUrl(profileAvatarUrl)) {
+      precacheImage(CachedNetworkImageProvider(profileAvatarUrl), Get.context!);
+      _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(profileAvatarUrl);
+      debugPrint('Avatar preloaded: $profileAvatarUrl');
     }
     
-    if (provider.googleAvatar.value.isNotEmpty) {
-      // Preload Google avatar if available
-      final url = provider.googleAvatar.value;
-      precacheImage(CachedNetworkImageProvider(url), Get.context!);
-      _imageCache[url] = CachedNetworkImageProvider(url);
-      debugPrint('Google avatar preloaded: $url');
+    // Preload Google avatar if valid
+    final googleAvatarUrl = provider.googleAvatar.value;
+    if (isValidUrl(googleAvatarUrl)) {
+      precacheImage(CachedNetworkImageProvider(googleAvatarUrl), Get.context!);
+      _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(googleAvatarUrl);
+      debugPrint('Google avatar preloaded: $googleAvatarUrl');
     }
   }
 
@@ -153,8 +176,39 @@ class AvatarUtils {
     XFile? selectedImage,
     AccountDataProvider provider,
   ) {
-    return selectedImage == null &&
-        provider.avatar.value.isEmpty &&
-        provider.googleAvatar.value.isEmpty;
+    // Check if we have any valid avatar to display
+    return selectedImage == null && 
+           !isValidUrl(provider.avatar.value) && 
+           !isValidUrl(provider.googleAvatar.value);
+  }
+
+  /// Creates a widget for displaying an avatar with proper fallbacks
+  static Widget getAvatarWidget(
+    XFile? selectedImage,
+    AccountDataProvider provider, {
+    double radius = 24.0,
+    Color? backgroundColor,
+  }) {
+    final bgColor = backgroundColor ?? Colors.grey.shade800;
+    final avatar = getAvatarImage(selectedImage, provider);
+    
+    if (avatar != null) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: bgColor,
+        backgroundImage: avatar,
+      );
+    } else {
+      // Show default icon if no avatar available
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: bgColor,
+        child: Icon(
+          Icons.person,
+          size: radius * 0.8,
+          color: Colors.white,
+        ),
+      );
+    }
   }
 }

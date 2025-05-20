@@ -6,11 +6,40 @@ import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import '../controllers/chat_controller.dart';
 
+// App lifecycle observer for ChatView
+class _ChatViewLifecycleObserver extends WidgetsBindingObserver {
+  final VoidCallback onResume;
+  
+  _ChatViewLifecycleObserver({required this.onResume});
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('ChatView lifecycle: resumed');
+      onResume();
+    }
+  }
+}
+
 class ChatView extends GetView<ChatController> {
   const ChatView({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Set up refresh when view appears or when app resumes from background
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Force refresh chats when screen is shown
+      controller.loadRecentChats();
+      
+      // Add observer for app state changes
+      WidgetsBinding.instance.addObserver(_ChatViewLifecycleObserver(
+        onResume: () {
+          debugPrint('ChatView: App resumed - refreshing chat list');
+          controller.loadRecentChats();
+        },
+      ));
+    });
+    
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -86,20 +115,26 @@ class ChatView extends GetView<ChatController> {
             ),
           ),
           
-          // Search results or chat list
+          // Pull to refresh for chat list
           Expanded(
-            child: Obx(() {
-              if (controller.isLoadingChats.value) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              
-              if (controller.searchQuery.isNotEmpty) {
-                return _buildSearchResults();
-              }
-              
-              // Always show recent chats by default
-              return _buildRecentChats();
-            }),
+            child: RefreshIndicator(
+              onRefresh: () async {
+                debugPrint('Manual refresh triggered');
+                await controller.loadRecentChats();
+              },
+              child: Obx(() {
+                if (controller.isLoadingChats.value) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                
+                if (controller.searchQuery.isNotEmpty) {
+                  return _buildSearchResults();
+                }
+                
+                // Always show recent chats by default
+                return _buildRecentChats();
+              }),
+            ),
           ),
         ],
       ),
@@ -164,11 +199,15 @@ class ChatView extends GetView<ChatController> {
         
         // Create a temporary provider just for avatar display
         final tempProvider = AccountDataProvider();
-        if (chat['avatar'] != null) {
-          tempProvider.avatar.value = chat['avatar'];
-        }
-        if (chat['google_avatar'] != null) {
-          tempProvider.googleAvatar.value = chat['google_avatar'];
+        
+        // Properly handle avatars with prioritization of Google avatar when regular avatar is missing
+        String? profileAvatar = chat['avatar'];
+        String? googleAvatar = chat['google_avatar'];
+        
+        if (profileAvatar == null || profileAvatar.isEmpty || profileAvatar == "skiped") {
+          tempProvider.googleAvatar.value = googleAvatar ?? '';
+        } else {
+          tempProvider.avatar.value = profileAvatar;
         }
         
         // Check if this user sent the last message
@@ -194,11 +233,9 @@ class ChatView extends GetView<ChatController> {
         return ListTile(
           leading: GestureDetector(
             onTap: () => Get.toNamed('/profile', arguments: {'userId': chat['other_user_id']}),
-            child: CircleAvatar(
-              backgroundImage: AvatarUtils.getAvatarImage(
-                null,
-                tempProvider,
-              ),
+            child: AvatarUtils.getAvatarWidget(
+              null,
+              tempProvider,
               radius: 24,
             ),
           ),
@@ -246,21 +283,23 @@ class ChatView extends GetView<ChatController> {
     
     // Create a temporary provider just for avatar display
     final tempProvider = AccountDataProvider();
-    if (user['avatar'] != null) {
-      tempProvider.avatar.value = user['avatar'];
-    }
-    if (user['google_avatar'] != null) {
-      tempProvider.googleAvatar.value = user['google_avatar'];
+    
+    // Properly handle avatars with prioritization of Google avatar when regular avatar is missing
+    String? profileAvatar = user['avatar'];
+    String? googleAvatar = user['google_avatar'];
+    
+    if (profileAvatar == null || profileAvatar.isEmpty || profileAvatar == "skiped") {
+      tempProvider.googleAvatar.value = googleAvatar ?? '';
+    } else {
+      tempProvider.avatar.value = profileAvatar;
     }
     
     return ListTile(
       leading: GestureDetector(
         onTap: () => Get.toNamed('/profile', arguments: {'userId': userId}),
-        child: CircleAvatar(
-          backgroundImage: AvatarUtils.getAvatarImage(
-            null,
-            tempProvider,
-          ),
+        child: AvatarUtils.getAvatarWidget(
+          null,
+          tempProvider,
           radius: 24,
         ),
       ),

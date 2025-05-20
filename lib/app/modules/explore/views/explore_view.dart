@@ -189,24 +189,28 @@ class UserListItem extends StatelessWidget {
                            user['avatar'].toString().isNotEmpty && 
                            user['avatar'] != "skiped" &&
                            user['avatar'].toString() != "skiped" &&
-                           user['avatar'].toString() != "null";
+                           user['avatar'].toString() != "null" &&
+                           Uri.tryParse(user['avatar'].toString())?.hasScheme == true;
                            
     // Check if user has Google avatar
     final hasGoogleAvatar = user['google_avatar'] != null && 
                           user['google_avatar'].toString().isNotEmpty &&
-                          user['google_avatar'].toString() != "null";
+                          user['google_avatar'].toString() != "null" &&
+                          Uri.tryParse(user['google_avatar'].toString())?.hasScheme == true;
     
     // Debug avatar info
     debugPrint('User avatar: ${user['avatar']}');
     debugPrint('User google avatar: ${user['google_avatar']}');
+    debugPrint('Has regular avatar: $hasRegularAvatar');
+    debugPrint('Has Google avatar: $hasGoogleAvatar');
     
     return CircleAvatar(
       radius: 24,
       backgroundColor: Colors.grey[300],
       backgroundImage: hasRegularAvatar
-              ? CachedNetworkImageProvider(user['avatar'])
+              ? CachedNetworkImageProvider(user['avatar'].toString())
           : hasGoogleAvatar
-              ? CachedNetworkImageProvider(user['google_avatar'])
+              ? CachedNetworkImageProvider(user['google_avatar'].toString())
               : null,
       child: (!hasRegularAvatar && !hasGoogleAvatar)
               ? const Icon(Icons.person, color: Colors.white)
