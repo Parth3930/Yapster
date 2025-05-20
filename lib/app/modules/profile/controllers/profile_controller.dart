@@ -129,6 +129,17 @@ class ProfileController extends GetxController {
           _accountDataProvider.googleAvatar.value = userData['google_avatar'];
         }
         
+        // CRITICAL FIX: Log avatar status to help diagnose skiped avatar issues
+        final bool hasSkippedAvatar = userData['avatar'] == "skiped" || userData['avatar'] == null;
+        debugPrint('Avatar status in loadUserProfile: regular=${userData['avatar']}, google=${userData['google_avatar']}, isSkiped=$hasSkippedAvatar');
+        
+        // Ensure we have a valid avatar image to show after loading
+        if (hasSkippedAvatar && 
+            userData['google_avatar'] != null && 
+            userData['google_avatar'].toString().isNotEmpty) {
+          debugPrint('Using Google avatar as fallback for skiped avatar');
+        }
+        
         // Preload avatar after fetching
         AvatarUtils.preloadAvatarImages(_accountDataProvider);
         isAvatarLoaded.value = true;

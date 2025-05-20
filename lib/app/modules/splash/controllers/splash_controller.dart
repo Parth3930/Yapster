@@ -86,6 +86,16 @@ class SplashController extends GetxController {
         _accountDataProvider.nickname.value = userData['nickname'] ?? '';
         _accountDataProvider.bio.value = userData['bio'] ?? '';
         _accountDataProvider.email.value = currentUser.email ?? '';
+        
+        // CRITICAL FIX: Ensure Google avatar is also cached when loading profile
+        if (userData['google_avatar'] != null) {
+          debugPrint('Caching Google avatar during splash: ${userData['google_avatar']}');
+          _accountDataProvider.googleAvatar.value = userData['google_avatar'];
+        }
+        
+        // Log the avatar status for debugging
+        final bool hasSkippedAvatar = userData['avatar'] == "skiped" || userData['avatar'] == null;
+        debugPrint('Avatar status: regular=${userData['avatar']}, google=${userData['google_avatar']}, isSkiped=$hasSkippedAvatar');
       }
 
       // If authenticated, check username

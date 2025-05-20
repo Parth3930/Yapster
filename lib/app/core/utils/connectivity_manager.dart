@@ -17,7 +17,7 @@ class ConnectivityManager extends GetxService {
   final RxList<Map<String, dynamic>> _syncQueue = <Map<String, dynamic>>[].obs;
   
   // Connectivity stream subscription
-  StreamSubscription<ConnectivityResult>? _subscription;
+  StreamSubscription<List<ConnectivityResult>>? _subscription;
   
   // Start monitoring connectivity
   Future<ConnectivityManager> init() async {
@@ -38,7 +38,10 @@ class ConnectivityManager extends GetxService {
   }
   
   // Update connection status based on connectivity result
-  void _updateConnectionStatus(ConnectivityResult result) {
+  void _updateConnectionStatus(List<ConnectivityResult> results) {
+    // Use the first result if available, otherwise consider offline
+    final result = results.isNotEmpty ? results.first : ConnectivityResult.none;
+    
     switch (result) {
       case ConnectivityResult.none:
         isOnline.value = false;

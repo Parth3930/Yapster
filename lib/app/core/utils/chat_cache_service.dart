@@ -2,234 +2,156 @@ import 'dart:convert';
 import 'package:get/get.dart';
 import 'package:flutter/foundation.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
-import 'package:yapster/app/core/utils/encryption_service.dart';
+import 'package:yapster/app/modules/chat/models/chat_conversation_model.dart';
+import 'package:yapster/app/modules/chat/models/chat_message_model.dart';
 
-/// Service for caching chat data to reduce database load
+/// Service for caching chat conversations and messages to improve user experience
 class ChatCacheService extends GetxService {
-  // Singleton instance getter
-  static ChatCacheService get to => Get.find<ChatCacheService>();
-  
-  // Dependencies
-  final StorageService _storageService = Get.find<StorageService>();
-  late EncryptionService _encryptionService;
-  
-  // In-memory cache for faster access
-  final Map<String, List<Map<String, dynamic>>> _messagesCache = {};
-  final Map<String, List<Map<String, dynamic>>> _recentChatsCache = {};
-  
-  // Cache expiration times (in seconds)
-  final int _messagesCacheExpiry = 60; // 1 minute
-  final int _recentChatsCacheExpiry = 120; // 2 minutes
-  
-  // Cache timestamps
-  final Map<String, DateTime> _messagesCacheTimestamps = {};
-  DateTime? _recentChatsCacheTimestamp;
-  
-  // Statistics for monitoring
-  final RxInt cacheHits = 0.obs;
-  final RxInt cacheMisses = 0.obs;
-  
-  // Constructor
-  ChatCacheService() : _recentChatsCacheTimestamp = null;
-  
-  // Initialize the service
-  Future<ChatCacheService> init() async {
+  final StorageService _storage = Get.find<StorageService>();
+  static const String _conversationsKey = 'cached_conversations';
+  static const String _messagesPrefix = 'chat_messages_';
+
+  /// Initialize the service
+  Future<void> init() async {
+    debugPrint('ChatCacheService initialized');
+  }
+
+  /// Cache a list of conversations
+  void cacheConversations(List<ChatConversation> conversations) {
     try {
-      // Initialize encryption service reference if available
-      if (Get.isRegistered<EncryptionService>()) {
-        _encryptionService = Get.find<EncryptionService>();
-      }
-      
-      // Load cached recent chats from storage
-      await _loadRecentChatsFromStorage();
-      
-      return this;
+      final List<Map<String, dynamic>> conversationMaps =
+          conversations.map((conv) => conv.toJson()).toList();
+      _storage.saveString(_conversationsKey, jsonEncode(conversationMaps));
+      debugPrint('Cached ${conversations.length} conversations');
     } catch (e) {
-      debugPrint('Error initializing ChatCacheService: $e');
-      return this;
+      debugPrint('Error caching conversations: $e');
     }
   }
-  
-  // Load recent chats from persistent storage on init
-  Future<void> _loadRecentChatsFromStorage() async {
+
+  /// Get cached conversations
+  List<ChatConversation> getCachedConversations() {
     try {
-      final cachedData = _storageService.getString('recent_chats_cache');
+      final cachedData = _storage.getString(_conversationsKey);
       if (cachedData != null) {
-        final decoded = json.decode(cachedData);
-        final List<dynamic> chats = decoded['data'];
-        
-        if (chats.isNotEmpty) {
-          final List<Map<String, dynamic>> typedChats = 
-              chats.map((chat) => Map<String, dynamic>.from(chat)).toList();
-          
-          _recentChatsCache['global'] = typedChats;
-          
-          // Set the timestamp from storage
-          final timestamp = DateTime.parse(decoded['timestamp']);
-          _recentChatsCacheTimestamp = timestamp;
-          
-          debugPrint('Loaded ${typedChats.length} chats from persistent cache');
+        final List<dynamic> decodedData = jsonDecode(cachedData);
+        return decodedData
+            .map(
+              (item) =>
+                  ChatConversation.fromJson(Map<String, dynamic>.from(item)),
+            )
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('Error reading cached conversations: $e');
+    }
+    return [];
+  }
+
+  /// Cache messages for a specific chat
+  void cacheMessages(String conversationId, List<ChatMessage> messages) {
+    try {
+      final List<Map<String, dynamic>> messageMaps =
+          messages.map((msg) => msg.toJson()).toList();
+      _storage.saveString(
+        '$_messagesPrefix$conversationId',
+        jsonEncode(messageMaps),
+      );
+      debugPrint('Cached ${messages.length} messages for chat $conversationId');
+    } catch (e) {
+      debugPrint('Error caching messages: $e');
+    }
+  }
+
+  /// Get cached messages for a specific chat
+  List<ChatMessage> getCachedMessages(String conversationId) {
+    try {
+      final cachedData = _storage.getString('$_messagesPrefix$conversationId');
+      if (cachedData != null) {
+        final List<dynamic> decodedData = jsonDecode(cachedData);
+        return decodedData
+            .map(
+              (item) => ChatMessage.fromJson(Map<String, dynamic>.from(item)),
+            )
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('Error reading cached messages: $e');
+    }
+    return [];
+  }
+
+  /// Clear all cached data for a specific chat
+  void clearChatCache(String conversationId) {
+    _storage.remove('$_messagesPrefix$conversationId');
+    debugPrint('Cleared cache for chat $conversationId');
+  }
+
+  /// Clear all cached data (for logout or similar scenarios)
+  void clearAllChatCache() {
+    _storage.remove(_conversationsKey);
+    // Since StorageService doesn't support listing keys, we can't easily clear
+    // all message caches. In a production app, we would need to maintain a list
+    // of active conversation IDs to clear their caches.
+    debugPrint('Cleared conversations cache');
+  }
+
+  /// Get chat data from cache if available, or fetch from network otherwise
+  Future<List<ChatMessage>> getOrFetchMessages(
+    String conversationId,
+    Future<List<ChatMessage>> Function() fetchFromNetwork,
+  ) async {
+    // Try cache first
+    final cached = getCachedMessages(conversationId);
+
+    if (cached.isNotEmpty) {
+      debugPrint(
+        'Using ${cached.length} cached messages for chat $conversationId',
+      );
+
+      // Fetch from network in background
+      fetchFromNetwork().then((fetchedMessages) {
+        if (fetchedMessages.isNotEmpty) {
+          cacheMessages(conversationId, fetchedMessages);
+        }
+      });
+
+      return cached;
+    }
+
+    // No cache available, fetch from network and then cache
+    try {
+      final messages = await fetchFromNetwork();
+      if (messages.isNotEmpty) {
+        cacheMessages(conversationId, messages);
+      }
+      return messages;
+    } catch (e) {
+      debugPrint('Error fetching messages: $e');
+      return [];
+    }
+  }
+
+  /// Update cache with read status changes
+  void updateMessageReadStatus(
+    String conversationId,
+    String messageId,
+    bool isRead,
+  ) {
+    try {
+      final messages = getCachedMessages(conversationId);
+      if (messages.isNotEmpty) {
+        final index = messages.indexWhere((msg) => msg.id == messageId);
+        if (index != -1) {
+          final updatedMessage = messages[index].copyWith(isRead: isRead);
+          messages[index] = updatedMessage;
+          cacheMessages(conversationId, messages);
         }
       }
     } catch (e) {
-      debugPrint('Error loading cached chats from storage: $e');
+      debugPrint('Error updating message read status in cache: $e');
     }
-  }
-  
-  // Check if cache is still valid
-  bool _isCacheValid(String cacheKey, CacheType type) {
-    final now = DateTime.now();
-    
-    if (type == CacheType.messages) {
-      final timestamp = _messagesCacheTimestamps[cacheKey];
-      if (timestamp == null) return false;
-      
-      return now.difference(timestamp).inSeconds < _messagesCacheExpiry;
-    } else if (type == CacheType.recentChats) {
-      if (_recentChatsCacheTimestamp == null) return false;
-      
-      return now.difference(_recentChatsCacheTimestamp!).inSeconds < _recentChatsCacheExpiry;
-    }
-    
-    return false;
-  }
-  
-  // Get messages from cache
-  List<Map<String, dynamic>>? getCachedMessages(String chatId) {
-    if (_isCacheValid(chatId, CacheType.messages) && _messagesCache.containsKey(chatId)) {
-      cacheHits.value++;
-      return _messagesCache[chatId];
-    }
-    
-    cacheMisses.value++;
-    return null;
-  }
-  
-  // Store messages in cache
-  Future<void> cacheMessages(String chatId, List<Map<String, dynamic>> messages) async {
-    _messagesCache[chatId] = messages;
-    _messagesCacheTimestamps[chatId] = DateTime.now();
-    
-    // Optionally persist to storage for important chats
-    // This is an optimization to avoid excessive storage writes
-    if (messages.length > 10) {
-      await _persistMessagesToStorage(chatId, messages);
-    }
-  }
-  
-  // Get recent chats from cache
-  List<Map<String, dynamic>>? getCachedRecentChats() {
-    if (_isCacheValid('global', CacheType.recentChats) && _recentChatsCache.containsKey('global')) {
-      cacheHits.value++;
-      return _recentChatsCache['global'];
-    }
-    
-    cacheMisses.value++;
-    return null;
-  }
-  
-  // Store recent chats in cache
-  Future<void> cacheRecentChats(List<Map<String, dynamic>> chats) async {
-    _recentChatsCache['global'] = chats;
-    
-    // Persist to storage
-    await _persistRecentChatsToStorage(chats);
-  }
-  
-  // Persist messages to storage (selectively)
-  Future<void> _persistMessagesToStorage(String chatId, List<Map<String, dynamic>> messages) async {
-    try {
-      // Store only the last 50 messages to conserve space
-      final messagesToStore = messages.length > 50 
-          ? messages.sublist(messages.length - 50) 
-          : messages;
-      
-      final Map<String, dynamic> cacheData = {
-        'timestamp': DateTime.now().toIso8601String(),
-        'data': messagesToStore
-      };
-      
-      await _storageService.saveString(
-        'messages_cache_$chatId', 
-        json.encode(cacheData)
-      );
-      
-      debugPrint('Persisted ${messagesToStore.length} messages for chat $chatId');
-    } catch (e) {
-      debugPrint('Error persisting messages to storage: $e');
-    }
-  }
-  
-  // Persist recent chats to storage
-  Future<void> _persistRecentChatsToStorage(List<Map<String, dynamic>> chats) async {
-    try {
-      final Map<String, dynamic> cacheData = {
-        'timestamp': DateTime.now().toIso8601String(),
-        'data': chats
-      };
-      
-      await _storageService.saveString(
-        'recent_chats_cache', 
-        json.encode(cacheData)
-      );
-      
-      debugPrint('Persisted ${chats.length} recent chats to storage');
-    } catch (e) {
-      debugPrint('Error persisting chats to storage: $e');
-    }
-  }
-  
-  // Invalidate message cache for a specific chat
-  void invalidateMessageCache(String chatId) {
-    _messagesCache.remove(chatId);
-    _messagesCacheTimestamps.remove(chatId);
-    debugPrint('Invalidated message cache for chat $chatId');
-  }
-  
-  // Invalidate recent chats cache
-  void invalidateRecentChatsCache() {
-    _recentChatsCache.clear();
-    debugPrint('Invalidated recent chats cache');
-  }
-  
-  // Preload messages for a chat from storage
-  Future<List<Map<String, dynamic>>?> preloadMessagesFromStorage(String chatId) async {
-    try {
-      final cachedData = _storageService.getString('messages_cache_$chatId');
-      if (cachedData != null) {
-        final decoded = json.decode(cachedData);
-        final List<dynamic> messages = decoded['data'];
-        
-        if (messages.isNotEmpty) {
-          final List<Map<String, dynamic>> typedMessages = 
-              messages.map((msg) => Map<String, dynamic>.from(msg)).toList();
-          
-          // Don't update the cache timestamp so it will still be refreshed from network
-          // but the UI can show something while waiting
-          _messagesCache[chatId] = typedMessages;
-          
-          debugPrint('Preloaded ${typedMessages.length} messages for chat $chatId from storage');
-          return typedMessages;
-        }
-      }
-    } catch (e) {
-      debugPrint('Error preloading messages from storage: $e');
-    }
-    
-    return null;
-  }
-  
-  // Clear all caches (for logout or memory pressure)
-  void clearAllCaches() {
-    _messagesCache.clear();
-    _messagesCacheTimestamps.clear();
-    _recentChatsCache.clear();
-    debugPrint('Cleared all chat caches');
   }
 }
 
 // Cache types for type safety
-enum CacheType {
-  messages,
-  recentChats
-} 
+enum CacheType { messages, recentChats }

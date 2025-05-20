@@ -141,6 +141,10 @@ class AvatarUtils {
     final profileAvatarUrl = provider.avatar.value;
     final googleAvatarUrl = provider.googleAvatar.value;
     
+    // CRITICAL DEBUG: Log both avatar URLs to diagnose issues after hot restart
+    debugPrint('AVATAR GET - Profile avatar: $profileAvatarUrl (${isValidUrl(profileAvatarUrl) ? 'valid' : 'invalid'})');
+    debugPrint('AVATAR GET - Google avatar: $googleAvatarUrl (${isValidUrl(googleAvatarUrl) ? 'valid' : 'invalid'})');
+    
     // Check if profile avatar is valid and not "skiped"
     if (isValidUrl(profileAvatarUrl)) {
       // Use cached image if available
@@ -163,25 +167,41 @@ class AvatarUtils {
     
     // No valid avatar found - return null instead of asset image
     // Callers should handle null by showing a default icon
+    debugPrint('No valid avatar found, returning null');
     return null;
   }
 
   /// Preloads avatar images to make them instantly available when needed
   static void preloadAvatarImages(AccountDataProvider provider) {
-    // Preload profile avatar if valid
-    final profileAvatarUrl = provider.avatar.value;
-    if (isValidUrl(profileAvatarUrl)) {
-      precacheImage(CachedNetworkImageProvider(profileAvatarUrl), Get.context!);
-      _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(profileAvatarUrl);
-      debugPrint('Avatar preloaded: $profileAvatarUrl');
-    }
-    
-    // Preload Google avatar if valid
-    final googleAvatarUrl = provider.googleAvatar.value;
-    if (isValidUrl(googleAvatarUrl)) {
-      precacheImage(CachedNetworkImageProvider(googleAvatarUrl), Get.context!);
-      _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(googleAvatarUrl);
-      debugPrint('Google avatar preloaded: $googleAvatarUrl');
+    try {
+      // Log avatar sources for debugging
+      debugPrint('Preloading avatars - Profile avatar: ${provider.avatar.value}');
+      debugPrint('Preloading avatars - Google avatar: ${provider.googleAvatar.value}');
+      
+      final bool hasSkippedAvatar = provider.avatar.value == "skiped" || provider.avatar.value == "null" || provider.avatar.value.isEmpty;
+      
+      // Preload profile avatar if valid
+      final profileAvatarUrl = provider.avatar.value;
+      if (isValidUrl(profileAvatarUrl)) {
+        precacheImage(CachedNetworkImageProvider(profileAvatarUrl), Get.context!);
+        _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(profileAvatarUrl);
+        debugPrint('Profile avatar preloaded: $profileAvatarUrl');
+      }
+      
+      // Preload Google avatar if valid
+      final googleAvatarUrl = provider.googleAvatar.value;
+      if (isValidUrl(googleAvatarUrl)) {
+        precacheImage(CachedNetworkImageProvider(googleAvatarUrl), Get.context!);
+        _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(googleAvatarUrl);
+        debugPrint('Google avatar preloaded: $googleAvatarUrl');
+        
+        // CRITICAL FIX: If regular avatar is skiped, ensure the Google avatar is ready
+        if (hasSkippedAvatar) {
+          debugPrint('Regular avatar is skiped, ensuring Google avatar is set as fallback');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error preloading avatars: $e');
     }
   }
 

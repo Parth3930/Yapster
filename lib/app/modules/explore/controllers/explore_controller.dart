@@ -419,15 +419,17 @@ class ExploreController extends GetxController {
 
   // Check if the current user is following the selected user
   bool isFollowingUser(String userId) {
-    if (selectedUserProfile.isEmpty || userId.isEmpty) return false;
+    if (userId.isEmpty) return false;
 
     // First check in the AccountDataProvider for cached state (fast check)
     if (_accountDataProvider.isFollowing(userId)) {
+      debugPrint('User $userId found in following cache - already following');
       return true;
     }
 
     // If not found in cache, we need to ensure we have the most up-to-date data
     // This will be handled by refreshFollowState which is called when the view is built
+    debugPrint('User $userId not found in following cache - not following or needs refresh');
     return false;
   }
 

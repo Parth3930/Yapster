@@ -5,7 +5,6 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/modules/account_setup/controllers/account_setup_controller.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
-import 'package:image_picker/image_picker.dart';
 
 class AccountAvatarSetupView extends GetView<AccountSetupController> {
   const AccountAvatarSetupView({super.key});

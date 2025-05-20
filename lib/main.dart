@@ -74,7 +74,8 @@ void _setupErrorHandling() {
 
 // Monitor connectivity changes
 void _setupConnectivityMonitoring() {
-  Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
+  Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+    final result = results.isNotEmpty ? results.first : ConnectivityResult.none;
     final dbCacheService = Get.find<DbCacheService>();
     final isOffline = result == ConnectivityResult.none;
     

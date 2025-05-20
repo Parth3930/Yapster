@@ -925,11 +925,29 @@ class SupabaseService extends GetxService {
           cacheKey: 'profile_$userId',
           cacheType: 'user_profile',
           fetchFn: () async {
-            return await client
+            // CRITICAL FIX: Explicitly include google_avatar in the select
+            final userData = await client
                 .from('profiles')
-                .select()
+                .select('id, nickname, username, bio, avatar, google_avatar, follower_count, following_count')
                 .eq('user_id', userId)
                 .single();
+                
+            // After loading, make sure AccountDataProvider has both avatar values
+            if (userData.isNotEmpty) {
+              try {
+                final accountProvider = Get.find<AccountDataProvider>();
+                
+                debugPrint('PRELOAD - Found avatar: ${userData['avatar']}, google_avatar: ${userData['google_avatar']}');
+                
+                // Update both avatar fields in the account provider
+                accountProvider.avatar.value = userData['avatar'] ?? '';
+                accountProvider.googleAvatar.value = userData['google_avatar'] ?? '';
+              } catch (e) {
+                debugPrint('Error updating account provider in preload: $e');
+              }
+            }
+            
+            return userData;
           },
         ),
         
