@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
+import 'package:flutter/scheduler.dart';
 import '../../controllers/chat_controller.dart';
 import '../message_options.dart';
 
@@ -13,6 +14,8 @@ class MessageBubble extends StatefulWidget {
   final String otherUserId;
   final Function(Map<String, dynamic>) onTapImage;
   final void Function(String messageId)? onAnimationComplete;
+  final bool isDeleting;
+  final void Function(String messageId)? onDeleteAnimationComplete;
 
   const MessageBubble({
     super.key,
@@ -21,6 +24,8 @@ class MessageBubble extends StatefulWidget {
     required this.otherUserId,
     required this.onTapImage,
     required this.onAnimationComplete,
+    this.isDeleting = false,
+    this.onDeleteAnimationComplete,
   });
 
   @override
@@ -28,10 +33,23 @@ class MessageBubble extends StatefulWidget {
 }
 
 class _MessageBubbleState extends State<MessageBubble>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scaleAnimation;
-  late final Animation<double> _opacityAnimation;
+    with TickerProviderStateMixin {
+  // Send animation controller - replacing the old simple entry animation
+  late final AnimationController _sendController;
+  late final Animation<double> _sendShrinkAnimation;
+  late final Animation<double> _sendRotateAnimation;
+  late final Animation<Offset> _sendSlideAnimation;
+  late final Animation<double> _sendFadeAnimation;
+
+  // Delete animation controller
+  late final AnimationController _deleteController;
+  late final Animation<double> _shrinkAnimation;
+  late final Animation<double> _rotateAnimation;
+  late final Animation<Offset> _slideAnimation;
+  late final Animation<double> _fadeAnimation;
+
+  bool _wasDeleting = false;
+  bool _isDeleting = false;
 
   late final AccountDataProvider _accountDataProvider;
   late final ChatController _chatController;
@@ -61,38 +79,113 @@ class _MessageBubbleState extends State<MessageBubble>
     _isNew = widget.message['is_new'] == true;
     _isSending = widget.message['is_sending'] == true;
 
-    _controller = AnimationController(
+    // Send animation controller - replaces old _controller
+    _sendController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 550),
     );
 
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
+    // Shrink effect (start small, end normal)
+    _sendShrinkAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _sendController,
+        curve: const Interval(0.0, 0.75, curve: Curves.easeOutQuad),
+      ),
+    );
 
-    _opacityAnimation = Tween<double>(
+    // Rotation effect (start rotated, end straight)
+    _sendRotateAnimation = Tween<double>(
+      begin: widget.isMe ? 0.2 : -0.2, // Subtle rotation based on message side
+      end: 0.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _sendController,
+        curve: const Interval(0.1, 0.6, curve: Curves.easeInOut),
+      ),
+    );
+
+    // Slide effect (start offscreen, end in position)
+    _sendSlideAnimation = Tween<Offset>(
+      begin: widget.isMe ? const Offset(-1.0, 0.0) : const Offset(1.0, 0.0),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _sendController,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOutQuint),
+      ),
+    );
+
+    // Fade effect (start transparent, end visible)
+    _sendFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _sendController,
+        curve: const Interval(0.0, 0.8, curve: Curves.easeIn),
+      ),
+    );
+
+    // Delete animation controller
+    _deleteController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+
+    // Shrink effect
+    _shrinkAnimation = Tween<double>(begin: 1.0, end: 0.2).animate(
+      CurvedAnimation(
+        parent: _deleteController,
+        curve: const Interval(0.0, 0.75, curve: Curves.easeInQuad),
+      ),
+    );
+
+    // Rotation effect
+    _rotateAnimation = Tween<double>(
       begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+      end: widget.isMe ? -0.2 : 0.2, // Subtle rotation based on message side
+    ).animate(
+      CurvedAnimation(
+        parent: _deleteController,
+        curve: const Interval(0.1, 0.6, curve: Curves.easeInOut),
+      ),
+    );
+
+    // Slide effect
+    _slideAnimation = Tween<Offset>(
+      begin: Offset.zero,
+      end: widget.isMe ? const Offset(1.0, 0.0) : const Offset(-1.0, 0.0),
+    ).animate(
+      CurvedAnimation(
+        parent: _deleteController,
+        curve: const Interval(0.4, 1.0, curve: Curves.easeOutQuint),
+      ),
+    );
+
+    // Fade effect
+    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _deleteController,
+        curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
+      ),
+    );
 
     if (_isNew || _isSending) {
-      _controller.forward();
-      _controller.addStatusListener((status) {
+      _sendController.forward();
+      _sendController.addStatusListener((status) {
         if (status == AnimationStatus.completed) {
-          // Removed setState call
-          // setState(() {
-          //   widget.message['is_new'] = false;
-          // });
           widget.onAnimationComplete?.call(widget.message['message_id']);
         }
       });
     } else {
-      _controller.value = 1.0;
+      _sendController.value = 1.0;
     }
 
-    // Initialize all computed fields here for efficiency
+    // Delete animation completion callback
+    _deleteController.addStatusListener((status) {
+      if (status == AnimationStatus.completed && _isDeleting) {
+        widget.onDeleteAnimationComplete?.call(widget.message['message_id']);
+      }
+    });
 
+    // Initialize all computed fields here for efficiency
     _messageContent = (widget.message['content'] ?? '').toString();
 
     _isPlaceholder = widget.message['is_placeholder'] == true;
@@ -163,7 +256,8 @@ class _MessageBubbleState extends State<MessageBubble>
 
   @override
   void dispose() {
-    _controller.dispose();
+    _sendController.dispose();
+    _deleteController.dispose();
     super.dispose();
   }
 
@@ -177,19 +271,53 @@ class _MessageBubbleState extends State<MessageBubble>
 
     if (isNew && !wasNew) {
       // Start the animation if the message just became new
-      _controller.forward(from: 0.0);
+      _sendController.forward(from: 0.0);
+    }
+
+    // Trigger delete animation if deleting state changed
+    if (widget.isDeleting && !_wasDeleting) {
+      _wasDeleting = true;
+      _isDeleting = true;
+      _deleteController.forward(from: 0.0);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _controller,
+      animation: Listenable.merge([_sendController, _deleteController]),
       builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
-          child: Opacity(opacity: _opacityAnimation.value, child: child),
+        double scale = 1.0;
+        double opacity = 1.0;
+        double rotation = 0.0;
+        Offset slideOffset = Offset.zero;
+
+        if (_isDeleting) {
+          // Apply delete animations when deleting
+          scale = _shrinkAnimation.value;
+          opacity = _fadeAnimation.value;
+          rotation = _rotateAnimation.value;
+          slideOffset = _slideAnimation.value;
+        } else {
+          // Apply send/appearance animations
+          scale = _sendShrinkAnimation.value;
+          opacity = _sendFadeAnimation.value;
+          rotation = _sendRotateAnimation.value;
+          slideOffset = _sendSlideAnimation.value;
+        }
+
+        return Transform.translate(
+          offset:
+              slideOffset * 100, // Scale the offset to make it more noticeable
+          child: Transform.rotate(
+            angle: rotation,
+            child: Transform.scale(
+              scale: scale,
+              alignment:
+                  widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
+              child: Opacity(opacity: opacity, child: child),
+            ),
+          ),
         );
       },
       child: GestureDetector(

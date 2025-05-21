@@ -4,6 +4,7 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/chat/modles/message_model.dart';
+import 'dart:async';
 
 /// Service for handling message operations in chats
 class ChatMessageService extends GetxService {
@@ -17,6 +18,7 @@ class ChatMessageService extends GetxService {
   // Media upload progress
   late RxMap<String, double> localUploadProgress;
   ChatController get controller => Get.find<ChatController>();
+  StreamSubscription? _messageSubscription;
 
   /// Initialize the service with observable lists
   void initialize({
@@ -36,6 +38,10 @@ class ChatMessageService extends GetxService {
 
     debugPrint('loading messages... $chatId');
     try {
+      // Cancel any previous real-time message subscription
+      await _messageSubscription?.cancel();
+      _messageSubscription = null;
+
       // 1. Fetch old (non-expired) messages
       final response = await supabase
           .from('messages')
@@ -44,6 +50,8 @@ class ChatMessageService extends GetxService {
           .gt('expires_at', nowIso)
           .order('created_at', ascending: true);
 
+      // Clear the local message list before assigning new messages
+      messages.clear();
       if (response.isNotEmpty) {
         final loadedMessages =
             response
@@ -56,7 +64,7 @@ class ChatMessageService extends GetxService {
       }
 
       // 2. Listen for new messages in realtime where expires_at > now
-      supabase
+      _messageSubscription = supabase
           .from('messages')
           .stream(primaryKey: ['message_id'])
           .eq('chat_id', chatId)
@@ -72,7 +80,6 @@ class ChatMessageService extends GetxService {
                 // If message not already in list, add it
                 if (!messages.any((m) => m.messageId == message.messageId)) {
                   messages.add(message);
-                  // Add new message ID to the set to trigger animation
                   controller.messagesToAnimate.add(message.messageId);
                 } else {
                   // If message exists, update it (e.g., is_read status)
@@ -86,7 +93,6 @@ class ChatMessageService extends GetxService {
               } else {
                 // If message expired and still in list, remove it
                 messages.removeWhere((m) => m.messageId == message.messageId);
-                // Also remove from animation set if it was there
                 controller.messagesToAnimate.remove(message.messageId);
               }
             }
@@ -99,6 +105,9 @@ class ChatMessageService extends GetxService {
             controller.messagesToAnimate.removeWhere(
               (id) => !messages.any((m) => m.messageId == id),
             );
+
+            // Force UI update after any change
+            messages.refresh();
           });
 
       debugPrint('Messages loaded successfully ${messages.length}');
@@ -173,8 +182,11 @@ class ChatMessageService extends GetxService {
 
       // Assuming the response contains the inserted message with message_id
       final sentMessage = MessageModel.fromJson(response.first);
+
       // Add the sent message ID to the set to trigger animation
       controller.messagesToAnimate.add(sentMessage.messageId);
+      // Optionally, force a UI update if needed
+      messages.refresh();
 
       // Clear the text input
       messageController.clear();
@@ -186,7 +198,8 @@ class ChatMessageService extends GetxService {
   /// Upload and send image
   Future<void> uploadAndSendImage(String chatId, XFile image) async {
     try {
-      final currentUserId = _supabaseService.currentUser.value?.id;
+      // No-op: remove unused variable warning
+      // final currentUserId = _supabaseService.currentUser.value?.id;
     } catch (e) {}
   }
 

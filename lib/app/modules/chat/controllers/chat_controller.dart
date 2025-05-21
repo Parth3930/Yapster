@@ -39,6 +39,7 @@ class ChatController extends GetxController
   final RxMap<String, double> localUploadProgress = <String, double>{}.obs;
   final RxSet<String> messagesToAnimate =
       <String>{}.obs; // Track messages that need animation
+  final RxString deletingMessageId = ''.obs;
 
   // Recent chats functionality
   final RxList<Map<String, dynamic>> recentChats = <Map<String, dynamic>>[].obs;
@@ -71,5 +72,13 @@ class ChatController extends GetxController
   // Method to call when message bubble animation completes
   void onMessageAnimationComplete(String messageId) {
     messagesToAnimate.remove(messageId);
+  }
+
+  // Method to call when delete animation completes
+  void onDeleteAnimationComplete(String messageId) async {
+    // Remove from UI and DB after animation
+    final chatId = selectedChatId.value;
+    deletingMessageId.value = '';
+    await deleteMessage(chatId, messageId);
   }
 }

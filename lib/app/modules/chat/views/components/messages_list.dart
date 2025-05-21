@@ -139,14 +139,20 @@ class _MessageBubbleWrapper extends StatelessWidget {
         'recipient_id': message.recipientId,
         'is_new': controller.messagesToAnimate.contains(message.messageId),
       };
-
+      final isDeleting =
+          controller.deletingMessageId.value == message.messageId;
       return MessageBubble(
-        key: ValueKey('msg_${message.messageId}_${message.senderId}_$isMe'),
+        key: ValueKey(
+          'msg_${message.messageId}_${message.senderId}_${isMe}_${msgMap['is_new']}_$isDeleting',
+        ),
         message: msgMap,
         isMe: isMe,
         otherUserId: otherUserId,
         onTapImage: onTapImage,
         onAnimationComplete: controller.onMessageAnimationComplete,
+        isDeleting: isDeleting,
+        onDeleteAnimationComplete:
+            (id) => controller.onDeleteAnimationComplete(id),
       );
     });
   }

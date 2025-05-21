@@ -43,14 +43,7 @@ mixin ChatControllerMessages {
 
       // Log and process each chat
       for (final chat in chats) {
-        debugPrint('Chat ID: ${chat['chat_id']}');
-        debugPrint('User One ID: ${chat['user_one_id']}');
-        debugPrint('User Two ID: ${chat['user_two_id']}');
-        debugPrint('Created At: ${chat['created_at']}');
-        debugPrint('User Two Username: ${chat['other_username']}');
-        debugPrint('User Two Avatar: ${chat['other_avatar']}');
-        debugPrint('User Two Google Avatar: ${chat['other_google_avatar']}');
-        debugPrint('---');
+        debugPrint('Chat: $chat');
       }
 
       _chatControler.recentChats.assignAll(chats.cast<Map<String, dynamic>>());
@@ -169,8 +162,6 @@ mixin ChatControllerMessages {
     await Get.find<ChatMessageService>().markMessagesAsRead(chatId);
   }
 
-  // --- Additional message-related functions for completeness ---
-
   // Example: Edit a message (stub)
   Future<void> editMessage(
     String chatId,
@@ -179,43 +170,5 @@ mixin ChatControllerMessages {
   ) async {
     // Example: Call a service to edit the message content in the backend.
     throw UnimplementedError('Edit message not implemented');
-  }
-
-  // Example: Reply to a message (stub)
-  Future<void> replyToMessage(
-    String chatId,
-    String messageId,
-    String replyContent,
-  ) async {
-    // Example: Call a service to send a reply message.
-    throw UnimplementedError('Reply to message not implemented');
-  }
-
-  // Example: Forward a message (stub)
-  Future<void> forwardMessage(
-    String chatId,
-    String messageId,
-    String targetChatId,
-  ) async {
-    // Example: Call a service to forward the message to another chat.
-    throw UnimplementedError('Forward message not implemented');
-  }
-
-  // Example: Star a message (stub)
-  Future<void> starMessage(String chatId, String messageId) async {
-    // Example: Call a service to star the message.
-    throw UnimplementedError('Star message not implemented');
-  }
-
-  // Example: Unstar a message (stub)
-  Future<void> unstarMessage(String chatId, String messageId) async {
-    // Example: Call a service to unstar the message.
-    throw UnimplementedError('Unstar message not implemented');
-  }
-
-  // Example: Delete all messages in a chat (stub)
-  Future<void> deleteAllMessages(String chatId) async {
-    // Example: Call a service to delete all messages in a chat.
-    throw UnimplementedError('Delete all messages not implemented');
   }
 }
