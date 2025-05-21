@@ -9,6 +9,7 @@ import 'components/message_input.dart';
 import 'components/chat_timer_banner.dart';
 import 'components/editing_message_banner.dart';
 import 'components/messages_list.dart';
+import 'components/encryption_dialog.dart';
 
 // Lifecycle observer to detect when app resumes from background
 class _AppLifecycleObserver extends WidgetsBindingObserver {
@@ -50,24 +51,8 @@ class _KeyboardVisibilityObserver extends WidgetsBindingObserver {
   }
 }
 
-class _ForceFocusNodeNotifier extends ChangeNotifier {
-  bool _forcedUnfocus = false;
-
-  bool get forcedUnfocus => _forcedUnfocus;
-
-  void forceUnfocus() {
-    _forcedUnfocus = true;
-    notifyListeners();
-    // Reset after one frame
-    Future.microtask(() {
-      _forcedUnfocus = false;
-      notifyListeners();
-    });
-  }
-}
-
-class ChatDetailView extends GetView<ChatController> {
-  const ChatDetailView({super.key});
+class ChatWindowView extends GetView<ChatController> {
+  const ChatWindowView({super.key});
 
   // Add the missing RxBool for keyboard visibility
   static final RxBool isKeyboardVisible = false.obs;
@@ -82,14 +67,14 @@ class ChatDetailView extends GetView<ChatController> {
       // Handle missing arguments case
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Get.back();
-        Get.snackbar('Error', 'Chat details not available');
+        Get.snackbar('Error', 'Chat Windows not available');
       });
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     // Safely access required arguments with null checks
-    final String? chatId = args['chat_id'] as String?;
-    final String? otherUserId = args['other_user_id'] as String?;
+    final String? chatId = args['chatId'] as String?;
+    final String? otherUserId = args['otherUserId'] as String?;
     final String? username = args['username'] as String?;
 
     // Validate required arguments
@@ -118,8 +103,6 @@ class ChatDetailView extends GetView<ChatController> {
         debugPrint('App resumed - refreshing messages and reconnecting');
         // Force refresh messages from server when app resumes
         controller.loadMessages(chatId);
-        // Reconnect the real-time subscription to ensure new messages are received
-        controller.reconnectChatSubscription();
         // Make sure we immediately mark messages as read
         controller.markMessagesAsRead(chatId);
       },
@@ -161,12 +144,6 @@ class ChatDetailView extends GetView<ChatController> {
       // Create a debouncer for the read status updates
       final readStatusDebouncer = Debouncer(milliseconds: 500);
 
-      // Check connection periodically instead of using status indicator
-      Timer.periodic(const Duration(seconds: 30), (_) {
-        debugPrint('Periodic connection check');
-        controller.reconnectChatSubscription();
-      });
-
       // Use a debounced listener to avoid recursive calls
       ever(controller.messages, (_) {
         try {
@@ -187,32 +164,15 @@ class ChatDetailView extends GetView<ChatController> {
       _fetchOtherUserProfile(otherUserId);
     });
 
-    // Load messages if not already loaded for this chat
-    if (controller.selectedChatId.value != chatId) {
-      controller.selectedChatId.value = chatId;
-      // Initial load of messages
-      try {
-        controller.loadMessages(chatId);
-      } catch (e) {
-        debugPrint('Error loading messages initially: $e');
-        // Show error to user
-        Get.snackbar('Error', 'Failed to load messages. Please try again.');
-      }
-
-      // Set up real-time updates for this chat
-      try {
-        controller.setupRealtimeUpdates(chatId);
-      } catch (e) {
-        debugPrint('Error setting up realtime updates: $e');
-      }
-    } else {
-      // Even if we're returning to the same chat, reload messages to ensure UI is up-to-date
-      debugPrint('Returning to the same chat - refreshing messages');
-      try {
-        controller.loadMessages(chatId);
-      } catch (e) {
-        debugPrint('Error refreshing messages: $e');
-      }
+    // Set the selected chat ID and load messages
+    controller.selectedChatId.value = chatId;
+    // Initial load of messages
+    try {
+      controller.loadMessages(chatId);
+    } catch (e) {
+      debugPrint('Error loading messages initially: $e');
+      // Show error to user
+      Get.snackbar('Error', 'Failed to load messages. Please try again.');
     }
 
     // Make sure to properly reset when the view is closed
@@ -221,18 +181,15 @@ class ChatDetailView extends GetView<ChatController> {
       final routeObs = RxString(Get.currentRoute);
 
       ever(routeObs, (route) {
-        if (Get.previousRoute == Routes.CHAT_DETAIL &&
-            Get.currentRoute != Routes.CHAT_DETAIL) {
-          debugPrint('Leaving chat detail - cleaning up observers');
+        if (Get.previousRoute == Routes.CHAT_WINDOW &&
+            Get.currentRoute != Routes.CHAT_WINDOW) {
+          debugPrint('Leaving chat Window - cleaning up observers');
           WidgetsBinding.instance.removeObserver(lifecycleObserver);
 
           // Clean up focus node on pop
           if (Get.isRegistered<FocusNode>(tag: 'input_focus_node')) {
             Get.delete<FocusNode>(tag: 'input_focus_node');
           }
-
-          // Clean up realtime subscriptions when leaving chat
-          controller.cleanupRealtimeSubscriptions();
         }
 
         // Update route value
@@ -276,7 +233,7 @@ class ChatDetailView extends GetView<ChatController> {
           // Lock icon for encryption
           IconButton(
             icon: const Icon(Icons.lock, color: Colors.white),
-            onPressed: () => _showEncryptionDialog(context),
+            onPressed: () => EncryptionDialog.show(context),
           ),
         ],
       ),
@@ -294,7 +251,8 @@ class ChatDetailView extends GetView<ChatController> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                return const MessagesList();
+                // Pass the correct otherUserId to MessagesList
+                return MessagesList();
               }),
             ),
 
@@ -366,44 +324,7 @@ class ChatDetailView extends GetView<ChatController> {
     }
   }
 
-  // Helper to show encryption dialog
-  void _showEncryptionDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            backgroundColor: Colors.grey.shade900,
-            title: const Text(
-              'End-to-End Encryption',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            content: const Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your messages are securely encrypted.',
-                  style: TextStyle(color: Colors.white),
-                ),
-                SizedBox(height: 12),
-                Text(
-                  'Only you and the recipient can read them.',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                child: const Text('OK', style: TextStyle(color: Colors.blue)),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
-    );
-  }
+  // Fetch profile data for the other user
 }
 
 // Add a debouncer class to prevent frequent calls

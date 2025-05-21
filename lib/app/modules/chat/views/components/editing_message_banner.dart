@@ -8,17 +8,17 @@ class EditingMessageBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final message = MessageInput.messageBeingEdited.value;
     if (message == null) return const SizedBox.shrink();
-    
+
     // Get the message content
     final messageContent = message['content'] ?? '';
-    
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.2),
+        color: Colors.blue,
         border: Border(
-          top: BorderSide(color: Colors.blue.withOpacity(0.3), width: 1),
-          bottom: BorderSide(color: Colors.blue.withOpacity(0.3), width: 1),
+          top: BorderSide(color: Colors.blue, width: 1),
+          bottom: BorderSide(color: Colors.blue, width: 1),
         ),
       ),
       child: Row(
@@ -41,7 +41,7 @@ class EditingMessageBanner extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   messageContent,
-                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  style: TextStyle(color: Colors.white),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -60,4 +60,4 @@ class EditingMessageBanner extends StatelessWidget {
       ),
     );
   }
-} 
+}

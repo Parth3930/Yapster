@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:yapster/app/routes/app_pages.dart';
-import 'dart:io';
 import 'dart:math';
 
 /// Utility class containing helper methods for chat functionality
@@ -107,7 +106,7 @@ class ChatUtils {
     String? imageUrl,
   ) {
     Get.toNamed(
-      Routes.CHAT_DETAIL,
+      Routes.CHAT_WINDOW,
       arguments: {
         'user_id': userId,
         'username': username,

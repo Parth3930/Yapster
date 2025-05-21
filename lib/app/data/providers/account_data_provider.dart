@@ -69,24 +69,30 @@ class AccountDataProvider extends GetxController {
   // Fast lookup methods - O(1) operations
   bool isFollower(String userId) {
     final result = _followersMap[userId] ?? false;
-    debugPrint('Follower check for $userId: $result (map size: ${_followersMap.length})');
+    debugPrint(
+      'Follower check for $userId: $result (map size: ${_followersMap.length})',
+    );
     return result;
   }
-  
+
   bool isFollowing(String userId) {
     if (userId.isEmpty) return false;
-    
+
     // Make sure the following map is built (needed after hot restart)
     if (_followingMap.isEmpty && following.isNotEmpty) {
       _rebuildFollowingMap();
-      debugPrint('Rebuilt following map after finding it empty. Now has ${_followingMap.length} entries');
+      debugPrint(
+        'Rebuilt following map after finding it empty. Now has ${_followingMap.length} entries',
+      );
     }
-    
+
     final result = _followingMap[userId] ?? false;
-    debugPrint('Following check for $userId: $result (map size: ${_followingMap.length})');
+    debugPrint(
+      'Following check for $userId: $result (map size: ${_followingMap.length})',
+    );
     return result;
   }
-  
+
   Map<String, dynamic>? getPost(String postId) => _postsMap[postId];
 
   // Initialize all data structures with default values
@@ -281,7 +287,7 @@ class AccountDataProvider extends GetxController {
 
         if (response == null) {
           // Fallback to direct count
-          final countResponse = await supabaseService.client
+          await supabaseService.client
               .from('follows')
               .select()
               .eq('following_id', userId);
@@ -338,7 +344,7 @@ class AccountDataProvider extends GetxController {
 
         if (response == null) {
           // Fallback to direct count
-          final countResponse = await supabaseService.client
+          await supabaseService.client
               .from('follows')
               .select()
               .eq('follower_id', userId);

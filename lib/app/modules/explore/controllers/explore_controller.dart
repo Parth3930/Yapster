@@ -429,7 +429,9 @@ class ExploreController extends GetxController {
 
     // If not found in cache, we need to ensure we have the most up-to-date data
     // This will be handled by refreshFollowState which is called when the view is built
-    debugPrint('User $userId not found in following cache - not following or needs refresh');
+    debugPrint(
+      'User $userId not found in following cache - not following or needs refresh',
+    );
     return false;
   }
 
@@ -832,7 +834,7 @@ class ExploreController extends GetxController {
 
         // Force update in database with accurate counts using upsert
         // This ensures the record is created if it doesn't exist, or updated if it does
-        final response = await _supabaseService.client.from('profiles').upsert({
+        await _supabaseService.client.from('profiles').upsert({
           'user_id': userId,
           'follower_count': followerCount,
           'following_count': followingCount,

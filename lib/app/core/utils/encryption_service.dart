@@ -37,7 +37,7 @@ class EncryptionService extends GetxService {
       }
     } catch (e) {
       print('Error initializing encryption service: $e');
-      throw e;
+      rethrow;
     }
   }
 

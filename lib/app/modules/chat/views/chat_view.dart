@@ -4,80 +4,17 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
-import 'package:yapster/app/routes/app_pages.dart';
-import 'dart:async';
 import '../controllers/chat_controller.dart';
-
-// App lifecycle observer for ChatView
-class _ChatViewLifecycleObserver extends WidgetsBindingObserver {
-  final VoidCallback onResume;
-  final VoidCallback onPause;
-
-  _ChatViewLifecycleObserver({required this.onResume, required this.onPause});
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      debugPrint('ChatView lifecycle: resumed');
-      onResume();
-    } else if (state == AppLifecycleState.paused) {
-      debugPrint('ChatView lifecycle: paused');
-      onPause();
-    }
-  }
-}
 
 class ChatView extends GetView<ChatController> {
   const ChatView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Set up refresh when view appears or when app resumes from background
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Check if cached data exists first, then load from server only if needed
       if (controller.recentChats.isEmpty) {
-        // Try to load from cache first
-        controller.loadRecentChatsFromCache().then((success) {
-          if (!success || controller.recentChats.isEmpty) {
-            // If cache is empty or failed, fetch from server
-            controller.loadRecentChats();
-          }
-        });
+        controller.fetchUsersRecentChats();
       }
-
-      // Set up a timer to periodically check for new messages
-      final checkTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        debugPrint('Periodic check for new messages');
-        controller.checkForNewMessages();
-      });
-
-      // Add observer for app state changes
-      final observer = _ChatViewLifecycleObserver(
-        onResume: () {
-          debugPrint('ChatView: App resumed - checking for new messages');
-          // First check if new messages available without full refresh
-          controller.checkForNewMessages();
-        },
-        onPause: () {
-          debugPrint('ChatView: App paused');
-          // No specific action needed on pause
-        },
-      );
-
-      WidgetsBinding.instance.addObserver(observer);
-
-      // Clean up when the view is disposed
-      final routeObs = RxString(Get.currentRoute);
-      ever(routeObs, (route) {
-        if (Get.previousRoute == Routes.CHAT &&
-            Get.currentRoute != Routes.CHAT) {
-          debugPrint('Leaving chat view - cleaning up observers and timer');
-          WidgetsBinding.instance.removeObserver(observer);
-          checkTimer.cancel();
-        }
-        routeObs.value = Get.currentRoute;
-      });
-      routeObs.value = Get.currentRoute;
     });
 
     return Scaffold(
@@ -101,7 +38,7 @@ class ChatView extends GetView<ChatController> {
                     borderRadius: BorderRadius.circular(40),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black,
                         blurRadius: 2,
                         offset: const Offset(0, 1),
                       ),
@@ -125,7 +62,7 @@ class ChatView extends GetView<ChatController> {
                     borderRadius: BorderRadius.circular(40),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black,
                         blurRadius: 2,
                         offset: const Offset(0, 1),
                       ),
@@ -158,10 +95,10 @@ class ChatView extends GetView<ChatController> {
             child: TextField(
               controller: controller.searchController,
               decoration: InputDecoration(
-                hintText: 'Search chats or users...',
+                hintText: 'Search for Yappers',
                 prefixIcon: const Icon(Icons.search, color: Colors.grey),
                 filled: true,
-                fillColor: Colors.grey.withOpacity(0.1),
+                fillColor: Color(0xFF171717),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 10,
@@ -192,7 +129,7 @@ class ChatView extends GetView<ChatController> {
               return RefreshIndicator(
                 onRefresh: () async {
                   debugPrint('Manual refresh triggered');
-                  await controller.loadRecentChats();
+                  await controller.fetchUsersRecentChats();
                 },
                 child: _buildRecentChats(),
               );
@@ -244,7 +181,7 @@ class ChatView extends GetView<ChatController> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => controller.loadRecentChats(),
+              onPressed: () => controller.fetchUsersRecentChats(),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(Get.context!).primaryColor,
                 foregroundColor: Colors.white,
@@ -285,8 +222,8 @@ class ChatView extends GetView<ChatController> {
         final tempProvider = AccountDataProvider();
 
         // Properly handle avatars with prioritization of Google avatar when regular avatar is missing
-        String? profileAvatar = chat['avatar'];
-        String? googleAvatar = chat['google_avatar'];
+        String? profileAvatar = chat['other_avatar'];
+        String? googleAvatar = chat['other_google_avatar'];
 
         if (profileAvatar == null ||
             profileAvatar.isEmpty ||
@@ -327,7 +264,7 @@ class ChatView extends GetView<ChatController> {
             onTap:
                 () => Get.toNamed(
                   '/profile',
-                  arguments: {'userId': chat['other_user_id']},
+                  arguments: {'userId': chat['other_id']},
                 ),
             child: AvatarUtils.getAvatarWidget(null, tempProvider, radius: 24),
           ),
@@ -335,7 +272,7 @@ class ChatView extends GetView<ChatController> {
             children: [
               Expanded(
                 child: Text(
-                  chat['username'] ?? 'User',
+                  chat['other_username'] ?? 'User',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -390,7 +327,7 @@ class ChatView extends GetView<ChatController> {
           onTap:
               () => controller.openChat(
                 chat['other_user_id'],
-                chat['username'] ?? 'User',
+                chat['other_username'] ?? 'User',
               ),
         );
       },
@@ -431,10 +368,7 @@ class ChatView extends GetView<ChatController> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color:
-                    userSource == 'following'
-                        ? Colors.blue.withOpacity(0.1)
-                        : Colors.green.withOpacity(0.1),
+                color: userSource == 'following' ? Colors.blue : Colors.green,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -450,10 +384,6 @@ class ChatView extends GetView<ChatController> {
         ],
       ),
       subtitle: Text(user['nickname'] ?? ''),
-      trailing: IconButton(
-        icon: const Icon(Icons.chat_bubble_outline),
-        onPressed: () => controller.openChat(userId, username),
-      ),
       onTap: () => controller.openChat(userId, username),
     );
   }

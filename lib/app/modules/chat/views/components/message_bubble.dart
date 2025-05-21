@@ -12,6 +12,7 @@ class MessageBubble extends StatefulWidget {
   final bool isMe;
   final String otherUserId;
   final Function(Map<String, dynamic>) onTapImage;
+  final void Function(String messageId)? onAnimationComplete;
 
   const MessageBubble({
     super.key,
@@ -19,6 +20,7 @@ class MessageBubble extends StatefulWidget {
     required this.isMe,
     required this.otherUserId,
     required this.onTapImage,
+    required this.onAnimationComplete,
   });
 
   @override
@@ -27,18 +29,38 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _opacityAnimation;
+  late final AnimationController _controller;
+  late final Animation<double> _scaleAnimation;
+  late final Animation<double> _opacityAnimation;
 
-  bool get isNew => widget.message['is_new'] == true;
-  bool get isSending => widget.message['is_sending'] == true;
+  late final AccountDataProvider _accountDataProvider;
+  late final ChatController _chatController;
+
+  late final bool _isNew;
+  late final bool _isSending;
+
+  late final String _messageContent;
+  late final bool _isImageMessage;
+  late final String? _imageUrl;
+  late final bool _isPlaceholder;
+  late final String? _uploadId;
+  late final bool _isEdited;
+  late final bool _isRead;
+  late final bool _shouldShowStatus;
+
+  late final ImageProvider? _avatarImage;
+  late final bool _hasAnyAvatar;
 
   @override
   void initState() {
     super.initState();
 
-    // Initialize animations
+    _accountDataProvider = Get.find<AccountDataProvider>();
+    _chatController = Get.find<ChatController>();
+
+    _isNew = widget.message['is_new'] == true;
+    _isSending = widget.message['is_sending'] == true;
+
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -54,21 +76,89 @@ class _MessageBubbleState extends State<MessageBubble>
       end: 1.0,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
-    // Start the animation for new messages
-    if (isNew || isSending) {
+    if (_isNew || _isSending) {
       _controller.forward();
-
-      // Clear the new flag after animation completes
       _controller.addStatusListener((status) {
-        if (status == AnimationStatus.completed && widget.message is Map) {
-          final message = widget.message as Map<String, dynamic>;
-          message['is_new'] = false;
+        if (status == AnimationStatus.completed) {
+          // Removed setState call
+          // setState(() {
+          //   widget.message['is_new'] = false;
+          // });
+          widget.onAnimationComplete?.call(widget.message['message_id']);
         }
       });
     } else {
-      // For existing messages, just set to final state
       _controller.value = 1.0;
     }
+
+    // Initialize all computed fields here for efficiency
+
+    _messageContent = (widget.message['content'] ?? '').toString();
+
+    _isPlaceholder = widget.message['is_placeholder'] == true;
+    _uploadId = widget.message['upload_id']?.toString();
+
+    _isImageMessage =
+        widget.message['message_type'] == 'image' ||
+        _messageContent.startsWith('image:') ||
+        (_messageContent.startsWith('https://') &&
+            (_messageContent.contains('.jpg') ||
+                _messageContent.contains('.jpeg') ||
+                _messageContent.contains('.png') ||
+                _messageContent.contains('.gif')));
+
+    if (_isImageMessage && !_isPlaceholder) {
+      if (_messageContent.startsWith('image:')) {
+        _imageUrl = _messageContent.substring(6);
+      } else if (_messageContent.startsWith('https://')) {
+        _imageUrl = _messageContent;
+      } else {
+        _imageUrl = null;
+      }
+    } else {
+      _imageUrl = null;
+    }
+
+    _isEdited =
+        widget.message['updated_at'] != null &&
+        widget.message['created_at'] != widget.message['updated_at'];
+
+    _isRead = widget.message['is_read'] == true;
+    _shouldShowStatus = widget.isMe;
+
+    // Avatar logic
+    String? regularAvatar;
+    String? googleAvatar;
+
+    if (widget.isMe) {
+      regularAvatar = _accountDataProvider.avatar.value;
+      googleAvatar = _accountDataProvider.googleAvatar.value;
+    } else {
+      final followingMatch = _accountDataProvider.following.firstWhereOrNull(
+        (f) => f['following_id'] == widget.otherUserId,
+      );
+      final followerMatch = _accountDataProvider.followers.firstWhereOrNull(
+        (f) => f['follower_id'] == widget.otherUserId,
+      );
+
+      if (followingMatch != null) {
+        regularAvatar = followingMatch['avatar'];
+        googleAvatar = followingMatch['google_avatar'];
+      } else if (followerMatch != null) {
+        regularAvatar = followerMatch['avatar'];
+        googleAvatar = followerMatch['google_avatar'];
+      }
+    }
+
+    if (AvatarUtils.isValidUrl(regularAvatar)) {
+      _avatarImage = CachedNetworkImageProvider(regularAvatar!);
+    } else if (AvatarUtils.isValidUrl(googleAvatar)) {
+      _avatarImage = CachedNetworkImageProvider(googleAvatar!);
+    } else {
+      _avatarImage = null;
+    }
+
+    _hasAnyAvatar = _avatarImage != null;
   }
 
   @override
@@ -78,96 +168,21 @@ class _MessageBubbleState extends State<MessageBubble>
   }
 
   @override
+  void didUpdateWidget(covariant MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Check if the message is now marked as new and was not new before
+    final bool wasNew = oldWidget.message['is_new'] == true;
+    final bool isNew = widget.message['is_new'] == true;
+
+    if (isNew && !wasNew) {
+      // Start the animation if the message just became new
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final AccountDataProvider accountDataProvider =
-        Get.find<AccountDataProvider>();
-    final ChatController chatController = Get.find<ChatController>();
-
-    // Variables to hold avatar info
-    String? regularAvatar;
-    String? googleAvatar;
-
-    if (widget.isMe) {
-      // Current user's message - use current user's avatar
-      regularAvatar = accountDataProvider.avatar.value;
-      googleAvatar = accountDataProvider.googleAvatar.value;
-    } else {
-      // First check the following list
-      final followingMatch = accountDataProvider.following.firstWhereOrNull(
-        (f) => f['following_id'] == widget.otherUserId,
-      );
-
-      // Then check the followers list
-      final followerMatch = accountDataProvider.followers.firstWhereOrNull(
-        (f) => f['follower_id'] == widget.otherUserId,
-      );
-
-      if (followingMatch != null) {
-        regularAvatar = followingMatch['avatar'];
-        googleAvatar = followingMatch['google_avatar'];
-        debugPrint(
-          'Found other user in following list - avatar: $regularAvatar, google: $googleAvatar',
-        );
-      } else if (followerMatch != null) {
-        regularAvatar = followerMatch['avatar'];
-        googleAvatar = followerMatch['google_avatar'];
-        debugPrint(
-          'Found other user in followers list - avatar: $regularAvatar, google: $googleAvatar',
-        );
-      }
-    }
-
-    // Use AvatarUtils to determine the appropriate avatar image
-    ImageProvider? avatarImage;
-
-    // Check if regular avatar is valid first
-    if (AvatarUtils.isValidUrl(regularAvatar)) {
-      avatarImage = CachedNetworkImageProvider(regularAvatar!);
-    }
-    // If regular avatar is invalid, try Google avatar
-    else if (AvatarUtils.isValidUrl(googleAvatar)) {
-      avatarImage = CachedNetworkImageProvider(googleAvatar!);
-    }
-
-    // Has any valid avatar
-    final bool hasAnyAvatar = avatarImage != null;
-
-    // Check if message is read
-    final bool isRead = widget.message['is_read'] == true;
-
-    // Only show read status on sent messages
-    final bool shouldShowStatus = widget.isMe;
-
-    // Check if message is edited
-    final bool isEdited =
-        widget.message['updated_at'] != null &&
-        widget.message['created_at'] != widget.message['updated_at'];
-
-    // Check if this is an image upload placeholder
-    final bool isPlaceholder = widget.message['is_placeholder'] == true;
-    final String? uploadId = widget.message['upload_id']?.toString();
-
-    // Check if the message contains an image
-    final String messageContent = (widget.message['content'] ?? '').toString();
-    final bool isImageMessage =
-        widget.message['message_type'] == 'image' ||
-        messageContent.startsWith('image:') ||
-        (messageContent.startsWith('https://') &&
-            (messageContent.contains('.jpg') ||
-                messageContent.contains('.jpeg') ||
-                messageContent.contains('.png') ||
-                messageContent.contains('.gif')));
-
-    // Extract image URL if message starts with image: prefix
-    String? imageUrl;
-    if (isImageMessage && !isPlaceholder) {
-      if (messageContent.startsWith('image:')) {
-        imageUrl = messageContent.substring(6); // Remove 'image:' prefix
-      } else if (messageContent.startsWith('https://')) {
-        imageUrl = messageContent;
-      }
-    }
-
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -179,42 +194,36 @@ class _MessageBubbleState extends State<MessageBubble>
       },
       child: GestureDetector(
         onLongPress:
-            () =>
-                isPlaceholder
-                    ? null
-                    : MessageOptions.show(context, widget.message, widget.isMe),
+            _isPlaceholder
+                ? null
+                : () =>
+                    MessageOptions.show(context, widget.message, widget.isMe),
         child: Align(
           alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
           child: Dismissible(
             key: Key(widget.message['message_id'] ?? DateTime.now().toString()),
-            // Only show background when message is from the current user
             background:
-                shouldShowStatus
+                _shouldShowStatus
                     ? Container(
                       alignment: Alignment.centerRight,
                       padding: const EdgeInsets.only(right: 20.0),
                       color: Colors.transparent,
                       child: Text(
-                        isRead ? "Read" : "Sent",
+                        _isRead ? "Read" : "Sent",
                         style: TextStyle(
-                          color: isRead ? Colors.blue.shade300 : Colors.grey,
+                          color: _isRead ? Colors.blue.shade300 : Colors.grey,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     )
                     : Container(color: Colors.transparent),
-            // Swipe from right to left (Instagram style)
             direction:
-                shouldShowStatus
+                _shouldShowStatus
                     ? DismissDirection.endToStart
                     : DismissDirection.none,
-            confirmDismiss: (_) async {
-              // Don't actually dismiss, just show the status
-              return false;
-            },
+            confirmDismiss: (_) async => false,
             child: Stack(
               children: [
-                // Message bubble with proper margin for avatar
                 Container(
                   margin: EdgeInsets.only(
                     top: 15,
@@ -241,52 +250,19 @@ class _MessageBubbleState extends State<MessageBubble>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      if (isPlaceholder && uploadId != null)
-                        _buildUploadingImageContent(uploadId, chatController)
-                      else if (isImageMessage && imageUrl != null)
-                        _buildImageContent(imageUrl)
+                      if (_isPlaceholder && _uploadId != null)
+                        _buildUploadingImageContent(_uploadId, _chatController)
+                      else if (_isImageMessage && _imageUrl != null)
+                        _buildImageContent(_imageUrl)
                       else
-                        FutureBuilder<String>(
-                          future: chatController.getDecryptedMessageContent(
-                            widget.message,
+                        Text(
+                          widget.message['content'] ?? '',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
                           ),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              // Show a loading indicator while decrypting
-                              return const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white70,
-                                ),
-                              );
-                            } else if (snapshot.hasError) {
-                              // Show error if decryption fails
-                              return Text(
-                                '🔒 Error decrypting message',
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 16,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              );
-                            } else {
-                              // Show decrypted content
-                              return Text(
-                                snapshot.data ??
-                                    widget.message['content'] ??
-                                    '',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              );
-                            }
-                          },
                         ),
-                      if (isEdited)
+                      if (_isEdited)
                         const Padding(
                           padding: EdgeInsets.only(top: 4),
                           child: Text(
@@ -301,18 +277,16 @@ class _MessageBubbleState extends State<MessageBubble>
                     ],
                   ),
                 ),
-
-                // Avatar in top right/left corner
                 Positioned(
                   top: 0,
                   right: widget.isMe ? 0 : null,
                   left: widget.isMe ? null : 0,
                   child: CircleAvatar(
-                    radius: 12.5, // 25px diameter
+                    radius: 12.5,
                     backgroundColor: Colors.black,
-                    backgroundImage: avatarImage,
+                    backgroundImage: _avatarImage,
                     child:
-                        (!hasAnyAvatar)
+                        !_hasAnyAvatar
                             ? const Icon(
                               Icons.person,
                               size: 12,
@@ -329,28 +303,21 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
-  // Helper to build image content with thumbnail and preview capability
   Widget _buildImageContent(String imageUrl) {
     return GestureDetector(
       onTap: () => widget.onTapImage(widget.message),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Message thumbnail with fixed dimensions
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: Container(
               height: 160,
               width: 200,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade900,
-                borderRadius: BorderRadius.circular(10),
-              ),
+              color: Colors.grey.shade900,
               child: CachedNetworkImage(
                 imageUrl: imageUrl,
                 fit: BoxFit.cover,
-                height: 160,
-                width: 200,
                 placeholder:
                     (context, url) => Center(
                       child: SizedBox(
@@ -370,7 +337,6 @@ class _MessageBubbleState extends State<MessageBubble>
             ),
           ),
           const SizedBox(height: 4),
-          // Tap to view text
           Text(
             'Tap to view',
             style: TextStyle(color: Colors.grey.shade300, fontSize: 12),
@@ -380,20 +346,17 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
-  // Helper to build image upload placeholder with shimmer effect
   Widget _buildUploadingImageContent(
     String uploadId,
     ChatController controller,
   ) {
     return Obx(() {
-      // Get current progress value (0.0 to 1.0)
       final progress = controller.localUploadProgress[uploadId] ?? 0.0;
       final progressPercent = (progress * 100).toInt();
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Shimmer placeholder with fixed dimensions
           Shimmer.fromColors(
             baseColor: Colors.grey.shade800,
             highlightColor: Colors.grey.shade700,
@@ -407,9 +370,7 @@ class _MessageBubbleState extends State<MessageBubble>
             ),
           ),
           const SizedBox(height: 8),
-          // Progress indicator
           Row(
-            mainAxisSize: MainAxisSize.max,
             children: [
               Expanded(
                 child: ClipRRect(

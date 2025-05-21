@@ -10,45 +10,20 @@ class MessagesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.find<ChatController>();
+    final currentUserId = SupabaseService.to.currentUser.value?.id;
 
+    // Only observe the length of the messages list to minimize rebuilds
     return Obx(() {
-      if (controller.messages.isEmpty) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.chat_bubble_outline,
-                size: 60,
-                color: Colors.grey,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'No messages yet',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Send a message to start the conversation',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ],
-          ),
+      final messageCount = controller.sortedMessages.length;
+
+      if (messageCount == 0) {
+        return const Center(
+          child: Text('No messages yet', style: TextStyle(color: Colors.white)),
         );
       }
 
-      final currentUserId = SupabaseService.to.currentUser.value?.id;
-      // Get arguments to determine the other user - using a safer approach
       final args = Get.arguments;
-
-      // Make sure we have arguments
       if (args == null || args is! Map<String, dynamic>) {
-        // Handle missing arguments case
-        debugPrint('Error: Get.arguments is null or invalid in MessagesList');
         return const Center(
           child: Text(
             'Chat data unavailable',
@@ -57,10 +32,8 @@ class MessagesList extends StatelessWidget {
         );
       }
 
-      // Safely get the other user ID with null check
-      final String? otherUserId = args['other_user_id'] as String?;
+      final String? otherUserId = args['otherUserId'] as String?;
       if (otherUserId == null) {
-        debugPrint('Error: other_user_id is null in chat arguments');
         return const Center(
           child: Text(
             'Other user info missing',
@@ -69,81 +42,44 @@ class MessagesList extends StatelessWidget {
         );
       }
 
-      // Always operate on a new list to force UI refresh - with safer handling
-      try {
-        // Use .toList() to create a new list that will trigger the Obx rebuild
-        final sortedMessages =
-            controller.messages.toList()..sort(
-              (a, b) =>
-                  (b['created_at'] ?? '').compareTo(a['created_at'] ?? ''),
-            );
+      // Use ListView.builder with cacheExtent and keep-alive
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        itemCount: messageCount,
+        reverse: true,
+        cacheExtent: 1000, // keep items alive off-screen
+        itemBuilder: (context, index) {
+          // Access the message directly from the controller to avoid rebuilding the whole list
+          final msg = controller.sortedMessages[index];
+          final isMe = msg.senderId == currentUserId;
 
-        return ListView.builder(
-          padding: const EdgeInsets.only(top: 16, left: 8, right: 8, bottom: 8),
-          itemCount: sortedMessages.length,
-          reverse: true, // Show messages from bottom up
-          itemBuilder: (context, index) {
-            final message = sortedMessages[index];
-            final isMe = message['sender_id'] == currentUserId;
-
-            return MessageBubble(
-              key: ValueKey(
-                'msg_${message['message_id']}_${message['is_sending'] == true}',
-              ),
-              message: message,
-              isMe: isMe,
-              otherUserId: otherUserId,
-              onTapImage: (msg) => _handleImageTap(context, msg),
-            );
-          },
-        );
-      } catch (e) {
-        debugPrint('Error building messages list: $e');
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 48),
-              const SizedBox(height: 16),
-              Text(
-                'Error loading messages: ${e.toString().substring(0, e.toString().length > 50 ? 50 : e.toString().length)}',
-                style: const TextStyle(color: Colors.red),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  final args = Get.arguments;
-                  if (args is Map<String, dynamic> && args['chat_id'] != null) {
-                    controller.loadMessages(args['chat_id']);
-                  }
-                },
-                child: const Text('Try Again'),
-              ),
-            ],
-          ),
-        );
-      }
+          return _MessageBubbleWrapper(
+            message: msg,
+            isMe: isMe,
+            otherUserId: otherUserId,
+            onTapImage: (message) => _handleImageTap(context, message),
+          );
+        },
+      );
     });
   }
 
-  // Handle image tap to show full-screen viewer
   void _handleImageTap(BuildContext context, Map<String, dynamic> message) {
     final String messageContent = (message['content'] ?? '').toString();
     String? imageUrl;
 
     if (messageContent.startsWith('image:')) {
-      imageUrl = messageContent.substring(6); // Remove 'image:' prefix
+      imageUrl = messageContent.substring(6);
     } else if (messageContent.startsWith('https://')) {
       imageUrl = messageContent;
     }
 
     if (imageUrl == null) return;
 
-    // Show fullscreen image viewer
     Navigator.of(context).push(
       MaterialPageRoute(
         builder:
-            (context) => Scaffold(
+            (_) => Scaffold(
               backgroundColor: Colors.black,
               appBar: AppBar(
                 backgroundColor: Colors.black,
@@ -157,44 +93,61 @@ class MessagesList extends StatelessWidget {
                 child: InteractiveViewer(
                   minScale: 0.5,
                   maxScale: 4.0,
-                  child: Image.network(
-                    imageUrl!, // Non-null assertion is safe here because of early return above
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: CircularProgressIndicator(
-                          value:
-                              loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded /
-                                      (loadingProgress.expectedTotalBytes ?? 1)
-                                  : null,
-                        ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            color: Colors.red,
-                            size: 48,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Error loading image: $error',
-                            style: const TextStyle(color: Colors.red),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                  child: Image.network(imageUrl!),
                 ),
               ),
             ),
       ),
     );
+  }
+}
+
+// Wrap each message bubble in its own reactive widget to minimize rebuilds
+class _MessageBubbleWrapper extends StatelessWidget {
+  final dynamic message;
+  final bool isMe;
+  final String otherUserId;
+  final void Function(Map<String, dynamic>) onTapImage;
+
+  const _MessageBubbleWrapper({
+    required this.message,
+    required this.isMe,
+    required this.otherUserId,
+    required this.onTapImage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = Get.find<ChatController>();
+    // If message has observable properties (like isRead),
+    // you can make those reactive inside MessageBubble itself.
+
+    // If message has observable properties (like isRead),
+    // you can make those reactive inside MessageBubble itself.
+
+    // Wrap MessageBubble in Obx to react to changes in messagesToAnimate
+    return Obx(() {
+      final msgMap = {
+        'message_id': message.messageId,
+        'content': message.content,
+        'created_at': message.createdAt.toIso8601String(),
+        'sender_id': message.senderId,
+        'is_read': message.isRead,
+        'expires_at': message.expiresAt.toIso8601String(),
+        'message_type': message.messageType,
+        'chat_id': message.chatId,
+        'recipient_id': message.recipientId,
+        'is_new': controller.messagesToAnimate.contains(message.messageId),
+      };
+
+      return MessageBubble(
+        key: ValueKey('msg_${message.messageId}_${message.senderId}_$isMe'),
+        message: msgMap,
+        isMe: isMe,
+        otherUserId: otherUserId,
+        onTapImage: onTapImage,
+        onAnimationComplete: controller.onMessageAnimationComplete,
+      );
+    });
   }
 }
