@@ -150,7 +150,6 @@ class _MessageBubbleWrapper extends StatelessWidget {
         otherUserId: otherUserId,
         onTapImage: onTapImage,
         onAnimationComplete: controller.onMessageAnimationComplete,
-        isDeleting: isDeleting,
         onDeleteAnimationComplete:
             (id) => controller.onDeleteAnimationComplete(id),
       );

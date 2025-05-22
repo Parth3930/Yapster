@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 import '../controllers/chat_controller.dart';
 import 'components/message_input.dart';
 
@@ -99,15 +100,36 @@ class MessageOptions {
     FocusScope.of(Get.context!).requestFocus();
   }
 
-  static void _deleteMessage(Map<String, dynamic> message) {
+  static Future<void> _deleteMessage(Map<String, dynamic> message) async {
     final controller = Get.find<ChatController>();
+    final supabase = Get.find<SupabaseService>().client;
+
     final String messageId = message['message_id']?.toString() ?? '';
     if (messageId.isEmpty) {
       Get.snackbar('Error', 'Could not delete message');
       return;
     }
-    // Set the deleting message id to trigger animation
-    controller.deletingMessageId.value = messageId;
+
+    try {
+      // 1. Start delete animation immediately for better UX
+      controller.deletingMessageId.value =
+          messageId; // ✅ This triggers the animation
+
+      // 2. Wait for animation
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 3. Delete from database
+      await supabase.from('messages').delete().eq('message_id', messageId);
+
+      // 4. Remove from local list
+      controller.messages.removeWhere((msg) => msg.messageId == messageId);
+
+      // 5. Clear animation state
+      controller.deletingMessageId.value = '';
+    } catch (e) {
+      controller.deletingMessageId.value = '';
+      // Handle error...
+    }
   }
 
   static void _copyMessageText(Map<String, dynamic> message) {

@@ -4,7 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
-import 'package:flutter/scheduler.dart';
+import 'package:yapster/app/core/animations/message_animations.dart';
 import '../../controllers/chat_controller.dart';
 import '../message_options.dart';
 
@@ -14,7 +14,6 @@ class MessageBubble extends StatefulWidget {
   final String otherUserId;
   final Function(Map<String, dynamic>) onTapImage;
   final void Function(String messageId)? onAnimationComplete;
-  final bool isDeleting;
   final void Function(String messageId)? onDeleteAnimationComplete;
 
   const MessageBubble({
@@ -24,7 +23,6 @@ class MessageBubble extends StatefulWidget {
     required this.otherUserId,
     required this.onTapImage,
     required this.onAnimationComplete,
-    this.isDeleting = false,
     this.onDeleteAnimationComplete,
   });
 
@@ -34,29 +32,20 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble>
     with TickerProviderStateMixin {
-  // Send animation controller - replacing the old simple entry animation
-  late final AnimationController _sendController;
-  late final Animation<double> _sendShrinkAnimation;
-  late final Animation<double> _sendRotateAnimation;
-  late final Animation<Offset> _sendSlideAnimation;
-  late final Animation<double> _sendFadeAnimation;
+  // Smooth animation controllers
+  MessageAnimationController? _entryController;
+  MessageAnimationController? _exitController;
+  MessageAnimationController? _pressController;
 
-  // Delete animation controller
-  late final AnimationController _deleteController;
-  late final Animation<double> _shrinkAnimation;
-  late final Animation<double> _rotateAnimation;
-  late final Animation<Offset> _slideAnimation;
-  late final Animation<double> _fadeAnimation;
-
-  bool _wasDeleting = false;
-  bool _isDeleting = false;
+  bool _isPressed = false;
+  bool _hasEntryAnimationStarted = false;
 
   late final AccountDataProvider _accountDataProvider;
   late final ChatController _chatController;
 
+  // Cached message properties
   late final bool _isNew;
   late final bool _isSending;
-
   late final String _messageContent;
   late final bool _isImageMessage;
   late final String? _imageUrl;
@@ -65,9 +54,9 @@ class _MessageBubbleState extends State<MessageBubble>
   late final bool _isEdited;
   late final bool _isRead;
   late final bool _shouldShowStatus;
-
   late final ImageProvider? _avatarImage;
   late final bool _hasAnyAvatar;
+  late final String _messageId;
 
   @override
   void initState() {
@@ -76,118 +65,15 @@ class _MessageBubbleState extends State<MessageBubble>
     _accountDataProvider = Get.find<AccountDataProvider>();
     _chatController = Get.find<ChatController>();
 
+    _initializeMessageProperties();
+    _initializeAnimations();
+  }
+
+  void _initializeMessageProperties() {
+    _messageId = widget.message['message_id']?.toString() ?? '';
     _isNew = widget.message['is_new'] == true;
     _isSending = widget.message['is_sending'] == true;
-
-    // Send animation controller - replaces old _controller
-    _sendController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 550),
-    );
-
-    // Shrink effect (start small, end normal)
-    _sendShrinkAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _sendController,
-        curve: const Interval(0.0, 0.75, curve: Curves.easeOutQuad),
-      ),
-    );
-
-    // Rotation effect (start rotated, end straight)
-    _sendRotateAnimation = Tween<double>(
-      begin: widget.isMe ? 0.2 : -0.2, // Subtle rotation based on message side
-      end: 0.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _sendController,
-        curve: const Interval(0.1, 0.6, curve: Curves.easeInOut),
-      ),
-    );
-
-    // Slide effect (start offscreen, end in position)
-    _sendSlideAnimation = Tween<Offset>(
-      begin: widget.isMe ? const Offset(-1.0, 0.0) : const Offset(1.0, 0.0),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _sendController,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeOutQuint),
-      ),
-    );
-
-    // Fade effect (start transparent, end visible)
-    _sendFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _sendController,
-        curve: const Interval(0.0, 0.8, curve: Curves.easeIn),
-      ),
-    );
-
-    // Delete animation controller
-    _deleteController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 550),
-    );
-
-    // Shrink effect
-    _shrinkAnimation = Tween<double>(begin: 1.0, end: 0.2).animate(
-      CurvedAnimation(
-        parent: _deleteController,
-        curve: const Interval(0.0, 0.75, curve: Curves.easeInQuad),
-      ),
-    );
-
-    // Rotation effect
-    _rotateAnimation = Tween<double>(
-      begin: 0.0,
-      end: widget.isMe ? -0.2 : 0.2, // Subtle rotation based on message side
-    ).animate(
-      CurvedAnimation(
-        parent: _deleteController,
-        curve: const Interval(0.1, 0.6, curve: Curves.easeInOut),
-      ),
-    );
-
-    // Slide effect
-    _slideAnimation = Tween<Offset>(
-      begin: Offset.zero,
-      end: widget.isMe ? const Offset(1.0, 0.0) : const Offset(-1.0, 0.0),
-    ).animate(
-      CurvedAnimation(
-        parent: _deleteController,
-        curve: const Interval(0.4, 1.0, curve: Curves.easeOutQuint),
-      ),
-    );
-
-    // Fade effect
-    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _deleteController,
-        curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
-      ),
-    );
-
-    if (_isNew || _isSending) {
-      _sendController.forward();
-      _sendController.addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          widget.onAnimationComplete?.call(widget.message['message_id']);
-        }
-      });
-    } else {
-      _sendController.value = 1.0;
-    }
-
-    // Delete animation completion callback
-    _deleteController.addStatusListener((status) {
-      if (status == AnimationStatus.completed && _isDeleting) {
-        widget.onDeleteAnimationComplete?.call(widget.message['message_id']);
-      }
-    });
-
-    // Initialize all computed fields here for efficiency
     _messageContent = (widget.message['content'] ?? '').toString();
-
     _isPlaceholder = widget.message['is_placeholder'] == true;
     _uploadId = widget.message['upload_id']?.toString();
 
@@ -215,11 +101,13 @@ class _MessageBubbleState extends State<MessageBubble>
     _isEdited =
         widget.message['updated_at'] != null &&
         widget.message['created_at'] != widget.message['updated_at'];
-
     _isRead = widget.message['is_read'] == true;
     _shouldShowStatus = widget.isMe;
 
-    // Avatar logic
+    _initializeAvatar();
+  }
+
+  void _initializeAvatar() {
     String? regularAvatar;
     String? googleAvatar;
 
@@ -254,10 +142,62 @@ class _MessageBubbleState extends State<MessageBubble>
     _hasAnyAvatar = _avatarImage != null;
   }
 
+  void _initializeAnimations() {
+    // Initialize press animation controller (always available)
+    _pressController = MessageAnimationController(
+      config: MessageAnimationConfig.tapBounce(),
+      vsync: this,
+    );
+
+    // Initialize entry animation if message is new
+    if (_isNew || _isSending) {
+      _entryController = MessageAnimationController(
+        config: MessageAnimationUtils.getSendAnimation(widget.isMe),
+        vsync: this,
+      );
+
+      _entryController!.addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          widget.onAnimationComplete?.call(_messageId);
+        }
+      });
+
+      // Start entry animation with slight delay for natural feel
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted && !_hasEntryAnimationStarted) {
+            _hasEntryAnimationStarted = true;
+            _entryController!.forward();
+          }
+        });
+      });
+    }
+  }
+
+  void _initializeExitAnimation() {
+    if (_exitController == null) {
+      _exitController = MessageAnimationController(
+        config: MessageAnimationUtils.getDeleteAnimation(widget.isMe),
+        vsync: this,
+      );
+
+      _exitController!.addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          widget.onDeleteAnimationComplete?.call(_messageId);
+        }
+      });
+    }
+  }
+
+  bool get _isDeleting {
+    return _chatController.deletingMessageId.value == _messageId;
+  }
+
   @override
   void dispose() {
-    _sendController.dispose();
-    _deleteController.dispose();
+    _entryController?.dispose();
+    _exitController?.dispose();
+    _pressController?.dispose();
     super.dispose();
   }
 
@@ -265,169 +205,247 @@ class _MessageBubbleState extends State<MessageBubble>
   void didUpdateWidget(covariant MessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Check if the message is now marked as new and was not new before
+    // Handle new message animation
     final bool wasNew = oldWidget.message['is_new'] == true;
     final bool isNew = widget.message['is_new'] == true;
 
-    if (isNew && !wasNew) {
-      // Start the animation if the message just became new
-      _sendController.forward(from: 0.0);
+    if (isNew &&
+        !wasNew &&
+        _entryController != null &&
+        !_hasEntryAnimationStarted) {
+      _hasEntryAnimationStarted = true;
+      _entryController!.reset();
+      _entryController!.forward();
     }
+  }
 
-    // Trigger delete animation if deleting state changed
-    if (widget.isDeleting && !_wasDeleting) {
-      _wasDeleting = true;
-      _isDeleting = true;
-      _deleteController.forward(from: 0.0);
+  void _handlePressDown() {
+    if (!_isPlaceholder && !_isDeleting && !_isPressed) {
+      _isPressed = true;
+      _pressController?.forward();
+    }
+  }
+
+  void _handlePressUp() {
+    if (_isPressed) {
+      _isPressed = false;
+      _pressController?.reverse();
+    }
+  }
+
+  void _handlePressCancel() {
+    if (_isPressed) {
+      _isPressed = false;
+      _pressController?.reverse();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([_sendController, _deleteController]),
-      builder: (context, child) {
-        double scale = 1.0;
-        double opacity = 1.0;
-        double rotation = 0.0;
-        Offset slideOffset = Offset.zero;
+    return Obx(() {
+      // Check if this message should be deleted and start exit animation
+      final isDeleting = _isDeleting;
+      if (isDeleting && _exitController == null) {
+        _initializeExitAnimation();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _exitController?.forward();
+        });
+      }
 
-        if (_isDeleting) {
-          // Apply delete animations when deleting
-          scale = _shrinkAnimation.value;
-          opacity = _fadeAnimation.value;
-          rotation = _rotateAnimation.value;
-          slideOffset = _slideAnimation.value;
-        } else {
-          // Apply send/appearance animations
-          scale = _sendShrinkAnimation.value;
-          opacity = _sendFadeAnimation.value;
-          rotation = _sendRotateAnimation.value;
-          slideOffset = _sendSlideAnimation.value;
-        }
+      return _buildFluidAnimatedMessage(isDeleting);
+    });
+  }
 
-        return Transform.translate(
-          offset:
-              slideOffset * 100, // Scale the offset to make it more noticeable
-          child: Transform.rotate(
-            angle: rotation,
+  Widget _buildFluidAnimatedMessage(bool isDeleting) {
+    Widget messageWidget = _buildMessageContent();
+
+    // Apply exit animation if deleting
+    if (isDeleting && _exitController != null) {
+      messageWidget = AnimatedBuilder(
+        animation: _exitController!.controller,
+        builder: (context, child) {
+          final t = _exitController!.controller.value;
+          final baseOffset =
+              _exitController!.slideValue * MediaQuery.of(context).size.width;
+          // Parabola: y = -4a(x-0.5)^2 + a, but normalize so y=0 at t=1
+          final a = 30.0;
+          final parabolaY =
+              (-4 * a * (t - 0.5) * (t - 0.5) + a) -
+              (-4 * a * (1 - 0.5) * (1 - 0.5) + a);
+          final offset = Offset(baseOffset.dx, baseOffset.dy + parabolaY);
+          final opacity = _exitController!.opacityValue.clamp(0.0, 1.0);
+          return Transform.translate(
+            offset: offset,
             child: Transform.scale(
-              scale: scale,
-              alignment:
-                  widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
+              scale: _exitController!.scaleValue,
               child: Opacity(opacity: opacity, child: child),
             ),
+          );
+        },
+        child: messageWidget,
+      );
+    }
+    // Apply entry animation if new message
+    else if ((_isNew || _isSending) && _entryController != null) {
+      messageWidget = AnimatedBuilder(
+        animation: _entryController!.controller,
+        builder: (context, child) {
+          final t = _entryController!.controller.value;
+          final baseOffset =
+              _entryController!.slideValue * MediaQuery.of(context).size.width;
+          final a = 30.0;
+          final parabolaY =
+              (-4 * a * (t - 0.5) * (t - 0.5) + a) -
+              (-4 * a * (1 - 0.5) * (1 - 0.5) + a);
+          final offset = Offset(baseOffset.dx, baseOffset.dy + parabolaY);
+          final opacity = _entryController!.opacityValue.clamp(0.0, 1.0);
+          return Transform.translate(
+            offset: offset,
+            child: Transform.scale(
+              scale: _entryController!.scaleValue,
+              child: Opacity(opacity: opacity, child: child),
+            ),
+          );
+        },
+        child: messageWidget,
+      );
+    }
+
+    // Apply press animation (scale down on press)
+    if (_pressController != null) {
+      messageWidget = AnimatedBuilder(
+        animation: _pressController!.controller,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: _pressController!.scaleValue,
+            child: child,
+          );
+        },
+        child: messageWidget,
+      );
+    }
+
+    return messageWidget;
+  }
+
+  Widget _buildMessageContent() {
+    return GestureDetector(
+      onTapDown: (_) => _handlePressDown(),
+      onTapUp: (_) => _handlePressUp(),
+      onTapCancel: _handlePressCancel,
+      onLongPress:
+          _isPlaceholder
+              ? null
+              : () {
+                _handlePressCancel();
+                MessageOptions.show(context, widget.message, widget.isMe);
+              },
+      child: Align(
+        alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Dismissible(
+          key: Key(
+            _messageId.isNotEmpty ? _messageId : DateTime.now().toString(),
           ),
-        );
-      },
-      child: GestureDetector(
-        onLongPress:
-            _isPlaceholder
-                ? null
-                : () =>
-                    MessageOptions.show(context, widget.message, widget.isMe),
-        child: Align(
-          alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
-          child: Dismissible(
-            key: Key(widget.message['message_id'] ?? DateTime.now().toString()),
-            background:
-                _shouldShowStatus
-                    ? Container(
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20.0),
-                      color: Colors.transparent,
-                      child: Text(
-                        _isRead ? "Read" : "Sent",
-                        style: TextStyle(
-                          color: _isRead ? Colors.blue.shade300 : Colors.grey,
-                          fontWeight: FontWeight.bold,
-                        ),
+          background:
+              _shouldShowStatus
+                  ? Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20.0),
+                    color: Colors.transparent,
+                    child: AnimatedDefaultTextStyle(
+                      duration: const Duration(milliseconds: 200),
+                      style: TextStyle(
+                        color: _isRead ? Colors.blue.shade300 : Colors.grey,
+                        fontWeight: FontWeight.bold,
                       ),
-                    )
-                    : Container(color: Colors.transparent),
-            direction:
-                _shouldShowStatus
-                    ? DismissDirection.endToStart
-                    : DismissDirection.none,
-            confirmDismiss: (_) async => false,
-            child: Stack(
-              children: [
-                Container(
-                  margin: EdgeInsets.only(
-                    top: 15,
-                    bottom: 8,
-                    left: widget.isMe ? 8 : 24,
-                    right: widget.isMe ? 24 : 8,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.isMe ? Colors.blue : Colors.grey.shade800,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 2,
-                        offset: const Offset(0, 1),
+                      child: Text(_isRead ? "Read" : "Sent"),
+                    ),
+                  )
+                  : Container(color: Colors.transparent),
+          direction:
+              _shouldShowStatus
+                  ? DismissDirection.endToStart
+                  : DismissDirection.none,
+          confirmDismiss: (_) async => false,
+          child: _buildMessageBubble(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble() {
+    return Stack(
+      children: [
+        Container(
+          margin: EdgeInsets.only(
+            top: 15,
+            bottom: 8,
+            left: widget.isMe ? 8 : 24,
+            right: widget.isMe ? 24 : 8,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: widget.isMe ? Colors.blue : Colors.grey.shade800,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          constraints: BoxConstraints(maxWidth: Get.width * 0.75),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (_isPlaceholder && _uploadId != null)
+                _buildUploadingImageContent(_uploadId, _chatController)
+              else if (_isImageMessage && _imageUrl != null)
+                _buildImageContent(_imageUrl)
+              else
+                Text(
+                  widget.message['content'] ?? '',
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+              if (_isEdited)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 300),
+                    opacity: 0.7,
+                    child: const Text(
+                      "Edited",
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontStyle: FontStyle.italic,
                       ),
-                    ],
-                  ),
-                  constraints: BoxConstraints(maxWidth: Get.width * 0.75),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (_isPlaceholder && _uploadId != null)
-                        _buildUploadingImageContent(_uploadId, _chatController)
-                      else if (_isImageMessage && _imageUrl != null)
-                        _buildImageContent(_imageUrl)
-                      else
-                        Text(
-                          widget.message['content'] ?? '',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                          ),
-                        ),
-                      if (_isEdited)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 4),
-                          child: Text(
-                            "Edited",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 10,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
                 ),
-                Positioned(
-                  top: 0,
-                  right: widget.isMe ? 0 : null,
-                  left: widget.isMe ? null : 0,
-                  child: CircleAvatar(
-                    radius: 12.5,
-                    backgroundColor: Colors.black,
-                    backgroundImage: _avatarImage,
-                    child:
-                        !_hasAnyAvatar
-                            ? const Icon(
-                              Icons.person,
-                              size: 12,
-                              color: Colors.white,
-                            )
-                            : null,
-                  ),
-                ),
-              ],
+            ],
+          ),
+        ),
+        // Avatar with subtle animation
+        Positioned(
+          top: 0,
+          right: widget.isMe ? 0 : null,
+          left: widget.isMe ? null : 0,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            child: CircleAvatar(
+              radius: 12.5,
+              backgroundColor: Colors.black,
+              backgroundImage: _avatarImage,
+              child:
+                  !_hasAnyAvatar
+                      ? const Icon(Icons.person, size: 12, color: Colors.white)
+                      : null,
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -437,37 +455,44 @@ class _MessageBubbleState extends State<MessageBubble>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              height: 160,
-              width: 200,
-              color: Colors.grey.shade900,
-              child: CachedNetworkImage(
-                imageUrl: imageUrl,
-                fit: BoxFit.cover,
-                placeholder:
-                    (context, url) => Center(
-                      child: SizedBox(
-                        height: 30,
-                        width: 30,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.grey.shade500,
+          Hero(
+            tag: 'message_image_$_messageId',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                height: 160,
+                width: 200,
+                color: Colors.grey.shade900,
+                child: CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.cover,
+                  placeholder:
+                      (context, url) => Center(
+                        child: SizedBox(
+                          height: 30,
+                          width: 30,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.grey.shade500,
+                          ),
                         ),
                       ),
-                    ),
-                errorWidget:
-                    (context, url, error) => const Center(
-                      child: Icon(Icons.error, color: Colors.red),
-                    ),
+                  errorWidget:
+                      (context, url, error) => const Center(
+                        child: Icon(Icons.error, color: Colors.red),
+                      ),
+                ),
               ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            'Tap to view',
-            style: TextStyle(color: Colors.grey.shade300, fontSize: 12),
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 300),
+            opacity: 0.7,
+            child: Text(
+              'Tap to view',
+              style: TextStyle(color: Colors.grey.shade300, fontSize: 12),
+            ),
           ),
         ],
       ),
@@ -503,20 +528,24 @@ class _MessageBubbleState extends State<MessageBubble>
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    backgroundColor: Colors.grey.shade800,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.blue.shade300,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: Colors.grey.shade800,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.blue.shade300,
+                      ),
+                      minHeight: 4,
                     ),
-                    minHeight: 4,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                '$progressPercent%',
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
                 style: TextStyle(color: Colors.grey.shade300, fontSize: 12),
+                child: Text('$progressPercent%'),
               ),
             ],
           ),

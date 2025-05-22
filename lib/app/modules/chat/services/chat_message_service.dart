@@ -107,11 +107,11 @@ class ChatMessageService extends GetxService {
             );
 
             // Force UI update after any change
+            controller.messages = messages;
             messages.refresh();
           });
 
       debugPrint('Messages loaded successfully ${messages.length}');
-      controller.messages = messages;
     } catch (e) {
       debugPrint('Error loading messages: $e');
     }

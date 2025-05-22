@@ -78,7 +78,7 @@ class _MessageInputState extends State<MessageInput> {
       MessageInput.isEditingMessage.value = false;
       textController.clear();
 
-      Future.delayed(const Duration(milliseconds: 300), () {
+      Future.delayed(const Duration(milliseconds: 200), () {
         isSending.value = false;
         isTyping.value = false;
       });

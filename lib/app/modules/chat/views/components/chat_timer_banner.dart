@@ -30,7 +30,6 @@ class ChatTimerBanner extends StatelessWidget {
           const SizedBox(width: 8),
           InkWell(
             onTap: () {
-              controller.hasUserDismissedExpiryBanner.value = true;
             },
             child: const Icon(Icons.check_circle_outline, color: Colors.amber, size: 16),
           ),
