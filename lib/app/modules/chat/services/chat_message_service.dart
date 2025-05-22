@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
@@ -197,10 +198,90 @@ class ChatMessageService extends GetxService {
 
   /// Upload and send image
   Future<void> uploadAndSendImage(String chatId, XFile image) async {
+    final user = _supabaseService.client.auth.currentUser;
+
+    if (user == null) {
+      debugPrint('User not authenticated');
+      return;
+    }
+
     try {
-      // No-op: remove unused variable warning
-      // final currentUserId = _supabaseService.currentUser.value?.id;
-    } catch (e) {}
+      final senderId = user.id;
+      final now = DateTime.now().toUtc();
+      final expiresAt = now.add(const Duration(hours: 24));
+      const messageType = 'image';
+
+      // Fetch recipient ID based on the chat
+      final chat =
+          await _supabaseService.client
+              .from('chats')
+              .select('user_one_id, user_two_id')
+              .eq('chat_id', chatId)
+              .maybeSingle();
+
+      if (chat == null) {
+        debugPrint('Chat not found');
+        return;
+      }
+
+      final recipientId =
+          chat['user_one_id'] == senderId
+              ? chat['user_two_id']
+              : chat['user_one_id'];
+
+      // Upload image to storage
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${image.name}';
+      final storagePath = '$chatId/$fileName';
+
+      final fileBytes = await image.readAsBytes();
+
+      final uploadResponse = await _supabaseService.client.storage
+          .from('chat-media')
+          .uploadBinary(
+            storagePath,
+            fileBytes,
+            fileOptions: FileOptions(
+              contentType: 'image/${image.name.split('.').last}',
+              metadata: {'chat_id': chatId},
+            ),
+          );
+
+      if (uploadResponse.isEmpty) {
+        debugPrint('Image upload failed');
+        return;
+      }
+
+      // Get public URL or use the path as content
+      final imageUrl = _supabaseService.client.storage
+          .from('chat-media')
+          .getPublicUrl(storagePath);
+
+      // Insert image message
+      final response =
+          await _supabaseService.client.from('messages').insert({
+            'chat_id': chatId,
+            'sender_id': senderId,
+            'recipient_id': recipientId,
+            'content': imageUrl,
+            'message_type': messageType,
+            'expires_at': expiresAt.toIso8601String(),
+            'is_read': false,
+          }).select();
+
+      if (response.isEmpty) {
+        debugPrint('Image message insert failed');
+        return;
+      }
+
+      final sentMessage = MessageModel.fromJson(response.first);
+
+      controller.messagesToAnimate.add(sentMessage.messageId);
+      messages.refresh();
+
+      debugPrint('Image sent as message: $imageUrl');
+    } catch (e) {
+      debugPrint('Error uploading/sending image: $e');
+    }
   }
 
   /// Send sticker message

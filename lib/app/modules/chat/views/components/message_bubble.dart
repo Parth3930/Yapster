@@ -449,52 +449,59 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
-  Widget _buildImageContent(String imageUrl) {
-    return GestureDetector(
-      onTap: () => widget.onTapImage(widget.message),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Hero(
-            tag: 'message_image_$_messageId',
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                height: 160,
-                width: 200,
-                color: Colors.grey.shade900,
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.cover,
-                  placeholder:
-                      (context, url) => Center(
-                        child: SizedBox(
-                          height: 30,
-                          width: 30,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ),
-                  errorWidget:
-                      (context, url, error) => const Center(
-                        child: Icon(Icons.error, color: Colors.red),
-                      ),
-                ),
+  Widget _buildImageContent(String? imageUrl) {
+    if (_isPlaceholder) {
+      // Show loading state for image upload
+      return Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.6,
+          maxHeight: 200,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.grey[900],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan),
               ),
-            ),
+              const SizedBox(height: 8),
+              Text(
+                'Uploading image...',
+                style: TextStyle(color: Colors.grey[400], fontSize: 12),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 300),
-            opacity: 0.7,
-            child: Text(
-              'Tap to view',
-              style: TextStyle(color: Colors.grey.shade300, fontSize: 12),
-            ),
+        ),
+      );
+    }
+
+    return Container(
+      constraints: BoxConstraints(
+        minWidth: MediaQuery.of(context).size.width * 0.2,
+        maxHeight: 200,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: GestureDetector(
+          onTap: () => widget.onTapImage(widget.message),
+          child: CachedNetworkImage(
+            imageUrl: imageUrl ?? '',
+            fit: BoxFit.cover,
+            placeholder:
+                (context, url) => Shimmer.fromColors(
+                  baseColor: Colors.grey[900]!,
+                  highlightColor: Colors.grey[800]!,
+                  child: Container(color: Colors.grey[900]),
+                ),
+            errorWidget:
+                (context, url, error) =>
+                    const Icon(Icons.error, color: Colors.red),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -510,15 +517,36 @@ class _MessageBubbleState extends State<MessageBubble>
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Shimmer.fromColors(
-            baseColor: Colors.grey.shade800,
-            highlightColor: Colors.grey.shade700,
-            child: Container(
-              height: 160,
-              width: 200,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade800,
-                borderRadius: BorderRadius.circular(10),
+          Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.6,
+              maxHeight: 200,
+            ),
+            child: Shimmer.fromColors(
+              baseColor: Colors.grey.shade800,
+              highlightColor: Colors.grey.shade700,
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.6,
+                height: 200,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade800,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Uploading image...',
+                        style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

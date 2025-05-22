@@ -111,24 +111,60 @@ class MessageOptions {
     }
 
     try {
-      // 1. Start delete animation immediately for better UX
-      controller.deletingMessageId.value =
-          messageId; // ✅ This triggers the animation
+      // 1. Fetch full message details before deletion starts
+      final messageDetails =
+          await supabase
+              .from('messages')
+              .select('message_id, message_type, content')
+              .eq('message_id', messageId)
+              .maybeSingle();
 
-      // 2. Wait for animation
+      if (messageDetails == null) {
+        debugPrint('Message not found, might already be deleted');
+        return;
+      }
+
+      // Store message details for deletion
+      final messageType = messageDetails['message_type'] as String?;
+      final content = messageDetails['content'] as String?;
+
+      // 2. Start delete animation
+      controller.deletingMessageId.value = messageId;
+
+      // 3. Wait for animation
       await Future.delayed(const Duration(milliseconds: 300));
 
-      // 3. Delete from database
+      // 4. Delete the message from database first to prevent realtime subscription from interfering
       await supabase.from('messages').delete().eq('message_id', messageId);
 
-      // 4. Remove from local list
-      controller.messages.removeWhere((msg) => msg.messageId == messageId);
+      // 5. Delete associated image if this was an image message
+      if (messageType == 'image' && content != null) {
+        try {
+          final chatId = message['chat_id']?.toString();
+          if (chatId != null) {
+            // Extract filename from content URL
+            final uri = Uri.parse(content);
+            final pathSegments = uri.pathSegments;
+            final filePath = pathSegments
+                .sublist(pathSegments.indexOf('chat-media') + 1)
+                .join('/');
 
-      // 5. Clear animation state
+            // Try to delete the image
+            await supabase.storage.from('chat-media').remove([filePath]);
+            debugPrint('Successfully deleted image: $filePath');
+          }
+        } catch (e) {
+          debugPrint('Error deleting image: $e');
+        }
+      }
+
+      // 6. Remove from local list and clear animation state
+      controller.messages.removeWhere((msg) => msg.messageId == messageId);
       controller.deletingMessageId.value = '';
     } catch (e) {
       controller.deletingMessageId.value = '';
-      // Handle error...
+      debugPrint('Error in _deleteMessage: $e');
+      Get.snackbar('Error', 'Failed to delete message');
     }
   }
 
