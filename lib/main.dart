@@ -18,6 +18,20 @@ void main() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Override debugPrint to filter logs
+  debugPrint = (String? message, {int? wrapWidth}) {
+    if (message != null &&
+        !message.contains('package:') &&
+        !message.contains('flutter/') &&
+        !message.contains('D/BufferPoolAccessor2.0') &&
+        !message.contains('I/flutter') &&
+        !message.contains('permission handler') &&
+        !message.contains('E/CheckPermission') &&
+        !message.contains('D/MediaRecorder')) {
+      print(message);
+    }
+  };
+
   // Set preferred device orientations
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -26,22 +40,22 @@ void main() async {
 
   // Setup error handling
   _setupErrorHandling();
-  
+
   try {
     // Initialize essential services before showing splash screen
     await Get.putAsync(() => StorageService().init());
+
     Get.put(ApiService());
     Get.put(AccountDataProvider());
-    
+
     // Configure EasyLoading
     configureEasyLoading();
-    
+
     // Start with splash screen (which will act as a loader)
     runApp(const MyApp());
-    
+
     // Initialize remaining services in background after splash is displayed
     _initRemainingServices();
-    
   } catch (e) {
     debugPrint('Failed to initialize essential services: $e');
     // Configure EasyLoading
@@ -74,14 +88,18 @@ void _setupErrorHandling() {
 
 // Monitor connectivity changes
 void _setupConnectivityMonitoring() {
-  Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+  Connectivity().onConnectivityChanged.listen((
+    List<ConnectivityResult> results,
+  ) {
     final result = results.isNotEmpty ? results.first : ConnectivityResult.none;
     final dbCacheService = Get.find<DbCacheService>();
     final isOffline = result == ConnectivityResult.none;
-    
+
     // Only update if the state actually changed
     if (dbCacheService.isOfflineModeEnabled.value != isOffline) {
-      debugPrint('Connectivity changed: ${result.name}, setting offline mode: $isOffline');
+      debugPrint(
+        'Connectivity changed: ${result.name}, setting offline mode: $isOffline',
+      );
       dbCacheService.setOfflineModeEnabled(isOffline);
     }
   });
@@ -90,51 +108,72 @@ void _setupConnectivityMonitoring() {
 // Initialize remaining services after splash screen is shown
 Future<void> _initRemainingServices() async {
   final stopwatch = Stopwatch()..start();
-  
+
   try {
     // Initialize DB cache service
-    await Get.putAsync(() => DbCacheService().init())
-        .timeout(const Duration(seconds: 5), onTimeout: () {
-      throw TimeoutException('DbCacheService initialization timed out');
-    });
-    debugPrint('DbCacheService initialized in ${stopwatch.elapsedMilliseconds}ms');
-    
+    await Get.putAsync(() => DbCacheService().init()).timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        throw TimeoutException('DbCacheService initialization timed out');
+      },
+    );
+    debugPrint(
+      'DbCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
+    );
+
     // Initialize Supabase (most time-consuming)
-    await Get.putAsync(() => SupabaseService().init())
-        .timeout(const Duration(seconds: 10), onTimeout: () {
-      throw TimeoutException('SupabaseService initialization timed out');
-    });
-    debugPrint('SupabaseService initialized in ${stopwatch.elapsedMilliseconds}ms');
-    
+    await Get.putAsync(() => SupabaseService().init()).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        throw TimeoutException('SupabaseService initialization timed out');
+      },
+    );
+    debugPrint(
+      'SupabaseService initialized in ${stopwatch.elapsedMilliseconds}ms',
+    );
+
     // Initialize encryption service if user is logged in
     final supabaseService = Get.find<SupabaseService>();
-    if (supabaseService.isAuthenticated.value && supabaseService.currentUser.value?.id != null) {
+    if (supabaseService.isAuthenticated.value &&
+        supabaseService.currentUser.value?.id != null) {
       final userId = supabaseService.currentUser.value!.id;
-      await Get.putAsync(() => EncryptionService().init(userId))
-          .timeout(const Duration(seconds: 5), onTimeout: () {
-        throw TimeoutException('EncryptionService initialization timed out');
-      });
-      debugPrint('EncryptionService initialized in ${stopwatch.elapsedMilliseconds}ms');
-      
+      await Get.putAsync(() => EncryptionService().init(userId)).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw TimeoutException('EncryptionService initialization timed out');
+        },
+      );
+      debugPrint(
+        'EncryptionService initialized in ${stopwatch.elapsedMilliseconds}ms',
+      );
+
       // Initialize chat cache service (depends on encryption service)
       final chatCacheService = ChatCacheService();
       Get.put(chatCacheService);
       await chatCacheService.init();
-      debugPrint('ChatCacheService initialized in ${stopwatch.elapsedMilliseconds}ms');
+      debugPrint(
+        'ChatCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
+      );
     } else {
       // Still register the service without initialization
       Get.put(EncryptionService());
-      debugPrint('EncryptionService registered (not initialized yet, waiting for login)');
-      
+      debugPrint(
+        'EncryptionService registered (not initialized yet, waiting for login)',
+      );
+
       // Register chat cache service as well
       Get.put(ChatCacheService());
-      debugPrint('ChatCacheService registered (not initialized, waiting for login)');
+      debugPrint(
+        'ChatCacheService registered (not initialized, waiting for login)',
+      );
     }
-    
+
     // Initialize connectivity monitoring
     _setupConnectivityMonitoring();
-    
-    debugPrint('All remaining services initialized in ${stopwatch.elapsedMilliseconds}ms');
+
+    debugPrint(
+      'All remaining services initialized in ${stopwatch.elapsedMilliseconds}ms',
+    );
   } catch (e) {
     debugPrint('Error during remaining services initialization: $e');
   } finally {
@@ -161,7 +200,7 @@ void configureEasyLoading() {
 
 class MyApp extends StatefulWidget {
   final bool initializationFailed;
-  
+
   const MyApp({super.key, this.initializationFailed = false});
 
   @override
@@ -196,34 +235,35 @@ class _MyAppState extends State<MyApp> {
         debugPrint('AccountDataProvider not found on hot reload, initializing');
         Get.put(AccountDataProvider());
       }
-      
+
       // Check if DbCacheService is available, initialize if not
       if (!Get.isRegistered<DbCacheService>()) {
         debugPrint('DbCacheService not found on hot reload, initializing');
         await Get.putAsync(() => DbCacheService().init());
       }
-      
+
       // Check if SupabaseService is available, initialize if not
       if (!Get.isRegistered<SupabaseService>()) {
         debugPrint('SupabaseService not found on hot reload, initializing');
         await Get.putAsync(() => SupabaseService().init());
       }
-      
+
       // Check if EncryptionService is available, initialize if not and user is logged in
       if (!Get.isRegistered<EncryptionService>()) {
         debugPrint('EncryptionService not found on hot reload');
         // Register service without initialization
         Get.put(EncryptionService());
-        
+
         // Initialize if user is logged in
         final supabaseService = Get.find<SupabaseService>();
-        if (supabaseService.isAuthenticated.value && supabaseService.currentUser.value?.id != null) {
+        if (supabaseService.isAuthenticated.value &&
+            supabaseService.currentUser.value?.id != null) {
           final userId = supabaseService.currentUser.value!.id;
           await Get.find<EncryptionService>().init(userId);
           debugPrint('EncryptionService initialized on hot reload');
         }
       }
-      
+
       // Check if ChatCacheService is available, initialize if not
       if (!Get.isRegistered<ChatCacheService>()) {
         debugPrint('ChatCacheService not found on hot reload, initializing');
@@ -246,9 +286,7 @@ class _MyAppState extends State<MyApp> {
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: Colors.black,
-        colorScheme: const ColorScheme.dark(
-          onSecondary: Colors.black,
-        ),
+        colorScheme: const ColorScheme.dark(onSecondary: Colors.black),
       ),
       initialRoute: widget.initializationFailed ? Routes.ERROR : Routes.SPLASH,
       getPages: AppPages.routes,

@@ -3,7 +3,9 @@ import 'package:get/get.dart';
 import 'dart:async';
 import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:yapster/app/modules/chat/controllers/audio_controller.dart';
 import '../../controllers/chat_controller.dart';
+import 'audio_recorder.dart';
 
 class MessageInput extends StatefulWidget {
   final String chatId;
@@ -28,6 +30,7 @@ class MessageInput extends StatefulWidget {
 
 class _MessageInputState extends State<MessageInput> {
   late final ChatController controller;
+  late final AudioMessageController audioController;
   late final TextEditingController textController;
   late final FocusNode inputFocusNode;
 
@@ -39,6 +42,11 @@ class _MessageInputState extends State<MessageInput> {
   void initState() {
     super.initState();
     controller = Get.find<ChatController>();
+    // Create audio controller for recording functionality
+    audioController = Get.put(
+      AudioMessageController(),
+      tag: 'recording_${widget.chatId}',
+    );
     textController = controller.messageController;
     inputFocusNode = FocusNode();
 
@@ -59,6 +67,8 @@ class _MessageInputState extends State<MessageInput> {
   void dispose() {
     debounceTimer?.cancel();
     inputFocusNode.dispose();
+    // Clean up audio controller
+    Get.delete<AudioMessageController>(tag: 'recording_${widget.chatId}');
     super.dispose();
   }
 
@@ -148,8 +158,26 @@ class _MessageInputState extends State<MessageInput> {
     );
   }
 
-  void handleVoicePress() {
-    controller.sendVoiceMessage(widget.chatId);
+  void handleVoicePress() async {
+    // Only start recording if we're not already recording
+    if (!audioController.isRecording.value) {
+      final success = await audioController.startRecording();
+      if (!success) {
+        Get.snackbar('Error', 'Could not start recording');
+      }
+    }
+  }
+
+  void handleStopRecording(String audioPath) async {
+    final recordedPath = await audioController.stopRecording();
+    if (recordedPath != null && recordedPath.isNotEmpty) {
+      // Upload and send the audio using the chat controller
+      await controller.uploadAndSendAudio(widget.chatId, recordedPath);
+    }
+  }
+
+  void handleCancelRecording() async {
+    await audioController.cancelRecording();
   }
 
   Widget _buildSendButton() {
@@ -163,8 +191,8 @@ class _MessageInputState extends State<MessageInput> {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: isSending.value ? null : handleSendMessage,
-            splashColor: Colors.cyan.withOpacity(0.3),
-            highlightColor: Colors.cyan.withOpacity(0.2),
+            splashColor: Colors.cyan,
+            highlightColor: Colors.cyan,
             child: Container(
               width: 40,
               height: 40,
@@ -246,6 +274,14 @@ class _MessageInputState extends State<MessageInput> {
             ],
           ),
           child: Obx(() {
+            if (audioController.isRecording.value) {
+              return AudioRecorder(
+                onStopRecording: handleStopRecording,
+                onCancelRecording: handleCancelRecording,
+                chatId: widget.chatId,
+              );
+            }
+
             final showMediaButtons =
                 !isTyping.value &&
                 !isSending.value &&
@@ -257,15 +293,12 @@ class _MessageInputState extends State<MessageInput> {
               decoration: BoxDecoration(
                 color:
                     MessageInput.isEditingMessage.value
-                        ? Colors.blue.withOpacity(0.1)
+                        ? Colors.blue
                         : const Color(0xFF111111),
                 borderRadius: BorderRadius.circular(30),
                 border:
                     MessageInput.isEditingMessage.value
-                        ? Border.all(
-                          color: Colors.blue.withOpacity(0.3),
-                          width: 1,
-                        )
+                        ? Border.all(color: Colors.blue, width: 1)
                         : null,
               ),
               child: Row(

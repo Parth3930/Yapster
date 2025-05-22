@@ -74,11 +74,7 @@ class ChatController extends GetxController
     messagesToAnimate.remove(messageId);
   }
 
-  // Method to call when delete animation completes
-  void onDeleteAnimationComplete(String messageId) async {
-    // Remove from UI and DB after animation
-    final chatId = selectedChatId.value;
-    deletingMessageId.value = '';
-    await deleteMessage(chatId, messageId);
+  Future<void> uploadAndSendAudio(String chatId, String audioPath) async {
+    // in a bitttt
   }
 }

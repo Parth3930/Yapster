@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/core/utils/supabase_service.dart';
-import '../controllers/chat_controller.dart';
+import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'components/message_input.dart';
 
 class MessageOptions {
@@ -100,9 +99,9 @@ class MessageOptions {
     FocusScope.of(Get.context!).requestFocus();
   }
 
+  // Delete message
   static Future<void> _deleteMessage(Map<String, dynamic> message) async {
     final controller = Get.find<ChatController>();
-    final supabase = Get.find<SupabaseService>().client;
 
     final String messageId = message['message_id']?.toString() ?? '';
     if (messageId.isEmpty) {
@@ -110,62 +109,13 @@ class MessageOptions {
       return;
     }
 
-    try {
-      // 1. Fetch full message details before deletion starts
-      final messageDetails =
-          await supabase
-              .from('messages')
-              .select('message_id, message_type, content')
-              .eq('message_id', messageId)
-              .maybeSingle();
-
-      if (messageDetails == null) {
-        debugPrint('Message not found, might already be deleted');
-        return;
-      }
-
-      // Store message details for deletion
-      final messageType = messageDetails['message_type'] as String?;
-      final content = messageDetails['content'] as String?;
-
-      // 2. Start delete animation
-      controller.deletingMessageId.value = messageId;
-
-      // 3. Wait for animation
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      // 4. Delete the message from database first to prevent realtime subscription from interfering
-      await supabase.from('messages').delete().eq('message_id', messageId);
-
-      // 5. Delete associated image if this was an image message
-      if (messageType == 'image' && content != null) {
-        try {
-          final chatId = message['chat_id']?.toString();
-          if (chatId != null) {
-            // Extract filename from content URL
-            final uri = Uri.parse(content);
-            final pathSegments = uri.pathSegments;
-            final filePath = pathSegments
-                .sublist(pathSegments.indexOf('chat-media') + 1)
-                .join('/');
-
-            // Try to delete the image
-            await supabase.storage.from('chat-media').remove([filePath]);
-            debugPrint('Successfully deleted image: $filePath');
-          }
-        } catch (e) {
-          debugPrint('Error deleting image: $e');
-        }
-      }
-
-      // 6. Remove from local list and clear animation state
-      controller.messages.removeWhere((msg) => msg.messageId == messageId);
-      controller.deletingMessageId.value = '';
-    } catch (e) {
-      controller.deletingMessageId.value = '';
-      debugPrint('Error in _deleteMessage: $e');
-      Get.snackbar('Error', 'Failed to delete message');
+    // Check if the message is already being deleted
+    if (controller.deletingMessageId.value == messageId) {
+      debugPrint('Message is already being deleted: $messageId');
+      return;
     }
+
+    await controller.deleteMessage(controller.selectedChatId.value, messageId);
   }
 
   static void _copyMessageText(Map<String, dynamic> message) {

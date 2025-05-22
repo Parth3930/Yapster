@@ -223,22 +223,6 @@ mixin ChatControllerMessages {
     }
   }
 
-  // Records and sends audio (stub)
-  Future<void> recordAndSendAudio() async {
-    throw UnimplementedError('Audio recording not implemented');
-  }
-
-  // Handles deleting a message
-  Future<void> handleDeleteMessage(String messageId) async {
-    final chatId = _chatControler.selectedChatId.value;
-    await _chatControler.deleteMessage(chatId, messageId);
-  }
-
-  // Forces decryption of all messages (stub)
-  Future<void> forceDecryptMessages() async {
-    throw UnimplementedError('Force decrypt not implemented');
-  }
-
   // Gets decrypted message content
   Future<String> getDecryptedMessageContent(
     Map<String, dynamic> message,
@@ -295,12 +279,6 @@ mixin ChatControllerMessages {
   // Uploads and sends an image
   Future<void> uploadAndSendImage(String chatId, XFile image) async {
     await Get.find<ChatMessageService>().uploadAndSendImage(chatId, image);
-  }
-
-  // Sends a voice message (stub)
-  Future<void> sendVoiceMessage(String chatId) async {
-    // Implement voice message sending logic here
-    throw UnimplementedError('Voice message sending not implemented');
   }
 
   // Marks all messages as read in a chat
