@@ -298,4 +298,120 @@ class ChatMessageService extends GetxService {
       debugPrint('Error in markMessagesAsRead: $e');
     }
   }
+
+  /// Unified send message function for text, image, and audio
+  Future<void> sendMessageUnified({
+    required String chatId,
+    String? text,
+    XFile? image,
+    String? audioPath,
+    Duration? audioDuration, // Kept for API compatibility, but not used
+    TextEditingController? messageController,
+  }) async {
+    final user = _supabaseService.client.auth.currentUser;
+    if (user == null) {
+      debugPrint('User not authenticated');
+      return;
+    }
+    final senderId = user.id;
+    final now = DateTime.now().toUtc();
+    final expiresAt = now.add(const Duration(hours: 24));
+
+    // Fetch recipient ID based on the chat
+    final chat =
+        await _supabaseService.client
+            .from('chats')
+            .select('user_one_id, user_two_id')
+            .eq('chat_id', chatId)
+            .maybeSingle();
+    if (chat == null) {
+      debugPrint('Chat not found');
+      return;
+    }
+    final recipientId =
+        chat['user_one_id'] == senderId
+            ? chat['user_two_id']
+            : chat['user_one_id'];
+
+    String? content;
+    String messageType = 'text';
+    // No extraFields needed since duration is not stored
+
+    if (image != null) {
+      // Handle image upload
+      messageType = 'image';
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${image.name}';
+      final storagePath = '$chatId/$fileName';
+      final fileBytes = await image.readAsBytes();
+      final uploadResponse = await _supabaseService.client.storage
+          .from('chat-media')
+          .uploadBinary(
+            storagePath,
+            fileBytes,
+            fileOptions: FileOptions(
+              contentType: 'image/${image.name.split('.').last}',
+              metadata: {'chat_id': chatId},
+            ),
+          );
+      if (uploadResponse.isEmpty) {
+        debugPrint('Image upload failed');
+        return;
+      }
+      content = _supabaseService.client.storage
+          .from('chat-media')
+          .getPublicUrl(storagePath);
+    } else if (audioPath != null) {
+      // Handle audio upload
+      messageType = 'audio';
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final storagePath = '$chatId/$fileName';
+      final file = await XFile(audioPath).readAsBytes();
+      final uploadResponse = await _supabaseService.client.storage
+          .from('chat-media')
+          .uploadBinary(
+            storagePath,
+            file,
+            fileOptions: FileOptions(
+              contentType: 'audio/m4a',
+              metadata: {'chat_id': chatId},
+            ),
+          );
+      if (uploadResponse.isEmpty) {
+        debugPrint('Audio upload failed');
+        return;
+      }
+      content = _supabaseService.client.storage
+          .from('chat-media')
+          .getPublicUrl(storagePath);
+      // No duration field added
+    } else if (text != null && text.trim().isNotEmpty) {
+      content = text.trim();
+      messageType = 'text';
+    } else {
+      debugPrint('No valid message content to send');
+      return;
+    }
+
+    // Insert the message
+    final response =
+        await _supabaseService.client.from('messages').insert({
+          'chat_id': chatId,
+          'sender_id': senderId,
+          'recipient_id': recipientId,
+          'content': content,
+          'message_type': messageType,
+          'expires_at': expiresAt.toIso8601String(),
+          'is_read': false,
+        }).select();
+
+    if (response.isEmpty) {
+      debugPrint('Message insert failed');
+      return;
+    }
+    final sentMessage = MessageModel.fromJson(response.first);
+    controller.messagesToAnimate.add(sentMessage.messageId);
+    messages.refresh();
+    if (messageController != null) messageController.clear();
+    debugPrint('Unified message sent: $messageType');
+  }
 }

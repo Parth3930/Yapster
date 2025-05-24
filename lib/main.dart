@@ -26,7 +26,7 @@ void main() async {
         !message.contains('D/BufferPoolAccessor2.0') &&
         !message.contains('I/flutter') &&
         !message.contains('permission handler') &&
-        !message.contains('E/CheckPermission') &&
+        !message.contains('E/CheckPermission(14865)') &&
         !message.contains('D/MediaRecorder')) {
       print(message);
     }

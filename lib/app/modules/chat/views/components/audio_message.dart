@@ -20,7 +20,6 @@ class AudioMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Create or get controller with unique tag
     final controller = Get.put(
       AudioMessageController(
         url: url,
@@ -31,17 +30,17 @@ class AudioMessage extends StatelessWidget {
     );
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 2),
+      margin: const EdgeInsets.symmetric(vertical: 1),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: controller.togglePlayback,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(16),
           child: Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.7,
-              minWidth: 200,
+              maxWidth: MediaQuery.of(context).size.width * 0.6,
+              minWidth: 120,
             ),
             decoration: BoxDecoration(
               gradient:
@@ -56,12 +55,12 @@ class AudioMessage extends StatelessWidget {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black,
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
                 ),
               ],
             ),
@@ -77,19 +76,19 @@ class AudioMessage extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _buildPlayButton(controller),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildWaveform(controller),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               _buildTimeDisplay(controller),
             ],
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 4),
         _buildMicIcon(),
       ],
     );
@@ -99,16 +98,16 @@ class AudioMessage extends StatelessWidget {
     return Obx(() {
       if (controller.isLoading.value) {
         return Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.white,
+          width: 32,
+          height: 32,
+          decoration: const BoxDecoration(
+            color: Colors.transparent,
             shape: BoxShape.circle,
           ),
           child: const Center(
             child: SizedBox(
-              width: 20,
-              height: 20,
+              width: 16,
+              height: 16,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
                 valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
@@ -117,24 +116,22 @@ class AudioMessage extends StatelessWidget {
           ),
         );
       }
-
       if (controller.hasError.value) {
         return Container(
-          width: 40,
-          height: 40,
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
             color: Colors.red.withOpacity(0.2),
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.error_outline, color: Colors.white, size: 20),
+          child: const Icon(Icons.error_outline, color: Colors.white, size: 18),
         );
       }
-
       return Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
+        width: 32,
+        height: 32,
+        decoration: const BoxDecoration(
+          color: Colors.transparent,
           shape: BoxShape.circle,
         ),
         child: Center(
@@ -146,7 +143,7 @@ class AudioMessage extends StatelessWidget {
                   : Icons.play_arrow_rounded,
               key: ValueKey(controller.isPlaying.value),
               color: Colors.white,
-              size: 24,
+              size: 20,
             ),
           ),
         ),
@@ -160,23 +157,22 @@ class AudioMessage extends StatelessWidget {
           controller.playerController == null) {
         return _buildLoadingWaveform(controller);
       }
-
       return SizedBox(
-        height: 32,
+        height: 20,
         child: AudioFileWaveforms(
-          size: Size(Get.width * 0.45, 32),
+          size: Size(Get.width * 0.32, 20),
           playerController: controller.playerController!,
           enableSeekGesture: true,
           waveformType: WaveformType.fitWidth,
           playerWaveStyle: PlayerWaveStyle(
             fixedWaveColor: Colors.white.withOpacity(0.4),
             liveWaveColor: Colors.white,
-            spacing: 4,
-            waveThickness: 2,
+            spacing: 2,
+            waveThickness: 1.5,
             waveCap: StrokeCap.round,
             showSeekLine: true,
             seekLineColor: Colors.white,
-            seekLineThickness: 2,
+            seekLineThickness: 1.5,
           ),
         ),
       );
@@ -190,23 +186,23 @@ class AudioMessage extends StatelessWidget {
         return Obx(() {
           final isPlaying = controller.isPlaying.value;
           return SizedBox(
-            height: 32,
+            height: 20,
             child: Row(
-              children: List.generate(20, (index) {
+              children: List.generate(16, (index) {
                 final animValue = controller.waveAnimController.value;
+                // Slow down the animation and reduce frequency
                 final waveHeight =
                     2.0 +
-                    (20.0 *
-                        ((1.0 + matm.sin((index * 0.5) + (animValue * 6.28))) /
+                    (12.0 *
+                        ((1.0 + matm.sin((index * 0.25) + (animValue * 3.14))) /
                             2.0));
-
                 return Container(
-                  width: 3,
-                  height: isPlaying ? waveHeight : 8,
-                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                  width: 2.2,
+                  height: isPlaying ? waveHeight : 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(1.5),
+                    borderRadius: BorderRadius.circular(1),
                   ),
                 );
               }),
@@ -226,7 +222,7 @@ class AudioMessage extends StatelessWidget {
             controller.formatDuration(controller.currentPosition.value),
             style: TextStyle(
               color: Colors.white.withOpacity(0.8),
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -234,7 +230,7 @@ class AudioMessage extends StatelessWidget {
             controller.formatDuration(controller.totalDuration.value),
             style: TextStyle(
               color: Colors.white.withOpacity(0.6),
-              fontSize: 11,
+              fontSize: 10,
             ),
           ),
         ],
@@ -244,12 +240,12 @@ class AudioMessage extends StatelessWidget {
 
   Widget _buildMicIcon() {
     return Container(
-      padding: const EdgeInsets.all(6),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
+        color: Colors.white.withOpacity(0.12),
         shape: BoxShape.circle,
       ),
-      child: const Icon(Icons.mic_rounded, color: Colors.white, size: 14),
+      child: const Icon(Icons.mic_rounded, color: Colors.white, size: 11),
     );
   }
 }

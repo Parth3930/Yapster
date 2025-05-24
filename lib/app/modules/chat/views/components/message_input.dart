@@ -95,9 +95,12 @@ class _MessageInputState extends State<MessageInput> {
       return;
     }
 
-    Future.delayed(const Duration(milliseconds: 50), () {
-      controller.sendChatMessage(widget.chatId, text);
-
+    Future.delayed(const Duration(milliseconds: 50), () async {
+      await controller.sendMessageUnified(
+        chatId: widget.chatId,
+        text: text,
+        messageController: textController,
+      );
       Future.delayed(const Duration(milliseconds: 200), () {
         isSending.value = false;
         final hasText = textController.text.isNotEmpty;
@@ -106,8 +109,6 @@ class _MessageInputState extends State<MessageInput> {
         }
       });
     });
-
-    // Clear text immediately after sending to improve UX
     textController.clear();
   }
 
@@ -123,12 +124,13 @@ class _MessageInputState extends State<MessageInput> {
         return;
       }
       final navigator = Navigator.of(currentContext);
-
       final picker = ImagePicker();
       final image = await picker.pickImage(source: source);
-
       if (image != null && navigator.mounted) {
-        controller.uploadAndSendImage(widget.chatId, image);
+        await controller.sendMessageUnified(
+          chatId: widget.chatId,
+          image: image,
+        );
       }
     } catch (e) {
       debugPrint('Image pick error: $e');
@@ -169,10 +171,16 @@ class _MessageInputState extends State<MessageInput> {
   }
 
   void handleStopRecording(String audioPath) async {
-    final recordedPath = await audioController.stopRecording();
-    if (recordedPath != null && recordedPath.isNotEmpty) {
+    // Use the provided audioPath directly instead of calling stopRecording again
+    if (audioPath.isNotEmpty) {
+      // Get the current recording duration
+      final duration = audioController.recordingDuration.value;
       // Upload and send the audio using the chat controller
-      await controller.uploadAndSendAudio(widget.chatId, recordedPath);
+      await controller.sendMessageUnified(
+        chatId: widget.chatId,
+        audioPath: audioPath,
+        audioDuration: duration,
+      );
     }
   }
 

@@ -7,6 +7,7 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/animations/message_animations.dart';
 import '../../controllers/chat_controller.dart';
 import '../message_options.dart';
+import 'audio_message.dart';
 
 class MessageBubble extends StatefulWidget {
   final Map<String, dynamic> message;
@@ -403,6 +404,23 @@ class _MessageBubbleState extends State<MessageBubble>
                 _buildUploadingImageContent(_uploadId, _chatController)
               else if (_isImageMessage && _imageUrl != null)
                 _buildImageContent(_imageUrl)
+              else if (widget.message['message_type'] == 'audio' &&
+                  widget.message['content'] != null)
+                AudioMessage(
+                  url: widget.message['content'],
+                  messageId: widget.message['message_id'],
+                  isMe: widget.isMe,
+                  duration:
+                      widget.message['duration'] != null
+                          ? Duration(
+                            milliseconds:
+                                int.tryParse(
+                                  widget.message['duration'].toString(),
+                                ) ??
+                                0,
+                          )
+                          : null,
+                )
               else
                 Text(
                   widget.message['content'] ?? '',

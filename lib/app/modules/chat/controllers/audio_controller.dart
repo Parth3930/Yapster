@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:yapster/app/modules/chat/services/audio_services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class AudioMessageController extends GetxController
     with GetTickerProviderStateMixin {
@@ -74,7 +75,7 @@ class AudioMessageController extends GetxController
     );
 
     waveAnimController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 2500), // Slower animation
       vsync: this,
     );
 
@@ -105,8 +106,25 @@ class AudioMessageController extends GetxController
 
   Future<void> _initializeRecorder() async {
     try {
-      recorderController = RecorderController();
-      isRecordingInitialized.value = true;
+      recorderController =
+          RecorderController()
+            ..androidEncoder = AndroidEncoder.aac
+            ..androidOutputFormat = AndroidOutputFormat.mpeg4
+            ..iosEncoder = IosEncoder.kAudioFormatMPEG4AAC
+            ..sampleRate = 44100
+            ..bitRate = 128000;
+
+      // Check microphone permission
+      final status = await Permission.microphone.status;
+      if (status.isGranted) {
+        isRecordingInitialized.value = true;
+        debugPrint('Recorder controller initialized with permission');
+      } else {
+        isRecordingInitialized.value = false;
+        debugPrint(
+          'Recorder controller initialized but no microphone permission',
+        );
+      }
     } catch (e) {
       debugPrint('Error initializing recorder: $e');
       isRecordingInitialized.value = false;
@@ -348,9 +366,28 @@ class AudioMessageController extends GetxController
 
   // Recording methods
   Future<bool> startRecording() async {
+    // Check microphone permission first
+    var status = await Permission.microphone.status;
+    if (!status.isGranted) {
+      status = await Permission.microphone.request();
+      if (!status.isGranted) {
+        Get.snackbar(
+          'Permission Required',
+          'Microphone permission is required to record audio.',
+          duration: const Duration(seconds: 3),
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return false;
+      }
+    }
+
+    // Re-initialize recorder if needed
     if (!isRecordingInitialized.value || recorderController == null) {
-      debugPrint('Recorder not initialized');
-      return false;
+      await _initializeRecorder();
+      if (!isRecordingInitialized.value || recorderController == null) {
+        debugPrint('Failed to initialize recorder');
+        return false;
+      }
     }
 
     try {

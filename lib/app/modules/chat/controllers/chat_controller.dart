@@ -76,11 +76,32 @@ class ChatController extends GetxController
     messagesToAnimate.remove(messageId);
   }
 
-  Future<void> uploadAndSendAudio(String chatId, String audioPath, {Duration? duration}) async {
+  Future<void> uploadAndSendAudio(
+    String chatId,
+    String audioPath, {
+    Duration? duration,
+  }) async {
     isSendingMessage.value = true;
     try {
-      final messageId = Uuid().v4(); // Requires: import 'package:uuid/uuid.dart';
+      final messageId = Uuid().v4();
       final senderId = _supabaseService.client.auth.currentUser?.id;
+      final chat =
+          await _supabaseService.client
+              .from('chats')
+              .select('user_one_id, user_two_id')
+              .eq('chat_id', chatId)
+              .maybeSingle();
+
+      if (chat == null) {
+        debugPrint('Chat not found');
+        return;
+      }
+
+      // Determine recipient ID based on who the sender is
+      final recipientId =
+          chat['user_one_id'] == senderId
+              ? chat['user_two_id']
+              : chat['user_one_id'];
 
       if (senderId == null) {
         Get.snackbar('Error', 'User not logged in.');
@@ -93,14 +114,13 @@ class ChatController extends GetxController
       final tempMessage = MessageModel(
         messageId: messageId,
         chatId: chatId,
-        senderId: senderId,
+        senderId: recipientId,
         content: audioPath, // Local path for now
         messageType: 'audio',
-        recipientId: '', 
-        expiresAt: DateTime.now().add(Duration(days: 7)), 
+        recipientId: '',
+        expiresAt: DateTime.now().add(Duration(days: 7)),
         createdAt: DateTime.now(),
         isRead: false,
-        duration: duration,
       );
 
       messages.insert(0, tempMessage);
@@ -113,11 +133,11 @@ class ChatController extends GetxController
       try {
         // Requires: import 'dart:io';
         await _supabaseService.client.storage
-            .from('chat_media') 
+            .from('chat-media')
             .upload(filePathInStorage, File(audioPath));
 
         audioUrl = _supabaseService.client.storage
-            .from('chat_media')
+            .from('chat-media')
             .getPublicUrl(filePathInStorage);
       } catch (e) {
         messages.removeWhere((m) => m.messageId == messageId);
@@ -135,11 +155,10 @@ class ChatController extends GetxController
         'sender_id': senderId,
         'content': audioUrl,
         'message_type': 'audio',
-        'recipient_id': '', 
-        'expires_at': DateTime.now().add(Duration(days: 7)).toIso8601String(), 
+        'recipient_id': recipientId,
+        'expires_at': DateTime.now().add(Duration(days: 1)).toIso8601String(),
         'created_at': DateTime.now().toIso8601String(),
         'is_read': false,
-        'duration_seconds': duration?.inSeconds,
       };
 
       try {
@@ -152,7 +171,9 @@ class ChatController extends GetxController
         messages.removeWhere((m) => m.messageId == messageId);
         messagesToAnimate.remove(messageId);
         try {
-          await _supabaseService.client.storage.from('chat_media').remove([filePathInStorage]);
+          await _supabaseService.client.storage.from('chat-media').remove([
+            filePathInStorage,
+          ]);
         } catch (storageError) {
           print('Error deleting orphaned audio from storage: $storageError');
         }
@@ -168,16 +189,20 @@ class ChatController extends GetxController
     try {
       final uri = Uri.parse(url);
       final pathSegments = uri.pathSegments;
-      if (pathSegments.length > 4 && pathSegments[3] == 'public' && pathSegments[4] == 'chat_media') {
+      if (pathSegments.length > 4 &&
+          pathSegments[3] == 'public' &&
+          pathSegments[4] == 'chat-media') {
         // Path starts after "public/chat_media/"
         // Example URL: https://<project-ref>.supabase.co/storage/v1/object/public/chat_media/user_id/chat_id/file.m4a
         // pathSegments: [storage, v1, object, public, chat_media, user_id, chat_id, file.m4a]
         // We need segments from index 5 onwards.
         if (pathSegments.length > 5) {
-            return pathSegments.sublist(5).join('/');
+          return pathSegments.sublist(5).join('/');
         }
       }
-      print('Error extracting path: URL structure not as expected or bucket name mismatch. URL: $url, Segments: $pathSegments');
+      print(
+        'Error extracting path: URL structure not as expected or bucket name mismatch. URL: $url, Segments: $pathSegments',
+      );
       return null;
     } catch (e) {
       print('Error parsing URL in _extractPathFromUrl: $e');
@@ -191,8 +216,13 @@ class ChatController extends GetxController
       final String? filePathInStorage = _extractPathFromUrl(audioUrl);
 
       if (filePathInStorage == null || filePathInStorage.isEmpty) {
-        Get.snackbar('Error', 'Could not determine file path for deletion. URL: $audioUrl');
-        print('Error: Could not determine file path for deletion from URL: $audioUrl');
+        Get.snackbar(
+          'Error',
+          'Could not determine file path for deletion. URL: $audioUrl',
+        );
+        print(
+          'Error: Could not determine file path for deletion from URL: $audioUrl',
+        );
         // Resetting deletingMessageId here as the operation is aborted.
         if (deletingMessageId.value == messageId) {
           deletingMessageId.value = '';
@@ -201,13 +231,18 @@ class ChatController extends GetxController
       }
 
       try {
-        await _supabaseService.client.storage
-            .from('chat_media')
-            .remove([filePathInStorage]);
+        await _supabaseService.client.storage.from('chat-media').remove([
+          filePathInStorage,
+        ]);
         print('Successfully deleted $filePathInStorage from storage.');
       } catch (e) {
-        print('Error deleting audio from storage: $e. Path: $filePathInStorage');
-        Get.snackbar('Error', 'Could not delete audio file from storage. Please try again.');
+        print(
+          'Error deleting audio from storage: $e. Path: $filePathInStorage',
+        );
+        Get.snackbar(
+          'Error',
+          'Could not delete audio file from storage. Please try again.',
+        );
         // Resetting deletingMessageId here as the operation is aborted before DB delete.
         if (deletingMessageId.value == messageId) {
           deletingMessageId.value = '';
@@ -219,18 +254,21 @@ class ChatController extends GetxController
           .from('messages')
           .delete()
           .eq('message_id', messageId);
-      
-      print('Successfully initiated deletion for message $messageId from database.');
-      // Local list removal will be handled by real-time event or finalizeMessageDeletion
 
+      print(
+        'Successfully initiated deletion for message $messageId from database.',
+      );
+      // Local list removal will be handled by real-time event or finalizeMessageDeletion
     } catch (e) {
       print('An unexpected error occurred in deleteAudioMessage: $e');
-      Get.snackbar('Error', 'An unexpected error occurred while deleting the message.');
-       if (deletingMessageId.value == messageId) {
-          deletingMessageId.value = '';
-        }
-    }
-    finally {
+      Get.snackbar(
+        'Error',
+        'An unexpected error occurred while deleting the message.',
+      );
+      if (deletingMessageId.value == messageId) {
+        deletingMessageId.value = '';
+      }
+    } finally {
       // Defer clearing deletingMessageId until animation completes.
       // The actual clearing will be done by finalizeMessageDeletion.
       // if (deletingMessageId.value == messageId) {
@@ -243,7 +281,7 @@ class ChatController extends GetxController
     // This method is called after the message bubble's delete animation completes.
     // The message should ideally have already been removed from the `messages` list
     // by the real-time event handler if the DB operation was faster than the animation.
-    
+
     // Forcing removal here ensures cleanup if real-time event was missed or animation finished first.
     // This also handles cases where the message might not have been deleted from DB successfully
     // but UI animation completed.
@@ -252,14 +290,20 @@ class ChatController extends GetxController
     final finalLength = messages.length;
 
     if (initialLength != finalLength) {
-      debugPrint("finalizeMessageDeletion: Removed message $messageId from local list. Count: $initialLength -> $finalLength");
+      debugPrint(
+        "finalizeMessageDeletion: Removed message $messageId from local list. Count: $initialLength -> $finalLength",
+      );
     } else {
-      debugPrint("finalizeMessageDeletion: Message $messageId was already removed from local list (likely by real-time).");
+      debugPrint(
+        "finalizeMessageDeletion: Message $messageId was already removed from local list (likely by real-time).",
+      );
     }
 
     if (deletingMessageId.value == messageId) {
       deletingMessageId.value = '';
-      debugPrint("finalizeMessageDeletion: Cleared deletingMessageId for $messageId.");
+      debugPrint(
+        "finalizeMessageDeletion: Cleared deletingMessageId for $messageId.",
+      );
     }
   }
 }

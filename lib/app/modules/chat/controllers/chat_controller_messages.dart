@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -206,6 +207,7 @@ mixin ChatControllerMessages {
   }
 
   // Sends a chat message
+  @deprecated
   Future<void> sendChatMessage(String chatId, String content) async {
     await Get.find<ChatMessageService>().sendMessage(
       chatId,
@@ -215,12 +217,32 @@ mixin ChatControllerMessages {
   }
 
   // Picks and sends an image
+  @deprecated
   Future<void> pickAndSendImage(ImageSource source) async {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: source);
     if (image != null) {
       await uploadAndSendImage(_chatControler.selectedChatId.value, image);
     }
+  }
+
+  // Unified send message (text, image, audio)
+  Future<void> sendMessageUnified({
+    required String chatId,
+    String? text,
+    XFile? image,
+    String? audioPath,
+    Duration? audioDuration,
+    TextEditingController? messageController,
+  }) async {
+    await Get.find<ChatMessageService>().sendMessageUnified(
+      chatId: chatId,
+      text: text,
+      image: image,
+      audioPath: audioPath,
+      audioDuration: audioDuration,
+      messageController: messageController,
+    );
   }
 
   // Gets decrypted message content
@@ -277,6 +299,7 @@ mixin ChatControllerMessages {
   }
 
   // Uploads and sends an image
+  @deprecated
   Future<void> uploadAndSendImage(String chatId, XFile image) async {
     await Get.find<ChatMessageService>().uploadAndSendImage(chatId, image);
   }
