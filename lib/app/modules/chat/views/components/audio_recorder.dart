@@ -41,13 +41,24 @@ class _AudioRecorderState extends State<AudioRecorder> {
     }
 
     try {
-      final path = await audioService.stopRecording();
-      if (path != null) {
-        // Upload and send the audio message
-        await controller.uploadAndSendAudio(widget.chatId, path);
-        widget.onStopRecording(path);
+      final recordingData = await audioService.stopRecording(); // This now returns a Map
+      if (recordingData != null) {
+        final String path = recordingData['path'] as String;
+        final Duration duration = recordingData['duration'] as Duration;
+
+        // Upload and send the audio message with duration
+        await controller.uploadAndSendAudio(widget.chatId, path, duration: duration);
+        widget.onStopRecording(path); // This callback might need adjustment if it expects duration too
       } else {
-        throw Exception('Failed to save recording');
+        // audioService.stopRecording() returning null means it handled user feedback
+        // or an error occurred that it already reported.
+        // So, we might not need to throw another exception or show another snackbar here.
+        // However, to maintain previous behavior of onCancelRecording being called:
+        widget.onCancelRecording(); // Or simply return if snackbars are handled in AudioService
+        // For now, let's assume if null, it's an error/cancel scenario from AudioService's POV
+        // and AudioRecorder should reflect that by calling its onCancelRecording.
+        debugPrint('AudioRecorder: audioService.stopRecording returned null. Treating as cancellation/failure.');
+        // Get.snackbar('Error', 'Failed to save recording'); // This might be redundant
       }
     } catch (e) {
       debugPrint('Error stopping recording: $e');
@@ -58,10 +69,14 @@ class _AudioRecorderState extends State<AudioRecorder> {
 
   void cancelRecording() async {
     try {
-      await audioService.stopRecording();
-      widget.onCancelRecording();
+      // Stop recording and discard the result.
+      // The AudioService's stopRecording now handles cleanup and state reset.
+      await audioService.stopRecording(); 
+      widget.onCancelRecording(); // Notify parent about cancellation.
     } catch (e) {
-      debugPrint('Error canceling recording: $e');
+      // This catch block might be redundant if audioService.stopRecording() handles its own errors.
+      // However, keeping it for safety in case of unexpected exceptions from the call itself.
+      debugPrint('Error canceling recording in AudioRecorder: $e');
       Get.snackbar('Error', 'Failed to cancel recording');
     }
   }
@@ -144,9 +159,15 @@ class _AudioRecorderState extends State<AudioRecorder> {
 
   @override
   void dispose() {
-    // Only stop if we're still recording when disposed
+    // Only stop if we're still recording when disposed.
+    // audioService.stopRecording() now returns a Map, but here we don't need the result.
+    // This is a "best effort" cleanup.
     if (audioService.isRecording.value) {
-      audioService.stopRecording();
+      audioService.stopRecording().catchError((e) {
+        // Log error during dispose, but don't propagate further.
+        debugPrint('Error stopping recording during dispose: $e');
+        return null; // Ensure the Future completes.
+      });
     }
     super.dispose();
   }

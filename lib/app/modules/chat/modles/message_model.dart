@@ -8,6 +8,7 @@ class MessageModel {
   final DateTime expiresAt;
   final bool isRead;
   final DateTime createdAt; // ✅ Add this
+  final Duration? duration; // Add this
 
   MessageModel({
     required this.messageId,
@@ -19,6 +20,7 @@ class MessageModel {
     required this.expiresAt,
     required this.isRead,
     required this.createdAt, // ✅ Add this
+    this.duration, // Add this
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) => MessageModel(
@@ -31,5 +33,8 @@ class MessageModel {
     expiresAt: DateTime.parse(json['expires_at']),
     isRead: json['is_read'] ?? false,
     createdAt: DateTime.parse(json['created_at']), // ✅ Add this
+    duration: json['duration_seconds'] != null
+        ? Duration(seconds: json['duration_seconds'] as int)
+        : null, // Add this logic
   );
 }

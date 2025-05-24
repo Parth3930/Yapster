@@ -104,18 +104,50 @@ class MessageOptions {
     final controller = Get.find<ChatController>();
 
     final String messageId = message['message_id']?.toString() ?? '';
+    final String messageType = message['message_type']?.toString() ?? '';
+    final String content = message['content']?.toString() ?? '';
+
     if (messageId.isEmpty) {
-      Get.snackbar('Error', 'Could not delete message');
+      Get.snackbar('Error', 'Could not delete message: Invalid message ID.');
       return;
     }
 
     // Check if the message is already being deleted
     if (controller.deletingMessageId.value == messageId) {
-      debugPrint('Message is already being deleted: $messageId');
+      debugPrint('Message $messageId is already being deleted.');
       return;
     }
 
-    await controller.deleteMessage(controller.selectedChatId.value, messageId);
+    if (messageType == 'audio') {
+      if (content.isEmpty || !Uri.parse(content).isAbsolute) {
+        Get.snackbar('Error', 'Could not delete audio message: Invalid audio URL.');
+        return;
+      }
+      // The deleteAudioMessage method in ChatController already handles setting deletingMessageId
+      await controller.deleteAudioMessage(messageId, content);
+    } else {
+      // For non-audio messages
+      controller.deletingMessageId.value = messageId; // Trigger UI animations
+      try {
+        await controller.supabaseService.client
+            .from('messages')
+            .delete()
+            .eq('message_id', messageId);
+        debugPrint('Successfully deleted non-audio message $messageId from database.');
+        // Assuming real-time listener handles local list removal.
+      } catch (e) {
+        debugPrint('Error deleting non-audio message $messageId from database: $e');
+        Get.snackbar('Error', 'Could not delete message details.');
+        // If deletion fails, UI might still show deleting state. 
+        // The finally block will clear it.
+      } finally {
+        // Reset deletingMessageId only if it's still this message.
+        // Another deletion might have started.
+        if (controller.deletingMessageId.value == messageId) {
+          controller.deletingMessageId.value = '';
+        }
+      }
+    }
   }
 
   static void _copyMessageText(Map<String, dynamic> message) {

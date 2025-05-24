@@ -22,6 +22,7 @@ class AudioService extends GetxService {
   // For waveform visualization during recording
   RecorderController? recorderController;
   Timer? _waveformTimer;
+  DateTime? _recordingStartTime; // To calculate duration
 
   Future<AudioService> init() async {
     recorder = record_plugin.AudioRecorder();
@@ -103,8 +104,10 @@ class AudioService extends GetxService {
         recorderController?.refresh();
       });
 
+      _recordingStartTime = DateTime.now(); // Start timer
       return filePath;
     } catch (e) {
+      _recordingStartTime = null; // Reset on error
       debugPrint('Error starting recording: $e');
       Get.snackbar('Error', 'Failed to start recording');
       await _disposeCurrentController();
@@ -112,39 +115,58 @@ class AudioService extends GetxService {
     }
   }
 
-  Future<String?> stopRecording() async {
-    if (!isRecording.value) {
-      debugPrint('Not recording');
+  Future<Map<String, dynamic>?> stopRecording() async {
+    // Check if recording and if startTime is available
+    if (!isRecording.value || _recordingStartTime == null) {
+      debugPrint('AudioService: stopRecording called but not recording or startTime is null.');
+      // Ensure state is reset if it's inconsistent
+      if (isRecording.value) {
+        isRecording.value = false;
+        currentRecordingPath.value = '';
+      }
       return null;
     }
 
+    final Duration duration = DateTime.now().difference(_recordingStartTime!);
+
     try {
+      // Stop the waveform refresh timer explicitly. _disposeCurrentController also cancels it,
+      // but doing it here ensures it's stopped before recorder.stop().
       _waveformTimer?.cancel();
-      _waveformTimer = null;
 
-      // Stop waveform recorder
-      await recorderController?.stop();
-      recorderController?.dispose();
-      recorderController = null;
-
-      // Stop audio recorder
-      await recorder.stop();
-      final path = currentRecordingPath.value;
-      isRecording.value = false;
-      currentRecordingPath.value = '';
-
-      if (path.isEmpty || !File(path).existsSync()) {
-        throw Exception('Recording file not found');
+      // Stop the visual waveform recorder.
+      // This should ideally not throw if called multiple times or on an uninitialized controller,
+      // but defensive coding with null check is good.
+      if (recorderController != null && recorderController!.isRecording) {
+         await recorderController?.stop();
       }
 
-      return path;
+      // Stop the main audio recorder. This is what writes the file.
+      final String? path = await recorder.stop();
+      
+      // Path from recorder.stop() is the source of truth.
+      // currentRecordingPath.value was set at start, can be used for reference or cleared.
+
+      if (path == null || path.isEmpty) {
+        throw Exception('Recorder returned null or empty path.');
+      }
+      if (!File(path).existsSync()) {
+        throw Exception('Recorded file not found at path: $path');
+      }
+      
+      // Successfully stopped and file exists.
+      // isRecording and currentRecordingPath will be reset in finally.
+      return {'path': path, 'duration': duration};
     } catch (e) {
       debugPrint('Error stopping recording: $e');
-      Get.snackbar('Error', 'Failed to stop recording');
+      Get.snackbar('Error', 'Failed to stop recording: ${e.toString()}');
       return null;
     } finally {
-      _waveformTimer?.cancel();
-      _waveformTimer = null;
+      // Reset state and dispose resources
+      _recordingStartTime = null;
+      isRecording.value = false; // Ensure recording state is reset
+      currentRecordingPath.value = ''; // Clear the stored path
+      await _disposeCurrentController(); // Clean up waveform controller and its timer
     }
   }
 
@@ -202,9 +224,10 @@ class AudioService extends GetxService {
 
   @override
   void onClose() {
-    _waveformTimer?.cancel();
-    recorderController?.dispose();
-    recorder.dispose();
+    _waveformTimer?.cancel(); // Cancel timer
+    recorderController?.dispose(); // Dispose controller
+    recorder.dispose(); // Dispose main recorder
+    _recordingStartTime = null; // Clear start time
     super.onClose();
   }
 }
