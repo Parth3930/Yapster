@@ -104,11 +104,8 @@ class MessageOptions {
     final controller = Get.find<ChatController>();
 
     final String messageId = message['message_id']?.toString() ?? '';
-    final String messageType = message['message_type']?.toString() ?? '';
-    final String content = message['content']?.toString() ?? '';
-
     if (messageId.isEmpty) {
-      Get.snackbar('Error', 'Could not delete message: Invalid message ID.');
+      Get.snackbar('Error', 'Could not delete message');
       return;
     }
 
@@ -118,12 +115,20 @@ class MessageOptions {
       return;
     }
 
+    final String messageType = message['message_type']?.toString() ?? '';
+    final String content = message['content']?.toString() ?? ''; // For audio URL
+
     if (messageType == 'audio') {
       if (content.isEmpty || !Uri.parse(content).isAbsolute) {
         Get.snackbar('Error', 'Could not delete audio message: Invalid audio URL.');
+        // Reset deletingMessageId if we abort before calling deleteAudioMessage
+        if (controller.deletingMessageId.value == messageId) {
+             controller.deletingMessageId.value = '';
+        }
         return;
       }
-      // The deleteAudioMessage method in ChatController already handles setting deletingMessageId
+      // deleteAudioMessage in ChatController will set deletingMessageId.value = messageId;
+      // Its finally block will be modified later to not clear it.
       await controller.deleteAudioMessage(messageId, content);
     } else {
       // For non-audio messages
@@ -133,19 +138,23 @@ class MessageOptions {
             .from('messages')
             .delete()
             .eq('message_id', messageId);
-        debugPrint('Successfully deleted non-audio message $messageId from database.');
-        // Assuming real-time listener handles local list removal.
+        debugPrint('Successfully initiated deletion for non-audio message $messageId from database.');
+        // Local list removal will be handled by real-time event or finalizeMessageDeletion.
+        // The ChatController.finalizeMessageDeletion will clear deletingMessageId.
       } catch (e) {
         debugPrint('Error deleting non-audio message $messageId from database: $e');
         Get.snackbar('Error', 'Could not delete message details.');
-        // If deletion fails, UI might still show deleting state. 
-        // The finally block will clear it.
-      } finally {
-        // Reset deletingMessageId only if it's still this message.
-        // Another deletion might have started.
+        // If DB deletion fails, clear deletingMessageId to unstick UI.
         if (controller.deletingMessageId.value == messageId) {
           controller.deletingMessageId.value = '';
         }
+      } finally {
+        // For this re-application step, the original finally logic from Step 5 was to clear it.
+        // However, for the current task (Step 9), we need to ensure it's NOT cleared here.
+        // So, this finally block will be effectively empty regarding deletingMessageId.
+        // if (controller.deletingMessageId.value == messageId) {
+        //   controller.deletingMessageId.value = '';
+        // }
       }
     }
   }
