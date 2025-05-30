@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/global_widgets/custom_input.dart';
 import 'package:yapster/app/modules/profile/constants/profile_constants.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
+import 'package:yapster/app/modules/profile/widgets/profile_banner_widget.dart';
 
 class EditProfileView extends StatelessWidget {
   const EditProfileView({super.key});
@@ -23,13 +23,21 @@ class EditProfileView extends StatelessWidget {
         ),
       ),
       child: Scaffold(
-        appBar: CustomAppBar(title: 'Edit Profile'),
         body: Column(
           children: [
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
                   children: [
+                    GetX<ProfileController>(
+                      builder:
+                          (controller) => ProfileBannerWidget(
+                            selectedImage: controller.selectedBanner.value,
+                            onTap: () async => await controller.pickBanner(),
+                            isLoaded: controller.isBannerLoaded.value,
+                            showBackButton: true,
+                          ),
+                    ),
                     SizedBox(height: 30),
                     GetX<ProfileController>(
                       builder:

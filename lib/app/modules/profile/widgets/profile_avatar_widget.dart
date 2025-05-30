@@ -90,10 +90,6 @@ class ProfileAvatarWidget extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 5),
-        Text(
-          ProfileConstants.tapToChangeAvatarMessage,
-          style: ProfileConstants.hintTextStyle,
-        ),
       ],
     );
   }

@@ -33,8 +33,9 @@ class MessageModel {
     expiresAt: DateTime.parse(json['expires_at']),
     isRead: json['is_read'] ?? false,
     createdAt: DateTime.parse(json['created_at']), // ✅ Add this
-    duration: json['duration_seconds'] != null
-        ? Duration(seconds: json['duration_seconds'] as int)
-        : null, // Add this logic
+    duration:
+        json['duration_seconds'] != null
+            ? Duration(seconds: json['duration_seconds'] as int)
+            : null, // Add this logic
   );
 }

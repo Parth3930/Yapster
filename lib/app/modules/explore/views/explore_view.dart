@@ -121,7 +121,7 @@ class ExploreView extends GetView<ExploreController> {
 
 class UserListItem extends StatelessWidget {
   final Map<String, dynamic> user;
-  final VoidCallback onTap;
+  final Function onTap;
   final bool isSearchResult;
 
   const UserListItem({
@@ -139,7 +139,7 @@ class UserListItem extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
+        onTap: () => onTap(), // This will call the openUserProfile method
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Row(
@@ -151,17 +151,25 @@ class UserListItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      (user['nickname'] != null && user['nickname'].toString().isNotEmpty) 
-                          ? user['nickname'] 
+                      (user['nickname'] != null &&
+                              user['nickname'].toString().isNotEmpty)
+                          ? user['nickname']
                           : 'Yapper',
-                          style: TextStyle(fontFamily: GoogleFonts.inter().fontFamily, fontSize: 16, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.inter().fontFamily,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    
+
                     if (user['username'] != null &&
                         user['username'].toString().isNotEmpty)
                       Text(
                         '@${user['username']}',
-                        style:  TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[500]),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[500],
+                        ),
                       ),
                   ],
                 ),
@@ -185,34 +193,32 @@ class UserListItem extends StatelessWidget {
 
   Widget _buildAvatar() {
     // Check if user has regular avatar
-    final hasRegularAvatar = user['avatar'] != null && 
-                           user['avatar'].toString().isNotEmpty && 
-                           user['avatar'] != "skiped" &&
-                           user['avatar'].toString() != "skiped" &&
-                           user['avatar'].toString() != "null" &&
-                           Uri.tryParse(user['avatar'].toString())?.hasScheme == true;
-                           
+    final hasRegularAvatar =
+        user['avatar'] != null &&
+        user['avatar'].toString().isNotEmpty &&
+        user['avatar'] != "skiped" &&
+        user['avatar'].toString() != "skiped" &&
+        user['avatar'].toString() != "null" &&
+        Uri.tryParse(user['avatar'].toString())?.hasScheme == true;
+
     // Check if user has Google avatar
-    final hasGoogleAvatar = user['google_avatar'] != null && 
-                          user['google_avatar'].toString().isNotEmpty &&
-                          user['google_avatar'].toString() != "null" &&
-                          Uri.tryParse(user['google_avatar'].toString())?.hasScheme == true;
-    
-    // Debug avatar info
-    debugPrint('User avatar: ${user['avatar']}');
-    debugPrint('User google avatar: ${user['google_avatar']}');
-    debugPrint('Has regular avatar: $hasRegularAvatar');
-    debugPrint('Has Google avatar: $hasGoogleAvatar');
-    
+    final hasGoogleAvatar =
+        user['google_avatar'] != null &&
+        user['google_avatar'].toString().isNotEmpty &&
+        user['google_avatar'].toString() != "null" &&
+        Uri.tryParse(user['google_avatar'].toString())?.hasScheme == true;
+
     return CircleAvatar(
       radius: 24,
       backgroundColor: Colors.grey[300],
-      backgroundImage: hasRegularAvatar
+      backgroundImage:
+          hasRegularAvatar
               ? CachedNetworkImageProvider(user['avatar'].toString())
-          : hasGoogleAvatar
+              : hasGoogleAvatar
               ? CachedNetworkImageProvider(user['google_avatar'].toString())
               : null,
-      child: (!hasRegularAvatar && !hasGoogleAvatar)
+      child:
+          (!hasRegularAvatar && !hasGoogleAvatar)
               ? const Icon(Icons.person, color: Colors.white)
               : null,
     );

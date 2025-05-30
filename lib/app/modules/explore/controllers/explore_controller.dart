@@ -4,17 +4,18 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
-import 'package:yapster/app/modules/profile/views/user_profile_view.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
 import 'package:yapster/app/core/models/follow_type.dart';
-import 'package:yapster/app/modules/profile/controllers/profile_controller.dart';
+import 'package:yapster/app/routes/app_pages.dart';
 
 class ExploreController extends GetxController {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
-  final AccountDataProvider _accountDataProvider =
+  AccountDataProvider get _accountDataProvider =>
       Get.find<AccountDataProvider>();
+  AccountDataProvider get _accountFunctions => Get.find<AccountDataProvider>();
   final StorageService _storageService = Get.find<StorageService>();
 
   final searchController = TextEditingController();
@@ -41,6 +42,10 @@ class ExploreController extends GetxController {
 
   // Debounce timer for search
   Timer? _debounce;
+
+  // Cache for user profiles
+  final _profileCache = <String, Map<String, dynamic>>{}.obs;
+  final _profileLastFetch = <String, DateTime>{};
 
   @override
   void onInit() {
@@ -91,27 +96,23 @@ class ExploreController extends GetxController {
 
       // Get current user ID to filter them out from results
       final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId == null) return;
 
       // Search for users in Supabase where username contains the query
-      // Include google_avatar in the query
       final response = await _supabaseService.client
           .from('profiles')
           .select('user_id, username, nickname, avatar, google_avatar')
           .ilike('username', '%$query%')
+          .neq(
+            'user_id',
+            currentUserId,
+          ) // Explicitly exclude current user in query
           .limit(20);
 
-      // Convert to list and filter out current user
+      // Convert to list
       List<Map<String, dynamic>> results = List<Map<String, dynamic>>.from(
         response,
       );
-
-      // Remove current user from search results if they appear
-      if (currentUserId != null) {
-        results =
-            results.where((user) => user['user_id'] != currentUserId).toList();
-        debugPrint('Filtered out current user from search results');
-      }
-
       debugPrint('Found ${results.length} users matching query');
       searchResults.value = results;
 
@@ -174,7 +175,7 @@ class ExploreController extends GetxController {
   void loadRecentSearches() {
     try {
       // Force reload from database
-      _accountDataProvider.loadSearches().then((_) {
+      _accountFunctions.loadSearches().then((_) {
         // After loading from database, update the local list
         recentSearches.value = List<Map<String, dynamic>>.from(
           _accountDataProvider.searches,
@@ -233,7 +234,7 @@ class ExploreController extends GetxController {
       }
 
       // Update AccountDataProvider searches
-      await _accountDataProvider.updateSearches(recentSearches.toList());
+      await _accountFunctions.updateSearches(recentSearches.toList());
     } catch (e) {
       debugPrint('Error adding to recent searches: $e');
     }
@@ -250,7 +251,7 @@ class ExploreController extends GetxController {
         recentSearches.removeAt(existingIndex);
 
         // Update AccountDataProvider searches
-        await _accountDataProvider.updateSearches(recentSearches.toList());
+        await _accountFunctions.updateSearches(recentSearches.toList());
         debugPrint('Removed user from recent searches');
       }
     } catch (e) {
@@ -271,11 +272,7 @@ class ExploreController extends GetxController {
     // Load user profile data before navigating
     loadUserProfile(user['user_id']).then((_) {
       // Navigate to user profile using the UserProfileView
-      Get.to(
-        () => UserProfileView(userData: selectedUserProfile, posts: userPosts),
-        transition: Transition.fadeIn,
-        duration: const Duration(milliseconds: 300),
-      );
+      Get.toNamed("${Routes.PROFILE}/${user['user_id']}");
     });
   }
 
@@ -285,83 +282,137 @@ class ExploreController extends GetxController {
       isLoadingUserProfile.value = true;
       debugPrint('Loading profile for user ID: $userId');
 
-      // Force refresh of followers/following data before loading profile
-      if (userId == _supabaseService.currentUser.value?.id) {
-        // For current user, reload their followers and following
-        await _accountDataProvider.loadFollowers(userId);
-        await _accountDataProvider.loadFollowing(userId);
+      // Check if we have a cached profile and it's still valid
+      final lastFetch = _profileLastFetch[userId];
+      final now = DateTime.now();
+      if (lastFetch != null &&
+          now.difference(lastFetch) < SupabaseService.profileCacheDuration &&
+          _profileCache.containsKey(userId)) {
+        debugPrint('Using cached profile data for user: $userId');
+        selectedUserProfile.value = Map<String, dynamic>.from(
+          _profileCache[userId]!,
+        );
+        return;
       }
 
-      // Update to select proper fields (without follower_count and following_count)
-      final userData =
-          await _supabaseService.client
-              .from('profiles')
-              .select(
-                'user_id, username, nickname, avatar, bio, user_posts, google_avatar',
-              )
-              .eq('user_id', userId)
-              .single();
-
-      debugPrint('Fetched profile data: $userData');
-
-      // For current user, update the google_avatar if it's empty in DB but available locally
-      if (userId == _supabaseService.currentUser.value?.id) {
-        if ((userData['google_avatar'] == null ||
-                userData['google_avatar'].toString().isEmpty) &&
-            _accountDataProvider.googleAvatar.value.isNotEmpty) {
-          // Update local data
-          userData['google_avatar'] = _accountDataProvider.googleAvatar.value;
-          debugPrint(
-            'Added current user Google avatar: ${_accountDataProvider.googleAvatar.value}',
-          );
-
-          // Update in database for future use
-          await _supabaseService.client
-              .from('profiles')
-              .update({
-                'google_avatar': _accountDataProvider.googleAvatar.value,
-              })
-              .eq('user_id', userId);
-
-          debugPrint('Updated Google avatar in database');
-        }
-      }
-
-      // Calculate follower and following counts from follows table
-      // For the viewed profile's followers count
-      final followerResponse = await _supabaseService.client
+      // If not cached or cache expired, fetch from database
+      final List<dynamic> followers = await _supabaseService.client
           .from('follows')
-          .select()
+          .select('follower_id')
           .eq('following_id', userId);
 
-      final int followerCount = (followerResponse as List).length;
-      debugPrint('Calculated follower count: $followerCount');
-
-      // For the viewed profile's following count
-      final followingResponse = await _supabaseService.client
+      final List<dynamic> following = await _supabaseService.client
           .from('follows')
-          .select()
+          .select('following_id')
           .eq('follower_id', userId);
 
-      final int followingCount = (followingResponse as List).length;
-      debugPrint('Calculated following count: $followingCount');
+      final int accurateFollowerCount = followers.length;
+      final int accurateFollowingCount = following.length;
 
-      // Add follower and following counts to userData
-      userData['follower_count'] = followerCount;
-      userData['following_count'] = followingCount;
+      debugPrint('Fresh follow counts from database:');
+      debugPrint('Followers: $accurateFollowerCount');
+      debugPrint('Following: $accurateFollowingCount');
 
-      // Store the user profile data
-      selectedUserProfile.value = Map<String, dynamic>.from(userData);
+      // Fetch the complete profile data
+      final List<dynamic> profileResponse = await _supabaseService.client
+          .from('profiles')
+          .select('''
+            user_id, 
+            username, 
+            nickname, 
+            avatar, 
+            bio,  
+            google_avatar,
+            follower_count,
+            following_count
+          ''')
+          .eq('user_id', userId)
+          .limit(1);
 
-      // Fetch posts directly from posts table
-      final postsResponse = await _supabaseService.client
+      if (profileResponse.isEmpty) {
+        debugPrint('User profile not found');
+        throw Exception('User profile not found');
+      }
+
+      // Initialize with profile data
+      var userData = Map<String, dynamic>.from(profileResponse.first);
+
+      // Update with accurate counts if needed
+      if (userData['follower_count'] != accurateFollowerCount ||
+          userData['following_count'] != accurateFollowingCount) {
+        debugPrint('Detected count discrepancy, updating profile...');
+
+        // Update the database with accurate counts
+        await _supabaseService.client.from('profiles').upsert({
+          'user_id': userId,
+          'follower_count': accurateFollowerCount,
+          'following_count': accurateFollowingCount,
+        });
+
+        // Update the userData map with accurate counts
+        userData['follower_count'] = accurateFollowerCount;
+        userData['following_count'] = accurateFollowingCount;
+      }
+
+      // Ensure required fields have default values
+      userData = {
+        'user_id': userId,
+        'username': userData['username'] ?? 'User',
+        'nickname': userData['nickname'] ?? 'User',
+        'avatar': userData['avatar'] ?? '',
+        'google_avatar': userData['google_avatar'] ?? '',
+        'bio': userData['bio'] ?? 'No bio available',
+        'follower_count': accurateFollowerCount,
+        'following_count': accurateFollowingCount,
+        ...userData,
+      };
+
+      // Cache the profile data
+      _profileCache[userId] = userData;
+      _profileLastFetch[userId] = now;
+
+      // Store the processed profile data
+      selectedUserProfile.value = userData;
+
+      // Load posts only if needed (you might want to cache these separately)
+      await _loadUserPosts(userId);
+
+      // Force UI update
+      update();
+    } catch (e) {
+      debugPrint('Error loading user profile: $e');
+      selectedUserProfile.value = _getDefaultProfile(userId);
+      userPosts.value = [];
+      EasyLoading.showError('Failed to load profile data. Please try again.');
+    } finally {
+      isLoadingUserProfile.value = false;
+    }
+  }
+
+  Map<String, dynamic> _getDefaultProfile(String userId) {
+    return {
+      'user_id': userId,
+      'username': 'User',
+      'nickname': 'User',
+      'avatar': '',
+      'google_avatar': '',
+      'bio': 'Profile data unavailable',
+      'follower_count': 0,
+      'following_count': 0,
+    };
+  }
+
+  // Separate method for loading posts
+  Future<void> _loadUserPosts(String userId) async {
+    try {
+      final List<dynamic> postsResponse = await _supabaseService.client
           .from('posts')
-          .select('*')
+          .select()
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 
       final List<Map<String, dynamic>> allPosts =
-          List<Map<String, dynamic>>.from(postsResponse);
+          postsResponse.map((post) => Map<String, dynamic>.from(post)).toList();
 
       // Convert post_type to category for backward compatibility
       for (var post in allPosts) {
@@ -369,52 +420,23 @@ class ExploreController extends GetxController {
       }
 
       userPosts.value = allPosts;
-      debugPrint(
-        'Loaded ${allPosts.length} posts for user: ${userData['username']}',
-      );
+      debugPrint('Loaded ${allPosts.length} posts for user: ${userId}');
     } catch (e) {
-      debugPrint('Error loading user profile: $e');
-      // Create minimal default data if profile fetch fails
-      selectedUserProfile.value = {
-        'user_id': userId,
-        'username': 'User',
-        'nickname': 'User',
-        'avatar': '',
-        'google_avatar': '',
-        'bio': 'Profile data unavailable',
-        'follower_count': 0,
-        'following_count': 0,
-      };
+      debugPrint('Error loading user posts: $e');
       userPosts.value = [];
-      EasyLoading.showError('Failed to load profile');
-    } finally {
-      isLoadingUserProfile.value = false;
     }
   }
 
-  // Get filtered posts based on selected tab
-  List<Map<String, dynamic>> getFilteredPosts() {
-    switch (selectedPostTypeTab.value) {
-      case 0: // All
-        return userPosts;
-      case 1: // Threads
-        return userPosts.where((post) => post['post_type'] == 'text').toList();
-      case 2: // Images
-        return userPosts.where((post) => post['post_type'] == 'image').toList();
-      case 3: // GIFs
-        return userPosts.where((post) => post['post_type'] == 'gif').toList();
-      case 4: // Stickers
-        return userPosts
-            .where((post) => post['post_type'] == 'sticker')
-            .toList();
-      default:
-        return userPosts;
-    }
+  // Clear cache for a specific user
+  void clearProfileCache(String userId) {
+    _profileCache.remove(userId);
+    _profileLastFetch.remove(userId);
   }
 
-  // Set which tab is selected
-  void setSelectedPostTypeTab(int index) {
-    selectedPostTypeTab.value = index;
+  // Clear entire profile cache
+  void clearAllProfileCache() {
+    _profileCache.clear();
+    _profileLastFetch.clear();
   }
 
   // Check if the current user is following the selected user
@@ -755,27 +777,16 @@ class ExploreController extends GetxController {
           (await _supabaseService.client
               .from('follows')
               .select()
-              .eq('following_id', currentUserId)).length;
+              .eq('follower_id', currentUserId)).length;
 
       _accountDataProvider.followingCount.value =
           (await _supabaseService.client
               .from('follows')
               .select()
-              .eq('follower_id', currentUserId)).length;
-
-      debugPrint(
-        'CRITICAL: Final follower count: ${_accountDataProvider.followerCount}',
-      );
-      debugPrint(
-        'CRITICAL: Final following count: ${_accountDataProvider.followingCount}',
-      );
+              .eq('following_id', currentUserId)).length;
 
       // Try to update ProfileController if it exists
-      try {
-        final profileCtrl = Get.find<ProfileController>();
-        await profileCtrl.refreshFollowData(); // Use our enhanced method
-        debugPrint('CRITICAL: ProfileController refresh completed');
-      } catch (e) {
+      try {} catch (e) {
         debugPrint(
           'CRITICAL: ProfileController not found, direct update completed',
         );

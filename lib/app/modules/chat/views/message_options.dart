@@ -102,7 +102,6 @@ class MessageOptions {
   // Delete message
   static Future<void> _deleteMessage(Map<String, dynamic> message) async {
     final controller = Get.find<ChatController>();
-
     final String messageId = message['message_id']?.toString() ?? '';
     final String messageType = message['message_type']?.toString() ?? '';
     final String content = message['content']?.toString() ?? '';
@@ -120,7 +119,10 @@ class MessageOptions {
 
     if (messageType == 'audio') {
       if (content.isEmpty || !Uri.parse(content).isAbsolute) {
-        Get.snackbar('Error', 'Could not delete audio message: Invalid audio URL.');
+        Get.snackbar(
+          'Error',
+          'Could not delete audio message: Invalid audio URL.',
+        );
         return;
       }
       // The deleteAudioMessage method in ChatController already handles setting deletingMessageId
@@ -133,16 +135,12 @@ class MessageOptions {
             .from('messages')
             .delete()
             .eq('message_id', messageId);
-        debugPrint('Successfully deleted non-audio message $messageId from database.');
-        // Assuming real-time listener handles local list removal.
       } catch (e) {
-        debugPrint('Error deleting non-audio message $messageId from database: $e');
+        debugPrint(
+          'Error deleting non-audio message $messageId from database: $e',
+        );
         Get.snackbar('Error', 'Could not delete message details.');
-        // If deletion fails, UI might still show deleting state. 
-        // The finally block will clear it.
       } finally {
-        // Reset deletingMessageId only if it's still this message.
-        // Another deletion might have started.
         if (controller.deletingMessageId.value == messageId) {
           controller.deletingMessageId.value = '';
         }

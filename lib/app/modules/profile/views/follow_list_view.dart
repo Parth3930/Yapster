@@ -359,40 +359,49 @@ class _FollowListViewState extends State<FollowListView> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildUserAvatar(user),
-            SizedBox(width: 12),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     user['nickname'] ?? 'User',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Text(
                     '@${user['username'] ?? ''}',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
                   ),
                 ],
               ),
             ),
             // Don't show follow button for current user
             if (!isCurrentUser)
-              widget.type == FollowType.followers
-                  ? Obx(() {
-                    // Directly check if we're following this user from the account provider
-                    final bool isFollowing = _exploreController.isFollowingUser(
-                      userId,
-                    );
+              GetX<ExploreController>(
+                init: _exploreController,
+                initState: (_) {
+                  // Ensure follow state is up to date when item is first shown
+                  _exploreController.refreshFollowState(userId);
+                },
+                builder: (controller) {
+                  final bool isFollowing = controller.isFollowingUser(userId);
 
+                  if (widget.type == FollowType.followers) {
                     // If we're already following them, don't show any button
                     if (isFollowing) {
-                      return const SizedBox.shrink(); // Hide button completely
+                      return const SizedBox.shrink();
                     }
-
                     // Only show Follow Back button if we're not already following them
                     return _buildFollowButton(userId, false);
-                  })
-                  : _buildUnfollowButton(userId),
+                  }
+
+                  // For Following list, always show Unfollow button since we're viewing following list
+                  return _buildUnfollowButton(userId);
+                },
+              ),
           ],
         ),
       ),
@@ -417,12 +426,6 @@ class _FollowListViewState extends State<FollowListView> {
     // If regular avatar is skipped but Google avatar exists, use Google avatar
     final bool shouldUseGoogleAvatar =
         (hasSkippedAvatar || !hasRegularAvatar) && hasGoogleAvatar;
-
-    // Debug info about avatar URLs for troubleshooting
-    debugPrint('User avatar - regular: $avatarUrl, google: $googleAvatarUrl');
-    debugPrint(
-      'Avatar flags - hasRegular: $hasRegularAvatar, useGoogle: $shouldUseGoogleAvatar',
-    );
 
     // Select the URL to use
     final String? imageUrl =
@@ -473,10 +476,8 @@ class _FollowListViewState extends State<FollowListView> {
   }
 
   Widget _buildFollowButton(String userId, bool isFollowing) {
-    // For followers list, show "Follow Back" instead of "Follow"
     final String buttonText =
         widget.type == FollowType.followers ? 'Follow Back' : 'Follow';
-    // Use local loading state
     final RxBool isButtonLoading = false.obs;
 
     return Obx(
@@ -484,30 +485,15 @@ class _FollowListViewState extends State<FollowListView> {
         onPressed:
             isButtonLoading.value
                 ? null
-                : () async {
-                  // Set loading state
-                  isButtonLoading.value = true;
-
-                  try {
-                    // Toggle follow state
-                    await _exploreController.toggleFollowUser(userId);
-                  } catch (e) {
-                    debugPrint('Error following user: $e');
-                    Get.snackbar('Error', 'Failed to follow user');
-                  } finally {
-                    // Always reset loading state
-                    isButtonLoading.value = false;
-                  }
-                },
+                : () => _handleFollowAction(userId, isButtonLoading),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Color(0xff0060FF),
-          minimumSize: Size(90, 32),
-          padding: EdgeInsets.symmetric(horizontal: 8),
+          backgroundColor: const Color(0xff0060FF),
+          minimumSize: const Size(90, 32),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         child:
             isButtonLoading.value
-                ? SizedBox(
+                ? const SizedBox(
                   height: 16,
                   width: 16,
                   child: CircularProgressIndicator(
@@ -515,23 +501,12 @@ class _FollowListViewState extends State<FollowListView> {
                     strokeWidth: 2,
                   ),
                 )
-                : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add, size: 14, color: Colors.white),
-                    SizedBox(width: 4),
-                    Text(
-                      buttonText,
-                      style: TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
-                ),
+                : Text(buttonText, style: const TextStyle(color: Colors.white)),
       ),
     );
   }
 
   Widget _buildUnfollowButton(String userId) {
-    // Use local loading state
     final RxBool isButtonLoading = false.obs;
 
     return Obx(
@@ -539,29 +514,15 @@ class _FollowListViewState extends State<FollowListView> {
         onPressed:
             isButtonLoading.value
                 ? null
-                : () async {
-                  // Set loading state
-                  isButtonLoading.value = true;
-
-                  try {
-                    await _handleUnfollowAction(userId);
-                  } catch (e) {
-                    debugPrint('Error unfollowing user: $e');
-                    Get.snackbar('Error', 'Failed to unfollow user');
-                  } finally {
-                    // Always reset loading state
-                    isButtonLoading.value = false;
-                  }
-                },
+                : () => _handleUnfollowAction(userId, isButtonLoading),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.grey[800],
-          minimumSize: Size(90, 32),
-          padding: EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size(90, 32),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         child:
             isButtonLoading.value
-                ? SizedBox(
+                ? const SizedBox(
                   height: 16,
                   width: 16,
                   child: CircularProgressIndicator(
@@ -569,86 +530,52 @@ class _FollowListViewState extends State<FollowListView> {
                     strokeWidth: 2,
                   ),
                 )
-                : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.check, size: 14, color: Colors.white),
-                    SizedBox(width: 4),
-                    Text(
-                      'Unfollow',
-                      style: TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
-                ),
+                : const Text('Unfollow', style: TextStyle(color: Colors.white)),
       ),
     );
   }
 
-  // Split the unfollow action from the UI
-  Future<void> _handleUnfollowAction(String userId) async {
-    debugPrint('Trying to unfollow user: $userId');
+  Future<void> _handleFollowAction(String userId, RxBool isLoading) async {
+    isLoading.value = true;
+    try {
+      await _exploreController.toggleFollowUser(userId);
+      await _exploreController.refreshFollowState(userId);
 
-    // Direct database delete instead of using RPC function
-    final supabaseService = Get.find<SupabaseService>();
-    final currentUserId = supabaseService.currentUser.value?.id;
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId != null) {
+        await _accountDataProvider.loadFollowing(currentUserId);
+        await _exploreController.verifyDatabaseCounts(currentUserId, userId);
+      }
 
-    if (currentUserId == null) {
-      Get.snackbar('Error', 'User not authenticated');
-      return;
+      // Refresh the list
+      await loadUsers();
+    } catch (e) {
+      debugPrint('Error following user: $e');
+      Get.snackbar('Error', 'Failed to follow user');
+    } finally {
+      isLoading.value = false;
     }
+  }
 
-    // Delete the follows record directly
-    final result = await supabaseService.client
-        .from('follows')
-        .delete()
-        .eq('follower_id', currentUserId)
-        .eq('following_id', userId);
+  Future<void> _handleUnfollowAction(String userId, RxBool isLoading) async {
+    isLoading.value = true;
+    try {
+      await _exploreController.toggleFollowUser(userId);
+      await _exploreController.refreshFollowState(userId);
 
-    debugPrint('Delete follows result: $result');
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId != null) {
+        await _accountDataProvider.loadFollowing(currentUserId);
+        await _exploreController.verifyDatabaseCounts(currentUserId, userId);
+      }
 
-    // Verify the unfollow worked
-    final checkResponse = await supabaseService.client
-        .from('follows')
-        .select()
-        .eq('follower_id', currentUserId)
-        .eq('following_id', userId);
-
-    debugPrint(
-      'After unfollow check - remaining records: ${(checkResponse as List).length}',
-    );
-
-    // Get updated following count
-    final followingResponse = await supabaseService.client
-        .from('follows')
-        .select()
-        .eq('follower_id', currentUserId);
-
-    final int followingCount = (followingResponse as List).length;
-
-    // Update profile table with new counts (important!)
-    await supabaseService.client
-        .from('profiles')
-        .update({'following_count': followingCount})
-        .eq('user_id', currentUserId);
-
-    debugPrint('Updated profile following_count to: $followingCount');
-
-    // Remove user from the UI list
-    users.removeWhere((user) => user['following_id'] == userId);
-
-    // Update following count in account provider
-    _accountDataProvider.followingCount.value = followingCount;
-
-    // Refresh account provider following list
-    await _accountDataProvider.loadFollowing(currentUserId);
-
-    // If the list is now empty, show the empty state
-    if (users.isEmpty) {
-      setState(() {});
+      // Refresh the list and ensure UI is updated
+      await loadUsers();
+    } catch (e) {
+      debugPrint('Error unfollowing user: $e');
+      Get.snackbar('Error', 'Failed to unfollow user');
+    } finally {
+      isLoading.value = false;
     }
-
-    debugPrint(
-      'User unfollowed successfully. New following count: $followingCount',
-    );
   }
 }

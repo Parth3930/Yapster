@@ -2,12 +2,17 @@ import 'package:get/get.dart';
 import 'package:flutter/foundation.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/core/utils/db_cache_service.dart';
+import 'package:yapster/app/data/repositories/account_repository.dart';
 
 class AccountDataProvider extends GetxController {
+  AccountRepository get _accountRepository => Get.find<AccountRepository>();
+
+  // User data fields
   final RxString username = ''.obs;
   final RxString nickname = ''.obs;
   final RxString bio = ''.obs;
   final RxString avatar = ''.obs;
+  final RxString banner = ''.obs; // Add banner field
   final RxString email = ''.obs;
   final RxString googleAvatar = ''.obs;
 
@@ -31,6 +36,10 @@ class AccountDataProvider extends GetxController {
       <String, Map<String, dynamic>>{}.obs;
   final RxMap<String, Map<String, dynamic>> _searchesMap =
       <String, Map<String, dynamic>>{}.obs;
+
+  // Cache times for follow data
+  final Map<String, DateTime> _followersFetchTime = {};
+  final Map<String, DateTime> _followingFetchTime = {};
 
   // Helper getters for easy access
   int get postsCount => userPostData['post_count'] as int? ?? 0;
@@ -125,18 +134,20 @@ class AccountDataProvider extends GetxController {
     _rebuildSearchesMap();
   }
 
-  // Update entire followers list
-  void updateFollowers(List<Map<String, dynamic>> newFollowers) {
-    followers.value = newFollowers;
-    followerCount.value = newFollowers.length;
-    _rebuildFollowersMap();
-  }
-
-  // Update entire following list
+  // Update entire following list and ensure count accuracy
   void updateFollowing(List<Map<String, dynamic>> newFollowing) {
     following.value = newFollowing;
     followingCount.value = newFollowing.length;
     _rebuildFollowingMap();
+    debugPrint('Updated following count to: ${followingCount.value}');
+  }
+
+  // Update entire followers list and ensure count accuracy
+  void updateFollowers(List<Map<String, dynamic>> newFollowers) {
+    followers.value = newFollowers;
+    followerCount.value = newFollowers.length;
+    _rebuildFollowersMap();
+    debugPrint('Updated follower count to: ${followerCount.value}');
   }
 
   void updatePosts(List<Map<String, dynamic>> newPosts) {
@@ -170,47 +181,71 @@ class AccountDataProvider extends GetxController {
     }
   }
 
-  // Add a following to the list (usually from realtime updates)
+  // Add a following to the list with count update
   void addFollowing(Map<String, dynamic> followingUser) {
     if (followingUser['following_id'] != null &&
         !isFollowing(followingUser['following_id'])) {
       following.add(followingUser);
       _followingMap[followingUser['following_id']] = true;
       followingCount.value = following.length;
+      debugPrint('Added following, new count: ${followingCount.value}');
     }
   }
 
-  // Remove a following from the list (usually from realtime updates)
+  // Remove a following from the list with count update
   void removeFollowing(String userId) {
     final index = following.indexWhere((f) => f['following_id'] == userId);
     if (index != -1) {
       following.removeAt(index);
       _followingMap.remove(userId);
       followingCount.value = following.length;
+      debugPrint('Removed following, new count: ${followingCount.value}');
     }
   }
 
-  // Add a new post to the list (local update before database)
-  void addPost(Map<String, dynamic> post) {
-    if (post['id'] != null) {
-      posts.add(post);
-      _postsMap[post['id'].toString()] = post;
+  // Verify and sync follow counts with database
+  Future<void> verifyFollowCounts(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
 
-      // Update the post count
-      userPostData['post_count'] =
-          (userPostData['post_count'] as int? ?? 0) + 1;
-    }
-  }
+      final followersResponse = await supabaseService.client
+          .from('follows')
+          .select()
+          .eq('following_id', userId);
 
-  // Remove a post from the list (local update before database)
-  void removePost(String postId) {
-    if (_postsMap.containsKey(postId)) {
-      posts.removeWhere((post) => post['id'].toString() == postId);
-      _postsMap.remove(postId);
+      final followingResponse = await supabaseService.client
+          .from('follows')
+          .select()
+          .eq('follower_id', userId);
 
-      // Update the post count
-      userPostData['post_count'] =
-          (userPostData['post_count'] as int? ?? 0) - 1;
+      final int actualFollowerCount = (followersResponse as List).length;
+      final int actualFollowingCount = (followingResponse as List).length;
+
+      if (followerCount.value != actualFollowerCount ||
+          followingCount.value != actualFollowingCount) {
+        debugPrint('Follow count mismatch detected, syncing with database...');
+        debugPrint(
+          'Followers: Local=${followerCount.value}, Actual=$actualFollowerCount',
+        );
+        debugPrint(
+          'Following: Local=${followingCount.value}, Actual=$actualFollowingCount',
+        );
+
+        // Update local counts
+        followerCount.value = actualFollowerCount;
+        followingCount.value = actualFollowingCount;
+
+        // Update database
+        await supabaseService.client.from('profiles').upsert({
+          'user_id': userId,
+          'follower_count': actualFollowerCount,
+          'following_count': actualFollowingCount,
+        });
+
+        debugPrint('Follow counts synchronized successfully');
+      }
+    } catch (e) {
+      debugPrint('Error verifying follow counts: $e');
     }
   }
 
@@ -275,6 +310,16 @@ class AccountDataProvider extends GetxController {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
 
+      // Check if we have recently fetched this data
+      final lastFetch = _followersFetchTime[userId];
+      final now = DateTime.now();
+      if (lastFetch != null &&
+          now.difference(lastFetch) < SupabaseService.followCacheDuration &&
+          followers.isNotEmpty) {
+        debugPrint('Using cached followers data for user $userId');
+        return;
+      }
+
       debugPrint('Loading followers for user $userId');
 
       // Get followers from cache or fetch from API
@@ -286,13 +331,7 @@ class AccountDataProvider extends GetxController {
         );
 
         if (response == null) {
-          // Fallback to direct count
-          await supabaseService.client
-              .from('follows')
-              .select()
-              .eq('following_id', userId);
-
-          return [];
+          return _getFallbackFollowers(userId);
         }
 
         return List<Map<String, dynamic>>.from(response);
@@ -302,27 +341,12 @@ class AccountDataProvider extends GetxController {
       followers.value = followersList;
       followerCount.value = followersList.length;
       _rebuildFollowersMap();
+      _followersFetchTime[userId] = now;
 
       debugPrint('Set follower count to: ${followerCount.value}');
     } catch (e) {
       debugPrint('Error loading followers: $e');
-      // Try direct count as fallback
-      try {
-        final supabaseService = Get.find<SupabaseService>();
-        final countResponse = await supabaseService.client
-            .from('follows')
-            .select()
-            .eq('following_id', userId);
-
-        final int directFollowerCount = (countResponse as List).length;
-        followers.value = [];
-        followerCount.value = directFollowerCount;
-        debugPrint('Set follower count from fallback: $directFollowerCount');
-      } catch (fallbackError) {
-        debugPrint('Fallback follower count also failed: $fallbackError');
-        followers.value = [];
-        followerCount.value = 0;
-      }
+      await _handleFollowerLoadError(userId);
     }
   }
 
@@ -331,6 +355,16 @@ class AccountDataProvider extends GetxController {
     try {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
+
+      // Check if we have recently fetched this data
+      final lastFetch = _followingFetchTime[userId];
+      final now = DateTime.now();
+      if (lastFetch != null &&
+          now.difference(lastFetch) < SupabaseService.followCacheDuration &&
+          following.isNotEmpty) {
+        debugPrint('Using cached following data for user $userId');
+        return;
+      }
 
       debugPrint('Loading following for user $userId');
 
@@ -343,13 +377,7 @@ class AccountDataProvider extends GetxController {
         );
 
         if (response == null) {
-          // Fallback to direct count
-          await supabaseService.client
-              .from('follows')
-              .select()
-              .eq('follower_id', userId);
-
-          return [];
+          return _getFallbackFollowing(userId);
         }
 
         return List<Map<String, dynamic>>.from(response);
@@ -359,28 +387,93 @@ class AccountDataProvider extends GetxController {
       following.value = followingList;
       followingCount.value = followingList.length;
       _rebuildFollowingMap();
+      _followingFetchTime[userId] = now;
 
       debugPrint('Set following count to: ${followingCount.value}');
     } catch (e) {
       debugPrint('Error loading following: $e');
-      // Try direct count as fallback
-      try {
-        final supabaseService = Get.find<SupabaseService>();
-        final countResponse = await supabaseService.client
-            .from('follows')
-            .select()
-            .eq('follower_id', userId);
-
-        final int directFollowingCount = (countResponse as List).length;
-        following.value = [];
-        followingCount.value = directFollowingCount;
-        debugPrint('Set following count from fallback: $directFollowingCount');
-      } catch (fallbackError) {
-        debugPrint('Fallback following count also failed: $fallbackError');
-        following.value = [];
-        followingCount.value = 0;
-      }
+      await _handleFollowingLoadError(userId);
     }
+  }
+
+  // Helper method to get fallback followers count
+  Future<List<Map<String, dynamic>>> _getFallbackFollowers(
+    String userId,
+  ) async {
+    final supabaseService = Get.find<SupabaseService>();
+    final countResponse = await supabaseService.client
+        .from('follows')
+        .select()
+        .eq('following_id', userId);
+
+    followers.value = [];
+    followerCount.value = (countResponse as List).length;
+    debugPrint('Set follower count from fallback: ${followerCount.value}');
+    return [];
+  }
+
+  // Helper method to get fallback following count
+  Future<List<Map<String, dynamic>>> _getFallbackFollowing(
+    String userId,
+  ) async {
+    final supabaseService = Get.find<SupabaseService>();
+    final countResponse = await supabaseService.client
+        .from('follows')
+        .select()
+        .eq('follower_id', userId);
+
+    following.value = [];
+    followingCount.value = (countResponse as List).length;
+    debugPrint('Set following count from fallback: ${followingCount.value}');
+    return [];
+  }
+
+  // Helper method to handle follower load errors
+  Future<void> _handleFollowerLoadError(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      final countResponse = await supabaseService.client
+          .from('follows')
+          .select()
+          .eq('following_id', userId);
+
+      followers.value = [];
+      followerCount.value = (countResponse as List).length;
+      debugPrint(
+        'Set follower count from error handler: ${followerCount.value}',
+      );
+    } catch (fallbackError) {
+      debugPrint('Fallback follower count also failed: $fallbackError');
+      followers.value = [];
+      followerCount.value = 0;
+    }
+  }
+
+  // Helper method to handle following load errors
+  Future<void> _handleFollowingLoadError(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      final countResponse = await supabaseService.client
+          .from('follows')
+          .select()
+          .eq('follower_id', userId);
+
+      following.value = [];
+      followingCount.value = (countResponse as List).length;
+      debugPrint(
+        'Set following count from error handler: ${followingCount.value}',
+      );
+    } catch (fallbackError) {
+      debugPrint('Fallback following count also failed: $fallbackError');
+      following.value = [];
+      followingCount.value = 0;
+    }
+  }
+
+  // Clear follow caches for a user
+  void clearFollowCaches(String userId) {
+    _followersFetchTime.remove(userId);
+    _followingFetchTime.remove(userId);
   }
 
   /// Load user posts from the posts table
@@ -497,5 +590,48 @@ class AccountDataProvider extends GetxController {
   void updateSearchesMap(Map<String, Map<String, dynamic>> newMap) {
     _searchesMap.clear();
     _searchesMap.addAll(newMap);
+  }
+
+  /// Fetch user profile data using AccountRepository
+  Future<Map<String, dynamic>> fetchUserData() async {
+    return await _accountRepository.userRealtimeData();
+  }
+
+  /// Add a new post using AccountRepository
+  Future<void> addNewPost(
+    Map<String, dynamic> postData,
+    String category,
+  ) async {
+    // await _accountRepository.addNewPost(postData, category);
+  }
+
+  /// Delete a post using AccountRepository
+  Future<void> deletePost(String postId) async {
+    // await _accountRepository.deletePost(postId);
+  }
+
+  /// Follow a user using AccountRepository
+  Future<void> followUser(String targetUserId) async {
+    await _accountRepository.followUser(targetUserId);
+  }
+
+  /// Unfollow a user using AccountRepository
+  Future<void> unfollowUser(String targetUserId) async {
+    await _accountRepository.unfollowUser(targetUserId);
+  }
+
+  /// Process followers data using AccountRepository
+  void processFollowersData(dynamic followersData) {
+    _accountRepository.processFollowersData(followersData);
+  }
+
+  /// Process following data using AccountRepository
+  void processFollowingData(dynamic followingData) {
+    _accountRepository.processFollowingData(followingData);
+  }
+
+  /// Process searches data using AccountRepository
+  void processSearchesData(dynamic searchesData) {
+    _accountRepository.processSearchesData(searchesData);
   }
 }

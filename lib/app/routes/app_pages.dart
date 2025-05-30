@@ -15,8 +15,11 @@ import 'package:yapster/app/modules/notifications/bindings/notifications_binding
 import 'package:yapster/app/modules/notifications/views/notifications_view.dart';
 import 'package:yapster/app/modules/profile/bindings/profile_binding.dart';
 import 'package:yapster/app/modules/profile/views/edit_profile_view.dart';
+import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
 import 'package:yapster/app/modules/profile/views/profile_view.dart';
-import 'package:yapster/app/modules/profile/views/user_profile_view.dart';
+
+import 'package:yapster/app/core/models/follow_type.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 import '../modules/home/bindings/home_binding.dart';
 import '../modules/home/views/home_view.dart';
 import '../modules/login/bindings/login_binding.dart';
@@ -87,8 +90,8 @@ class AppPages {
       popGesture: false,
     ),
     GetPage(
-      name: _Paths.PROFILE,
-      page: () => const ProfileView(),
+      name: _Paths.PROFILE, // Matches /profile
+      page: () => ProfileView(), // For current user
       binding: ProfileBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
@@ -99,19 +102,17 @@ class AppPages {
       popGesture: false,
     ),
     GetPage(
-      name: '${_Paths.PROFILE}/:id',
+      name: '${_Paths.PROFILE}/:id', // Matches /profile/:id
       page: () {
-        final args = Get.arguments;
-        return UserProfileView(
-          userData: args['userData'],
-          posts: args['posts'],
-        );
+        final String? userId = Get.parameters['id'];
+        return ProfileView(userId: userId); // For other users
       },
       binding: ProfileBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     ),
+
     GetPage(
       name: _Paths.CHAT,
       page: () => const ChatView(),
@@ -184,6 +185,42 @@ class AppPages {
       name: _Paths.ERROR,
       page: () => const ErrorView(),
       binding: ErrorBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ),
+    GetPage(
+      name: _Paths.FOLLOWERS,
+      page: () {
+        final supabaseService = Get.find<SupabaseService>();
+        final String? argUserId = Get.arguments?['userId'] as String?;
+        final String userId =
+            argUserId ?? supabaseService.currentUser.value?.id ?? '';
+        return FollowListView(
+          userId: userId,
+          type: FollowType.followers,
+          title: 'Followers',
+        );
+      },
+      binding: ProfileBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ),
+    GetPage(
+      name: _Paths.FOLLOWING,
+      page: () {
+        final supabaseService = Get.find<SupabaseService>();
+        final String? argUserId = Get.arguments?['userId'] as String?;
+        final String userId =
+            argUserId ?? supabaseService.currentUser.value?.id ?? '';
+        return FollowListView(
+          userId: userId,
+          type: FollowType.following,
+          title: 'Following',
+        );
+      },
+      binding: ProfileBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,

@@ -40,8 +40,7 @@ class ChatController extends GetxController
   final RxString selectedChatId = ''.obs;
   final RxBool hasUserDismissedExpiryBanner = false.obs;
   final RxMap<String, double> localUploadProgress = <String, double>{}.obs;
-  final RxSet<String> messagesToAnimate =
-      <String>{}.obs; // Track messages that need animation
+  final RxSet<String> messagesToAnimate = <String>{}.obs;
   final RxString deletingMessageId = ''.obs;
 
   // Recent chats functionality
@@ -77,7 +76,11 @@ class ChatController extends GetxController
     messagesToAnimate.remove(messageId);
   }
 
-  Future<void> uploadAndSendAudio(String chatId, String audioPath, {Duration? duration}) async {
+  Future<void> uploadAndSendAudio(
+    String chatId,
+    String audioPath, {
+    Duration? duration,
+  }) async {
     isSendingMessage.value = true;
     try {
       final messageId = Uuid().v4();
@@ -135,10 +138,12 @@ class ChatController extends GetxController
         'content': audioUrl,
         'message_type': 'audio',
         'recipient_id': '', // Adjust as needed
-        'expires_at': DateTime.now().add(Duration(days: 7)).toIso8601String(), // Adjust
+        'expires_at':
+            DateTime.now().add(Duration(days: 7)).toIso8601String(), // Adjust
         'created_at': DateTime.now().toIso8601String(),
         'is_read': false,
-        'duration_seconds': duration?.inSeconds, // Ensure this line is present and uncommented
+        'duration_seconds':
+            duration?.inSeconds, // Ensure this line is present and uncommented
       };
 
       try {
@@ -159,7 +164,9 @@ class ChatController extends GetxController
         messagesToAnimate.remove(messageId);
         // Attempt to delete the already uploaded audio from storage to prevent orphans
         try {
-          await _supabaseService.client.storage.from('audio_messages').remove([filePathInStorage]);
+          await _supabaseService.client.storage.from('audio_messages').remove([
+            filePathInStorage,
+          ]);
         } catch (storageError) {
           print('Error deleting orphaned audio from storage: $storageError');
           // Optionally, inform the user about the orphaned file or log for manual cleanup
@@ -179,10 +186,12 @@ class ChatController extends GetxController
       // We need "path/to/file.m4a"
       final pathSegments = uri.pathSegments;
       // Ensure there are enough segments and the bucket name is correct
-      if (pathSegments.length > 5 && pathSegments[4] == 'audio_messages') { 
+      if (pathSegments.length > 5 && pathSegments[4] == 'audio_messages') {
         return pathSegments.sublist(5).join('/');
       }
-      print('Error extracting path: URL structure not as expected. Segments: $pathSegments');
+      print(
+        'Error extracting path: URL structure not as expected. Segments: $pathSegments',
+      );
       return null;
     } catch (e) {
       print('Error parsing URL: $e');
@@ -197,21 +206,30 @@ class ChatController extends GetxController
       final String? filePathInStorage = _extractPathFromUrl(audioUrl);
 
       if (filePathInStorage == null || filePathInStorage.isEmpty) {
-        Get.snackbar('Error', 'Could not determine file path for deletion. URL: $audioUrl');
-        print('Error: Could not determine file path for deletion from URL: $audioUrl');
-        return; // No need to set deletingMessageId.value = '' here, finally block will do it.
+        Get.snackbar(
+          'Error',
+          'Could not determine file path for deletion. URL: $audioUrl',
+        );
+        debugPrint(
+          'Error: Could not determine file path for deletion from URL: $audioUrl',
+        );
+        return;
       }
 
       try {
         await _supabaseService.client.storage
             .from('audio_messages') // Bucket name
             .remove([filePathInStorage]);
-        print('Successfully deleted $filePathInStorage from storage.');
+        debugPrint('Successfully deleted $filePathInStorage from storage.');
       } catch (e) {
-        print('Error deleting audio from storage: $e. Path: $filePathInStorage');
-        Get.snackbar('Error', 'Could not delete audio file from storage. Please try again.');
-        // Stop if storage deletion fails to prevent orphaned DB entries
-        return; // No need to set deletingMessageId.value = '' here, finally block will do it.
+        debugPrint(
+          'Error deleting audio from storage: $e. Path: $filePathInStorage',
+        );
+        Get.snackbar(
+          'Error',
+          'Could not delete audio file from storage. Please try again.',
+        );
+        return;
       }
 
       // 2. Delete from Supabase Database
@@ -220,24 +238,27 @@ class ChatController extends GetxController
             .from('messages')
             .delete()
             .eq('message_id', messageId);
-        
+
         print('Successfully deleted message $messageId from database.');
         // Assuming real-time listener handles local list removal.
         // If not, uncomment: messages.removeWhere((m) => m.messageId == messageId);
-
       } catch (e) {
         print('Error deleting message $messageId from database: $e');
-        Get.snackbar('Error', 'Could not delete message details. Please try again.');
+        Get.snackbar(
+          'Error',
+          'Could not delete message details. Please try again.',
+        );
         // If DB deletion fails, the storage file is already deleted (orphaned file).
         // This is not ideal, but the function has attempted its best.
       }
-
     } catch (e) {
       // Catch any other unexpected errors from the try block
       print('An unexpected error occurred in deleteAudioMessage: $e');
-      Get.snackbar('Error', 'An unexpected error occurred while deleting the message.');
-    }
-    finally {
+      Get.snackbar(
+        'Error',
+        'An unexpected error occurred while deleting the message.',
+      );
+    } finally {
       deletingMessageId.value = '';
     }
   }
