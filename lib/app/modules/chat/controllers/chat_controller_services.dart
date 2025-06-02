@@ -2,126 +2,186 @@ import 'package:get/get.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:flutter/material.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
+import 'package:yapster/app/modules/chat/controllers/chat_controller_messages.dart';
+import 'package:yapster/app/modules/chat/modles/message_model.dart';
 
 mixin ChatControllerServices {
   // Core services
   ChatController get _controller => Get.find<ChatController>();
   SupabaseService get _supabaseService => Get.find<SupabaseService>();
 
-  void initializeServices() {
-    // Implementation moved from ChatController
-    // ...existing code...
-  }
-
-  Future<void> initializeEncryptionService() async {
-    // Implementation moved from ChatController
-    // ...existing code...
-  }
-
-  Future<void> initializeDecryptionService() async {
-    // Implementation moved from ChatController
-    // ...existing code...
-  }
 
   String _extractStoragePath(String url) {
-    final uri = Uri.parse(url);
-    final pathSegments = uri.pathSegments;
-    final storagePathIndex = pathSegments.indexOf('chat-media');
-    if (storagePathIndex >= 0) {
-      return pathSegments.sublist(storagePathIndex + 1).join('/');
+    try {
+      // If it's already a simple path (no http), return as is
+      if (!url.startsWith('http')) {
+        return url;
+      }
+      
+      // Parse the URL
+      final uri = Uri.parse(url);
+      final pathSegments = uri.pathSegments;
+      
+      // Find the 'object/public' part
+      final objectIndex = pathSegments.indexOf('object');
+      if (objectIndex != -1 && pathSegments.length > objectIndex + 2) {
+        // Format: /storage/v1/object/public/chat-media/path/to/file
+        return pathSegments.sublist(objectIndex + 2).join('/');
+      }
+      
+      // If we can't parse it, try to extract the last part of the URL
+      final lastSlash = url.lastIndexOf('/');
+      if (lastSlash != -1) {
+        return url.substring(lastSlash + 1);
+      }
+      
+      return url;
+    } catch (e) {
+      debugPrint('Error parsing storage path: $e');
+      return url;
     }
-    return url;
   }
 
   Future<void> deleteMessage(String chatId, String messageId) async {
+    // 1. Find the message index
+    final messageIndex = _controller.messages.indexWhere((m) => m.messageId == messageId);
+    if (messageIndex == -1) return; // Message already removed
+    
+    // 2. Store the message for background processing
+    final messageToDelete = _controller.messages[messageIndex];
+    
+    // 3. Mark as deleting to trigger exit animation
+    _controller.deletingMessageId.value = messageId;
+    
+    // 4. Wait for exit animation to complete (300ms)
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    // 5. Remove from UI
+    _controller.messages.removeAt(messageIndex);
+    _controller.messages.refresh();
+    
+    // 6. Mark as deleted in tracking set to prevent reappearing
+    ChatControllerMessages.markMessageDeleted(messageId);
+    
+    // 7. Process deletion in background
+    _processDeletionInBackground(chatId, messageId, messageToDelete);
+  }
+  
+  Future<void> _processDeletionInBackground(
+    String chatId, 
+    String messageId, 
+    MessageModel messageToDelete
+  ) async {
     try {
       _controller.isSendingMessage.value = true;
       _controller.deletingMessageId.value = messageId;
-
-      // Step 1: Animate deletion
-      await Future.delayed(const Duration(milliseconds: 600));
-
-      // Step 2: Fetch message content before deletion
-      final response =
-          await _supabaseService.client
-              .from('messages')
-              .select('content, message_type')
-              .eq('message_id', messageId)
-              .maybeSingle();
-
-      if (response == null) {
-        debugPrint('Message not found or already deleted');
-        _controller.deletingMessageId.value = '';
-        return;
-      }
-
-      final content = response['content'] as String?;
-      final messageType = response['message_type'] as String?;
-
-      // Step 3: Delete from storage if audio
-      if (messageType == 'audio' || messageType == 'image' && content != null) {
-        final storagePath = _extractStoragePath(content!);
-        debugPrint('Attempting to delete from storage: $storagePath');
-
-        bool deleted = false;
-
+      
+      // 1. Delete from storage if it's an audio/image message
+      if (messageToDelete.messageType == 'audio' || 
+          messageToDelete.messageType == 'image') {
         try {
-          final result = await _supabaseService.client.storage
-              .from('chat-media')
-              .remove([storagePath]);
-          deleted = result.isNotEmpty;
-        } catch (e) {
-          debugPrint('Error in direct deletion: $e');
-        }
-
-        if (!deleted) {
-          try {
-            final chatId = storagePath.split('/').first;
-            final fileName = storagePath.split('/').last;
-            final files = await _supabaseService.client.storage
-                .from('chat-media')
-                .list(path: chatId);
-            final match = files.where((f) => f.name == fileName).firstOrNull;
-            if (match != null) {
-              final result = await _supabaseService.client.storage
-                  .from('chat-media')
-                  .remove(['$chatId/${match.name}']);
-              deleted = result.isNotEmpty;
+          final content = messageToDelete.content;
+          if (content.isNotEmpty) {
+            final storagePath = _extractStoragePath(content);
+            debugPrint('Attempting to delete from storage: $storagePath');
+            
+            // Try direct deletion first
+            bool deleted = await _deleteFromStorage(storagePath);
+            
+            // If direct deletion fails, try fallback method
+            if (!deleted) {
+              deleted = await _tryFallbackStorageDeletion(storagePath);
             }
-          } catch (e) {
-            debugPrint('Error in fallback delete: $e');
+            
+            if (!deleted) {
+              debugPrint('Failed to delete file from storage');
+            }
           }
-        }
-
-        if (!deleted) {
-          debugPrint('Failed to delete file from storage');
+        } catch (e) {
+          debugPrint('Error deleting media: $e');
         }
       }
-
-      // Step 4: Delete from database
-      final deleteResponse =
-          await _supabaseService.client
-              .from('messages')
-              .delete()
-              .eq('message_id', messageId)
-              .select();
-
-      if (deleteResponse.isEmpty) {
-        debugPrint('Message might have already been deleted from DB');
+      
+      // 2. Delete from database
+      try {
+        await _supabaseService.client
+            .from('messages')
+            .delete()
+            .eq('message_id', messageId);
+      } catch (e) {
+        debugPrint('Error deleting from database: $e');
+        // Don't show error to user as the message is already removed from UI
       }
-
-      // Step 5: Finally remove from local state
-      _controller.messages.removeWhere((m) => m.messageId == messageId);
-      _controller.messages.refresh();
-
-      // Clear animation state
-      _controller.deletingMessageId.value = '';
+      
     } catch (e) {
-      debugPrint('Error deleting message: $e');
-      Get.snackbar('Error', 'Failed to delete message');
-      _controller.deletingMessageId.value = '';
+      debugPrint('Error in background deletion: $e');
+      // Don't show error to user as the message is already removed from UI
     } finally {
+      // Clear animation state after a minimum delay to ensure smooth animation
+      await Future.delayed(const Duration(milliseconds: 300));
+      _controller.deletingMessageId.value = '';
       _controller.isSendingMessage.value = false;
+    }
+  }
+  
+  Future<bool> _deleteFromStorage(String storagePath) async {
+    try {
+      // Clean up the path
+      String cleanPath = storagePath;
+      
+      // Remove any leading slashes
+      while (cleanPath.startsWith('/')) {
+        cleanPath = cleanPath.substring(1);
+      }
+      
+      // Remove 'chat-media/' prefix if it exists
+      if (cleanPath.startsWith('chat-media/')) {
+        cleanPath = cleanPath.substring('chat-media/'.length);
+      }
+      
+      debugPrint('Deleting from storage - Clean Path: $cleanPath');
+      
+      // Always use 'chat-media' as the bucket
+      final result = await _supabaseService.client.storage
+          .from('chat-media')
+          .remove([cleanPath]);
+          
+      if (result.isNotEmpty) {
+        debugPrint('Successfully deleted file: $cleanPath');
+        return true;
+      } else {
+        debugPrint('Failed to delete file (empty response): $cleanPath');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('Error in direct storage deletion: $e');
+      return false;
+    }
+  }
+  
+  Future<bool> _tryFallbackStorageDeletion(String storagePath) async {
+    try {
+      final parts = storagePath.split('/');
+      if (parts.length < 2) return false;
+      
+      final chatId = parts[0];
+      final fileName = parts.last;
+      
+      final files = await _supabaseService.client.storage
+          .from('chat-media')
+          .list(path: chatId);
+          
+      final match = files.where((f) => f.name == fileName).firstOrNull;
+      if (match != null) {
+        final result = await _supabaseService.client.storage
+            .from('chat-media')
+            .remove(['$chatId/${match.name}']);
+        return result.isNotEmpty;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error in fallback storage deletion: $e');
+      return false;
     }
   }
 }

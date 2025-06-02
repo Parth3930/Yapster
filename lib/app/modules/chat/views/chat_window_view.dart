@@ -209,7 +209,8 @@ class ChatWindowView extends GetView<ChatController> {
   void _loadMessagesOnce(String chatId) {
     try {
       debugPrint('Initial load of messages for chat: $chatId');
-      controller.loadMessages(chatId).then((_) {
+      // Use preloadMessages for better caching performance
+      controller.preloadMessages(chatId).then((_) {
         // Mark messages as read after loading
         controller.markMessagesAsRead(chatId);
       });

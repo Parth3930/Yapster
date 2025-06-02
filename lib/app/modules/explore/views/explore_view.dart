@@ -6,11 +6,35 @@ import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../controllers/explore_controller.dart';
 
-class ExploreView extends GetView<ExploreController> {
+class ExploreView extends StatefulWidget {
   const ExploreView({super.key});
+  
+  @override
+  State<ExploreView> createState() => _ExploreViewState();
+}
+
+class _ExploreViewState extends State<ExploreView> {
+  // Get the controller
+  final ExploreController controller = Get.find<ExploreController>();
+  
+  @override
+  void initState() {
+    super.initState();
+    // Notify the controller that we're on the explore page
+    controller.onExplorePageOpened();
+  }
+  
+  @override
+  void dispose() {
+    // Notify the controller that we're leaving the explore page
+    controller.onExplorePageClosed();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    // No need to call onExplorePageOpened() here since we do it in initState
+    
     return Scaffold(
       appBar: CustomAppBar(title: "Explore"),
       body: Column(

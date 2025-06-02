@@ -40,6 +40,9 @@ class AccountDataProvider extends GetxController {
   // Cache times for follow data
   final Map<String, DateTime> _followersFetchTime = {};
   final Map<String, DateTime> _followingFetchTime = {};
+  
+  // Cache duration constant - how long to cache follow data
+  static const Duration followCacheDuration = Duration(minutes: 15);
 
   // Helper getters for easy access
   int get postsCount => userPostData['post_count'] as int? ?? 0;
@@ -580,8 +583,8 @@ class AccountDataProvider extends GetxController {
   void _rebuildSearchesMap() {
     _searchesMap.clear();
     for (final search in searches) {
-      if (search['user_id'] != null) {
-        _searchesMap[search['user_id'].toString()] = search;
+      if (search['id'] != null) {
+        _searchesMap[search['id'].toString()] = search;
       }
     }
   }
@@ -633,5 +636,47 @@ class AccountDataProvider extends GetxController {
   /// Process searches data using AccountRepository
   void processSearchesData(dynamic searchesData) {
     _accountRepository.processSearchesData(searchesData);
+  }
+  
+  /// Checks if followers data should be refreshed for a specific user
+  bool shouldRefreshFollowers(String userId) {
+    final lastFetch = _followersFetchTime[userId];
+    final now = DateTime.now();
+    
+    // Refresh if we haven't fetched before, or if cache is expired, or if followers list is empty
+    return lastFetch == null || 
+           now.difference(lastFetch) > SupabaseService.followCacheDuration || 
+           followers.isEmpty;
+  }
+  
+  /// Checks if following data should be refreshed for a specific user
+  bool shouldRefreshFollowing(String userId) {
+    final lastFetch = _followingFetchTime[userId];
+    final now = DateTime.now();
+    
+    // Refresh if we haven't fetched before, or if cache is expired, or if following list is empty
+    return lastFetch == null || 
+           now.difference(lastFetch) > SupabaseService.followCacheDuration || 
+           following.isEmpty;
+  }
+  
+  /// Gets the key used for caching followers data
+  String getFollowersFetchKey(String userId) {
+    return 'followers_$userId';
+  }
+  
+  /// Gets the key used for caching following data
+  String getFollowingFetchKey(String userId) {
+    return 'following_$userId';
+  }
+  
+  /// Updates the followers cache timestamp without fetching new data
+  void markFollowersFetched(String userId) {
+    _followersFetchTime[userId] = DateTime.now();
+  }
+  
+  /// Updates the following cache timestamp without fetching new data
+  void markFollowingFetched(String userId) {
+    _followingFetchTime[userId] = DateTime.now();
   }
 }

@@ -103,6 +103,7 @@ class MessageOptions {
   static Future<void> _deleteMessage(Map<String, dynamic> message) async {
     final controller = Get.find<ChatController>();
     final String messageId = message['message_id']?.toString() ?? '';
+    final String chatId = message['chat_id']?.toString() ?? '';
     final String messageType = message['message_type']?.toString() ?? '';
     final String content = message['content']?.toString() ?? '';
 
@@ -116,6 +117,12 @@ class MessageOptions {
       debugPrint('Message $messageId is already being deleted.');
       return;
     }
+    
+    // Set the deleting message ID immediately to trigger the animation
+    controller.deletingMessageId.value = messageId;
+    
+    // Slight delay to let the animation start
+    await Future.delayed(const Duration(milliseconds: 100));
 
     if (messageType == 'audio') {
       if (content.isEmpty || !Uri.parse(content).isAbsolute) {
@@ -123,27 +130,22 @@ class MessageOptions {
           'Error',
           'Could not delete audio message: Invalid audio URL.',
         );
+        controller.deletingMessageId.value = '';
         return;
       }
-      // The deleteAudioMessage method in ChatController already handles setting deletingMessageId
+      // Use the audio deletion method
       await controller.deleteAudioMessage(messageId, content);
     } else {
-      // For non-audio messages
-      controller.deletingMessageId.value = messageId; // Trigger UI animations
+      // For all other message types, use the central delete method
+      // This ensures proper cleanup and consistent behavior
       try {
-        await controller.supabaseService.client
-            .from('messages')
-            .delete()
-            .eq('message_id', messageId);
+        // Use the controller's delete method which handles both UI and database
+        await controller.deleteMessage(chatId, messageId);
       } catch (e) {
-        debugPrint(
-          'Error deleting non-audio message $messageId from database: $e',
-        );
-        Get.snackbar('Error', 'Could not delete message details.');
-      } finally {
-        if (controller.deletingMessageId.value == messageId) {
-          controller.deletingMessageId.value = '';
-        }
+        debugPrint('Error deleting message $messageId: $e');
+        Get.snackbar('Error', 'Could not delete message.');
+        // Make sure to clear the animation state if there's an error
+        controller.deletingMessageId.value = '';
       }
     }
   }

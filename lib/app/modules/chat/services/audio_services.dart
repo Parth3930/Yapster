@@ -10,7 +10,13 @@ import 'package:permission_handler/permission_handler.dart';
 class AudioService extends GetxService {
   static AudioService get to => Get.find();
 
-  late final record_plugin.AudioRecorder recorder;
+  record_plugin.AudioRecorder? _recorder;
+  record_plugin.AudioRecorder get recorder {
+    if (_recorder == null) {
+      _recorder = record_plugin.AudioRecorder();
+    }
+    return _recorder!;
+  }
 
   // Remove just_audio player since we're using audio_waveforms
   final RxBool isRecording = false.obs;
@@ -25,19 +31,29 @@ class AudioService extends GetxService {
   DateTime? _recordingStartTime; // To calculate duration
 
   Future<AudioService> init() async {
-    recorder = record_plugin.AudioRecorder();
+    // Initialize recorder lazily when first used
+    _recorder = record_plugin.AudioRecorder();
     recorderController = await _setupRecorderController();
     return this;
   }
 
   Future<RecorderController> _setupRecorderController() async {
-    final controller =
-        RecorderController()
-          ..androidEncoder = AndroidEncoder.aac
-          ..androidOutputFormat = AndroidOutputFormat.mpeg4
-          ..iosEncoder = IosEncoder.kAudioFormatMPEG4AAC
-          ..sampleRate = 44100
-          ..bitRate = 128000;
+    // Dispose of any existing controller first
+    await _disposeCurrentController();
+    
+    final controller = RecorderController()
+      ..androidEncoder = AndroidEncoder.aac
+      ..androidOutputFormat = AndroidOutputFormat.mpeg4
+      ..iosEncoder = IosEncoder.kAudioFormatMPEG4AAC
+      ..sampleRate = 44100
+      ..bitRate = 128000
+      ..onRecorderStateChanged.listen((state) {
+        debugPrint('Recorder state changed: $state');
+        if (state == RecorderState.stopped) {
+          isRecording.value = false;
+        }
+      });
+      
     return controller;
   }
 
@@ -50,10 +66,19 @@ class AudioService extends GetxService {
   }
 
   Future<String?> startRecording() async {
-    // First check if we already have permission and recording state
+    // Check if already recording
     if (isRecording.value) {
       debugPrint('Already recording');
       return currentRecordingPath.value;
+    }
+    
+    // Ensure recorder controller is initialized
+    recorderController ??= await _setupRecorderController();
+    
+    // If still null after setup, return
+    if (recorderController == null) {
+      debugPrint('Failed to initialize recorder controller');
+      return null;
     }
 
     var status = await Permission.microphone.status;
@@ -86,7 +111,11 @@ class AudioService extends GetxService {
       await recorderController?.record();
 
       // Start recording with main recorder
-      await recorder.start(
+      if (_recorder == null) {
+        _recorder = record_plugin.AudioRecorder();
+      }
+      
+      await _recorder!.start(
         const record_plugin.RecordConfig(
           encoder: record_plugin.AudioEncoder.aacLc,
           bitRate: 128000,
@@ -116,57 +145,50 @@ class AudioService extends GetxService {
   }
 
   Future<Map<String, dynamic>?> stopRecording() async {
-    // Check if recording and if startTime is available
-    if (!isRecording.value || _recordingStartTime == null) {
-      debugPrint('AudioService: stopRecording called but not recording or startTime is null.');
-      // Ensure state is reset if it's inconsistent
-      if (isRecording.value) {
-        isRecording.value = false;
-        currentRecordingPath.value = '';
-      }
+    if (!isRecording.value) {
+      debugPrint('Not currently recording');
       return null;
     }
 
-    final Duration duration = DateTime.now().difference(_recordingStartTime!);
-
     try {
-      // Stop the waveform refresh timer explicitly. _disposeCurrentController also cancels it,
-      // but doing it here ensures it's stopped before recorder.stop().
+      debugPrint('Stopping recording...');
+      
+      // Stop the waveform timer
       _waveformTimer?.cancel();
-
-      // Stop the visual waveform recorder.
-      // This should ideally not throw if called multiple times or on an uninitialized controller,
-      // but defensive coding with null check is good.
-      if (recorderController != null && recorderController!.isRecording) {
-         await recorderController?.stop();
-      }
-
-      // Stop the main audio recorder. This is what writes the file.
-      final String? path = await recorder.stop();
+      _waveformTimer = null;
       
-      // Path from recorder.stop() is the source of truth.
-      // currentRecordingPath.value was set at start, can be used for reference or cleared.
-
-      if (path == null || path.isEmpty) {
-        throw Exception('Recorder returned null or empty path.');
-      }
-      if (!File(path).existsSync()) {
-        throw Exception('Recorded file not found at path: $path');
+      final path = currentRecordingPath.value;
+      final duration = DateTime.now().difference(_recordingStartTime!);
+      
+      // Stop both recorders
+      await recorderController?.stop();
+      try {
+        // Check if the recorder is not null and is currently recording
+        if (_recorder != null && await _recorder!.isRecording()) {
+          await _recorder!.stop();
+        }
+      } catch (e) {
+        debugPrint('Error checking recorder state: $e');
       }
       
-      // Successfully stopped and file exists.
-      // isRecording and currentRecordingPath will be reset in finally.
-      return {'path': path, 'duration': duration};
+      // Update state
+      isRecording.value = false;
+      _recordingStartTime = null;
+      
+      debugPrint('Recording stopped. Path: $path, Duration: ${duration.inSeconds} seconds');
+      
+      if (path.isNotEmpty) {
+        return {
+          'path': path,
+          'duration': duration,
+        };
+      }
+      return null;
     } catch (e) {
       debugPrint('Error stopping recording: $e');
-      Get.snackbar('Error', 'Failed to stop recording: ${e.toString()}');
-      return null;
-    } finally {
-      // Reset state and dispose resources
+      isRecording.value = false;
       _recordingStartTime = null;
-      isRecording.value = false; // Ensure recording state is reset
-      currentRecordingPath.value = ''; // Clear the stored path
-      await _disposeCurrentController(); // Clean up waveform controller and its timer
+      return null;
     }
   }
 
@@ -224,10 +246,15 @@ class AudioService extends GetxService {
 
   @override
   void onClose() {
-    _waveformTimer?.cancel(); // Cancel timer
-    recorderController?.dispose(); // Dispose controller
-    recorder.dispose(); // Dispose main recorder
-    _recordingStartTime = null; // Clear start time
+    _waveformTimer?.cancel();
+    _waveformTimer = null;
+    _disposeCurrentController();
+    try {
+      _recorder?.dispose();
+    } catch (e) {
+      debugPrint('Error disposing recorder: $e');
+    }
+    _recorder = null;
     super.onClose();
   }
 }

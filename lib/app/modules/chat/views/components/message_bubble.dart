@@ -5,6 +5,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/animations/message_animations.dart';
+import 'package:yapster/app/modules/chat/views/components/audio_message.dart';
 import '../../controllers/chat_controller.dart';
 import '../message_options.dart';
 
@@ -54,6 +55,7 @@ class _MessageBubbleState extends State<MessageBubble>
   late final bool _isEdited;
   late final bool _isRead;
   late final bool _shouldShowStatus;
+  late final bool _isAudioMessage;
   late final ImageProvider? _avatarImage;
   late final bool _hasAnyAvatar;
   late final String _messageId;
@@ -85,6 +87,8 @@ class _MessageBubbleState extends State<MessageBubble>
                 _messageContent.contains('.jpeg') ||
                 _messageContent.contains('.png') ||
                 _messageContent.contains('.gif')));
+
+    _isAudioMessage = widget.message['message_type'] == 'audio'; // New property initialization
 
     if (_isImageMessage && !_isPlaceholder) {
       if (_messageContent.startsWith('image:')) {
@@ -403,9 +407,11 @@ class _MessageBubbleState extends State<MessageBubble>
                 _buildUploadingImageContent(_uploadId, _chatController)
               else if (_isImageMessage && _imageUrl != null)
                 _buildImageContent(_imageUrl)
+              else if (_isAudioMessage)
+                _buildAudioMessage()
               else
                 Text(
-                  widget.message['content'] ?? '',
+                  _messageContent,
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
               if (_isEdited)
@@ -446,6 +452,22 @@ class _MessageBubbleState extends State<MessageBubble>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAudioMessage() {
+    final audioUrl = _messageContent;
+    final messageId = _messageId;
+    final isMe = widget.isMe;
+    final duration = widget.message['duration_seconds'] != null
+        ? Duration(seconds: widget.message['duration_seconds'] as int)
+        : null;
+
+    return AudioMessage(
+      url: audioUrl,
+      messageId: messageId,
+      isMe: isMe,
+      duration: duration,
     );
   }
 
@@ -491,15 +513,12 @@ class _MessageBubbleState extends State<MessageBubble>
           child: CachedNetworkImage(
             imageUrl: imageUrl ?? '',
             fit: BoxFit.cover,
-            placeholder:
-                (context, url) => Shimmer.fromColors(
-                  baseColor: Colors.grey[900]!,
-                  highlightColor: Colors.grey[800]!,
-                  child: Container(color: Colors.grey[900]),
-                ),
-            errorWidget:
-                (context, url, error) =>
-                    const Icon(Icons.error, color: Colors.red),
+            placeholder: (context, url) => Shimmer.fromColors(
+              baseColor: Colors.grey[900]!,
+              highlightColor: Colors.grey[800]!,
+              child: Container(color: Colors.grey[900]),
+            ),
+            errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.red),
           ),
         ),
       ),

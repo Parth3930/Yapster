@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yapster/app/core/utils/encryption_service.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/chat/modles/message_model.dart';
@@ -16,6 +17,39 @@ mixin ChatControllerMessages {
   // Chat controller service initialize it
   ChatController get _chatControler => Get.find<ChatController>();
   RealtimeChannel? _messageSubscription;
+  
+  // Caching variables
+  final Map<String, DateTime> _chatsFetchTime = {};
+  final Map<String, DateTime> _messagesFetchTime = {};
+  final Map<String, List<MessageModel>> _messagesCache = {};
+  static const Duration chatCacheDuration = Duration(minutes: 5);
+  static const Duration messageCacheDuration = Duration(minutes: 10);
+  
+  // Store whether initial data has loaded
+  final RxBool _chatsInitiallyLoaded = false.obs;
+  
+  // Static flag to prevent repeated preload calls
+  static bool _isPreloadingChats = false;
+  
+  // Set to track deleted message IDs to prevent them from reappearing
+  static final Set<String> _deletedMessageIds = <String>{};
+  
+  // Method to mark a message as deleted
+  void markMessageAsDeleted(String messageId) {
+    _deletedMessageIds.add(messageId);
+    debugPrint('Marked message $messageId as deleted');
+  }
+  
+  // Static method that can be called from other classes
+  static void markMessageDeleted(String messageId) {
+    _deletedMessageIds.add(messageId);
+    debugPrint('Marked message $messageId as permanently deleted');
+  }
+  
+  // Check if a message has been deleted
+  static bool isMessageDeleted(String messageId) {
+    return _deletedMessageIds.contains(messageId);
+  }
 
   Future<void> syncMessagesWithDatabase(String chatId) async {
     final supabase = Get.find<SupabaseService>().client;
@@ -42,8 +76,35 @@ mixin ChatControllerMessages {
     }
   }
 
+  /// Checks if messages need to be refreshed based on cache age
+  bool shouldRefreshMessages(String chatId) {
+    final lastFetch = _messagesFetchTime[chatId];
+    final now = DateTime.now();
+    
+    // Refresh if we haven't fetched before, or if cache is expired
+    return lastFetch == null || 
+           now.difference(lastFetch) > messageCacheDuration;
+  }
+  
+  /// Updates the messages cache timestamp
+  void markMessagesFetched(String chatId) {
+    _messagesFetchTime[chatId] = DateTime.now();
+    debugPrint('Marked messages for chat $chatId as fetched - cache updated');
+  }
+  
+  /// Preload messages for a specific chat in the background
+  Future<void> preloadMessages(String chatId) async {
+    // Check if we need to refresh from DB
+    if (shouldRefreshMessages(chatId)) {
+      debugPrint('Preloading messages for chat $chatId in background');
+      await loadMessages(chatId, forceRefresh: false);
+    } else {
+      debugPrint('Using cached messages for chat $chatId');
+    }
+  }
+  
   // Loads messages for a conversation
-  Future<void> loadMessages(String chatId) async {
+  Future<void> loadMessages(String chatId, {bool forceRefresh = false}) async {
     final supabase = Get.find<SupabaseService>().client;
     final nowIso = DateTime.now().toUtc().toIso8601String();
 
@@ -52,8 +113,22 @@ mixin ChatControllerMessages {
       // Cancel any previous real-time message subscription
       await _messageSubscription?.unsubscribe();
       _messageSubscription = null;
+      
+      // Check if we have cached messages and they're still fresh
+      if (!forceRefresh && !shouldRefreshMessages(chatId) && 
+          _messagesCache.containsKey(chatId) && 
+          _messagesCache[chatId]!.isNotEmpty) {
+        debugPrint('Using cached messages for chat $chatId');
+        _chatControler.messages.clear();
+        _chatControler.messages.assignAll(_messagesCache[chatId]!);
+        
+        // Still set up real-time subscription even when using cache
+        _setupRealtimeSubscription(chatId);
+        return;
+      }
 
-      // 1. Fetch existing (non-expired) messages
+      // If cache is stale or empty, fetch from database
+      debugPrint('Fetching messages from database for chat $chatId');
       final response = await supabase
           .from('messages')
           .select()
@@ -61,93 +136,58 @@ mixin ChatControllerMessages {
           .gt('expires_at', nowIso)
           .order('created_at', ascending: true);
 
+      // Initialize encryption service for decryption
+      final encryptionService = Get.find<EncryptionService>();
+      if (!encryptionService.isInitialized.value) {
+        await encryptionService.initialize();
+        debugPrint('Encryption service initialized for message loading');
+      }
+      
       _chatControler.messages.clear();
       if (response.isNotEmpty) {
-        final loadedMessages =
-            response
-                .map<MessageModel>((msg) => MessageModel.fromJson(msg))
-                .toList();
+        debugPrint('Fetched ${response.length} potentially encrypted messages from database');
+        
+        // Process and decrypt messages
+        final List<MessageModel> loadedMessages = [];
+        
+        for (var msg in response) {
+          // Check if message contains encrypted content
+          if (msg['content'] != null) {
+            try {
+              // Attempt to decrypt the message content
+              final decryptedContent = await encryptionService.decryptMessageForChat(
+                msg['content'].toString(),
+                chatId,
+              );
+              
+              // Replace encrypted content with decrypted content
+              msg['content'] = decryptedContent;
+              debugPrint('Successfully decrypted message: ${msg['message_id']}');
+            } catch (e) {
+              debugPrint('Could not decrypt message ${msg['message_id']}: $e');
+              // If decryption fails, leave content as is (might be plaintext or old format)
+            }
+          }
+          
+          // Create message model with decrypted content
+          loadedMessages.add(MessageModel.fromJson(msg));
+        }
 
+        // Update cache with decrypted messages
+        _messagesCache[chatId] = loadedMessages;
+        markMessagesFetched(chatId);
+        
         _chatControler.messages.assignAll(loadedMessages);
+        debugPrint('Loaded and decrypted ${loadedMessages.length} messages from database');
+      } else {
+        // Even if no messages, mark as fetched to avoid repeated calls
+        _messagesCache[chatId] = [];
+        markMessagesFetched(chatId);
+        debugPrint('No messages found in database for chat $chatId');
       }
 
-      // 2. Set up real-time subscription for INSERT, UPDATE, DELETE
-      _messageSubscription =
-          supabase
-              .channel('public:messages')
-              .onPostgresChanges(
-                event: PostgresChangeEvent.insert,
-                schema: 'public',
-                table: 'messages',
-                filter: PostgresChangeFilter(
-                  type: PostgresChangeFilterType.eq,
-                  column: 'chat_id',
-                  value: chatId,
-                ),
-                callback: (payload) {
-                  final msgMap = payload.newRecord;
-                  final message = MessageModel.fromJson(msgMap);
-                  final now = DateTime.now().toUtc();
-
-                  if (message.expiresAt.isAfter(now)) {
-                    if (!_chatControler.messages.any(
-                      (m) => m.messageId == message.messageId,
-                    )) {
-                      _chatControler.messages.add(message);
-                      _chatControler.messagesToAnimate.add(message.messageId);
-                    }
-                  }
-                  _cleanupExpiredMessages();
-                },
-              )
-              .onPostgresChanges(
-                event: PostgresChangeEvent.update,
-                schema: 'public',
-                table: 'messages',
-                filter: PostgresChangeFilter(
-                  type: PostgresChangeFilterType.eq,
-                  column: 'chat_id',
-                  value: chatId,
-                ),
-                callback: (payload) {
-                  final msgMap = payload.newRecord;
-                  final message = MessageModel.fromJson(msgMap);
-                  final index = _chatControler.messages.indexWhere(
-                    (m) => m.messageId == message.messageId,
-                  );
-                  if (index != -1) {
-                    _chatControler.messages[index] = message;
-                  }
-                  _cleanupExpiredMessages();
-                },
-              )
-              .onPostgresChanges(
-                event: PostgresChangeEvent.delete,
-                schema: 'public',
-                table: 'messages',
-                filter: PostgresChangeFilter(
-                  type: PostgresChangeFilterType.eq,
-                  column: 'chat_id',
-                  value: chatId,
-                ),
-                callback: (payload) {
-                  debugPrint('DELETE event received: ${payload.oldRecord}');
-                  final oldMap = payload.oldRecord;
-                  final messageId = oldMap['message_id'];
-                  debugPrint('Removing message with ID: $messageId');
-
-                  final initialLength = _chatControler.messages.length;
-                  _chatControler.messages.removeWhere(
-                    (m) => m.messageId == messageId,
-                  );
-                  final finalLength = _chatControler.messages.length;
-
-                  debugPrint('Messages count: $initialLength -> $finalLength');
-                  _chatControler.messagesToAnimate.remove(messageId);
-                  _cleanupExpiredMessages();
-                },
-              )
-              .subscribe();
+      // Setup real-time subscription for this chat
+      _setupRealtimeSubscription(chatId);
 
       debugPrint(
         'Messages loaded successfully ${_chatControler.messages.length}',
@@ -155,6 +195,193 @@ mixin ChatControllerMessages {
     } catch (e) {
       debugPrint('Error loading messages: $e');
     }
+  }
+  
+  // Sets up real-time subscription for a chat channel
+  void _setupRealtimeSubscription(String chatId) async {
+    final supabase = Get.find<SupabaseService>().client;
+    
+    // First unsubscribe from any existing subscription
+    try {
+      await _messageSubscription?.unsubscribe();
+      debugPrint('Unsubscribed from previous chat channel');
+    } catch (e) {
+      debugPrint('Error unsubscribing from previous channel: $e');
+    }
+    
+    debugPrint('Setting up real-time subscription for chat $chatId');
+    
+    _messageSubscription = supabase
+      .channel('public:messages:$chatId') // Make channel name unique per chat
+      .onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'chat_id',
+          value: chatId,
+        ),
+        callback: (payload) async {
+          debugPrint('Received new message via real-time: ${payload.newRecord['message_id']}');
+          final msgMap = Map<String, dynamic>.from(payload.newRecord);
+          
+          // Decrypt the message content before creating the MessageModel
+          if (msgMap['content'] != null) {
+            try {
+              // Get encryption service
+              final encryptionService = Get.find<EncryptionService>();
+              if (!encryptionService.isInitialized.value) {
+                await encryptionService.initialize();
+              }
+              
+              // Decrypt the message content
+              final decryptedContent = await encryptionService.decryptMessageForChat(
+                msgMap['content'].toString(),
+                chatId,
+              );
+              
+              // Replace encrypted content with decrypted content
+              msgMap['content'] = decryptedContent;
+              debugPrint('Successfully decrypted real-time message content');
+            } catch (e) {
+              debugPrint('Could not decrypt real-time message: $e');
+              // If decryption fails, leave content as is (might be plaintext or old format)
+            }
+          }
+          
+          // Now create the message model with decrypted content
+          final message = MessageModel.fromJson(msgMap);
+          final now = DateTime.now().toUtc();
+
+          // Check if message is not deleted and not expired
+          if (message.expiresAt.isAfter(now) && !_deletedMessageIds.contains(message.messageId)) {
+            if (!_chatControler.messages.any(
+              (m) => m.messageId == message.messageId,
+            )) {
+              debugPrint('Adding new message ${message.messageId} from real-time event');
+              // Add to cache
+              if (_messagesCache.containsKey(chatId)) {
+                _messagesCache[chatId]!.add(message);
+              }
+              
+              // Update UI
+              _chatControler.messages.add(message);
+              _chatControler.messagesToAnimate.add(message.messageId);
+              
+              // Force UI refresh
+              _chatControler.messages.refresh();
+              
+              // Also refresh recent chats to show latest message
+              _chatsFetchTime.clear(); // Force refresh of recent chats
+              preloadRecentChats();
+            }
+          } else if (_deletedMessageIds.contains(message.messageId)) {
+            debugPrint('Ignored deleted message ${message.messageId} from real-time event');
+          }
+          _cleanupExpiredMessages();
+        },
+      )
+            .onPostgresChanges(
+              event: PostgresChangeEvent.update,
+              schema: 'public',
+              table: 'messages',
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'chat_id',
+                value: chatId,
+              ),
+              callback: (payload) async {
+                final msgMap = Map<String, dynamic>.from(payload.newRecord);
+                
+                // Decrypt the message content before creating the MessageModel
+                if (msgMap['content'] != null) {
+                  try {
+                    // Get encryption service
+                    final encryptionService = Get.find<EncryptionService>();
+                    if (!encryptionService.isInitialized.value) {
+                      await encryptionService.initialize();
+                    }
+                    
+                    // Decrypt the message content
+                    final decryptedContent = await encryptionService.decryptMessageForChat(
+                      msgMap['content'].toString(),
+                      chatId,
+                    );
+                    
+                    // Replace encrypted content with decrypted content
+                    msgMap['content'] = decryptedContent;
+                    debugPrint('Successfully decrypted updated message content');
+                  } catch (e) {
+                    debugPrint('Could not decrypt updated message: $e');
+                    // If decryption fails, leave content as is (might be plaintext or old format)
+                  }
+                }
+                
+                // Create the message model with decrypted content
+                final message = MessageModel.fromJson(msgMap);
+                final index = _chatControler.messages.indexWhere(
+                  (m) => m.messageId == message.messageId,
+                );
+                if (index != -1) {
+                  // Update cache
+                  if (_messagesCache.containsKey(chatId)) {
+                    final cacheIndex = _messagesCache[chatId]!.indexWhere(
+                      (m) => m.messageId == message.messageId
+                    );
+                    if (cacheIndex != -1) {
+                      _messagesCache[chatId]![cacheIndex] = message;
+                    }
+                  }
+                  
+                  // Update UI
+                  _chatControler.messages[index] = message;
+                }
+                _cleanupExpiredMessages();
+              },
+            )
+            .onPostgresChanges(
+              event: PostgresChangeEvent.delete,
+              schema: 'public',
+              table: 'messages',
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'chat_id',
+                value: chatId,
+              ),
+              callback: (payload) {
+                debugPrint('DELETE event received: ${payload.oldRecord}');
+                final oldMap = payload.oldRecord;
+                final messageId = oldMap['message_id'];
+                debugPrint('Removing message with ID: $messageId');
+                
+                // Add to permanently deleted messages set
+                _deletedMessageIds.add(messageId);
+                debugPrint('Added message $messageId to deleted messages set');
+
+                // Update cache
+                if (_messagesCache.containsKey(chatId)) {
+                  _messagesCache[chatId]!.removeWhere(
+                    (m) => m.messageId == messageId
+                  );
+                }
+                
+                // Update UI
+                final initialLength = _chatControler.messages.length;
+                _chatControler.messages.removeWhere(
+                  (m) => m.messageId == messageId,
+                );
+                final finalLength = _chatControler.messages.length;
+
+                debugPrint('Messages count: $initialLength -> $finalLength');
+                _chatControler.messagesToAnimate.remove(messageId);
+                _cleanupExpiredMessages();
+                
+                // Force UI refresh
+                _chatControler.messages.refresh();
+              },
+            )
+            .subscribe();
   }
 
   void _cleanupExpiredMessages() {
@@ -166,7 +393,72 @@ mixin ChatControllerMessages {
     _chatControler.messages.refresh(); // ✅ Correct usage
   }
 
-  Future<void> fetchUsersRecentChats() async {
+  /// Checks if chats need to be refreshed based on cache age
+  bool shouldRefreshChats() {
+    final userId = _supabaseService.client.auth.currentUser?.id;
+    if (userId == null) return true;
+    
+    final lastFetch = _chatsFetchTime[userId];
+    final now = DateTime.now();
+    
+    // Refresh if we haven't fetched before, or if cache is expired
+    return lastFetch == null || 
+           now.difference(lastFetch) > chatCacheDuration;
+  }
+  
+  /// Updates the chats cache timestamp
+  void markChatsFetched() {
+    final userId = _supabaseService.client.auth.currentUser?.id;
+    if (userId != null) {
+      _chatsFetchTime[userId] = DateTime.now();
+      _chatsInitiallyLoaded.value = true;
+      debugPrint('Marked chats as fetched - cache updated');
+    }
+  }
+
+  /// Preload recent chats in the background
+  Future<void> preloadRecentChats() async {
+    // Use static flag to prevent multiple simultaneous preloads
+    if (_isPreloadingChats) {
+      debugPrint('Already preloading chats, skipping redundant call');
+      return;
+    }
+    
+    // If we have cached chats, use them immediately while refreshing in background
+    if (_chatsInitiallyLoaded.value && _chatControler.recentChats.isNotEmpty) {
+      debugPrint('Using cached recent chats while refreshing in background');
+      // Start background refresh without blocking UI
+      _refreshChatsInBackground();
+      return;
+    }
+    
+    // Initial load or empty cache, must wait for completion
+    try {
+      _isPreloadingChats = true;
+      debugPrint('Preloading recent chats (initial load)');
+      await fetchUsersRecentChats(forceRefresh: true);
+      // Mark as initially loaded after successful fetch
+      _chatsInitiallyLoaded.value = true;
+    } finally {
+      _isPreloadingChats = false;
+    }
+  }
+  
+  /// Refresh chats in background without blocking UI
+  Future<void> _refreshChatsInBackground() async {
+    // Don't await this, let it run in background
+    Future(() async {
+      if (_isPreloadingChats) return;
+      try {
+        _isPreloadingChats = true;
+        await fetchUsersRecentChats(forceRefresh: shouldRefreshChats());
+      } finally {
+        _isPreloadingChats = false;
+      }
+    });
+  }
+  
+  Future<void> fetchUsersRecentChats({bool forceRefresh = false}) async {
     final userId = _supabaseService.client.auth.currentUser?.id;
     _chatControler.isLoadingChats.value = true;
 
@@ -175,7 +467,15 @@ mixin ChatControllerMessages {
       _chatControler.isLoadingChats.value = false;
       return;
     }
+    
+    // Use cached data if available and fresh, unless force refresh is requested
+    if (!forceRefresh && !shouldRefreshChats() && _chatControler.recentChats.isNotEmpty) {
+      debugPrint('Using cached recent chats');
+      _chatControler.isLoadingChats.value = false;
+      return;
+    }
 
+    debugPrint('Fetching recent chats from database');
     try {
       final List<dynamic> chats = await _supabaseService.client.rpc(
         'fetch_users_recent_chats',
@@ -185,18 +485,65 @@ mixin ChatControllerMessages {
       if (chats.isEmpty) {
         debugPrint('No recent chats found.');
         _chatControler.recentChats.clear();
+        markChatsFetched(); // Mark as fetched even if empty
         return;
       }
 
-      // Log and process each chat
-      for (final chat in chats) {
-        debugPrint('Chat: $chat');
+      // Get encryption service for decryption
+      final encryptionService = Get.find<EncryptionService>();
+      if (!encryptionService.isInitialized.value) {
+        await encryptionService.initialize();
+        debugPrint('Encryption service initialized for recent chats');
       }
+      
+      // Process each chat to ensure it has a valid last_message property
+      final processedChats = await Future.wait(chats.map((chat) async {
+        // Ensure each chat has a proper last_message
+        if (chat is Map<String, dynamic>) {
+          // Only set 'No new messages' for actual null values, not for empty strings
+          if (chat['last_message'] == null) {
+            chat['last_message'] = 'No new messages';
+          } else if (chat['last_message'].toString().trim().isEmpty) {
+            // If message is just whitespace, use a space to avoid 'No new messages'
+            // but still show an empty bubble
+            chat['last_message'] = ' ';
+          } else {
+            // Try to decrypt the last message if it's encrypted
+            try {
+              final chatId = chat['chat_id']?.toString() ?? '';
+              if (chatId.isNotEmpty) {
+                final encryptedLastMessage = chat['last_message'].toString();
+                final decryptedLastMessage = await encryptionService.decryptMessageForChat(
+                  encryptedLastMessage,
+                  chatId,
+                );
+                chat['last_message'] = decryptedLastMessage;
+                debugPrint('Successfully decrypted last message for chat: $chatId');
+              }
+            } catch (e) {
+              debugPrint('Could not decrypt last message: $e');
+              // If decryption fails, leave content as is (might be plaintext or old format)
+            }
+          }
+          
+          // Also ensure other required fields are present
+          if (chat['username'] == null) {
+            chat['username'] = 'User';
+          }
+          
+          // Ensure profile picture is set
+          if (chat['profile_picture'] == null || chat['profile_picture'].toString().isEmpty) {
+            chat['profile_picture'] = '';
+          }
+        }
+        return chat;
+      }));
 
-      _chatControler.recentChats.assignAll(chats.cast<Map<String, dynamic>>());
+      _chatControler.recentChats.assignAll(processedChats.cast<Map<String, dynamic>>());
+      markChatsFetched(); // Update cache timestamp
 
       debugPrint(
-        'Recent chats fetched successfully: ${_chatControler.recentChats}',
+        'Recent chats fetched successfully: ${_chatControler.recentChats.length} chats',
       );
     } catch (e) {
       debugPrint('Error fetching chats: $e');
@@ -207,11 +554,55 @@ mixin ChatControllerMessages {
 
   // Sends a chat message
   Future<void> sendChatMessage(String chatId, String content) async {
-    await Get.find<ChatMessageService>().sendMessage(
-      chatId,
-      content,
-      _chatControler.messageController,
-    );
+    try {
+      // Get or initialize the chat service
+      final chatService = Get.find<ChatMessageService>();
+      
+      // Ensure service is initialized
+      if (!chatService.isInitialized.value) {
+        await chatService.initialize(
+          messagesList: _chatControler.messages,
+          chatsList: _chatControler.recentChats,
+          uploadProgress: _chatControler.localUploadProgress,
+        );
+      }
+
+      // Get recipient ID from the chat (using existing data or fetching from db)
+      String recipientId = '';
+      
+      // Try to find it in the recent chats data first
+      final chatIndex = _chatControler.recentChats.indexWhere((chat) => chat['chat_id'] == chatId);
+      if (chatIndex != -1) {
+        // Get recipient from the existing chat data
+        final chat = _chatControler.recentChats[chatIndex];
+        final String currentUserId = _supabaseService.currentUser.value?.id ?? '';
+        recipientId = chat['user_two_id'] == currentUserId ? chat['user_one_id'] : chat['user_two_id'];
+      } else {
+        // If not in cache, fetch from database
+        final response = await _supabaseService.client
+            .from('chats')
+            .select()
+            .eq('chat_id', chatId)
+            .single();
+        
+        final String currentUserId = _supabaseService.currentUser.value?.id ?? '';
+        recipientId = response['user_two_id'] == currentUserId ? response['user_one_id'] : response['user_two_id'];
+      }
+      
+      // Set default expiration time (7 days from now)
+      final DateTime expiresAt = DateTime.now().toUtc().add(const Duration(days: 7));
+      
+      await chatService.sendMessage(
+        chatId: chatId,
+        recipientId: recipientId,
+        content: content,
+        messageType: 'text',
+        expiresAt: expiresAt,
+      );
+    } catch (e) {
+      debugPrint('Error sending message: $e');
+      rethrow;
+    }
   }
 
   // Picks and sends an image
@@ -278,7 +669,80 @@ mixin ChatControllerMessages {
 
   // Uploads and sends an image
   Future<void> uploadAndSendImage(String chatId, XFile image) async {
-    await Get.find<ChatMessageService>().uploadAndSendImage(chatId, image);
+    try {
+      // Get recipient ID from the chat (using existing data or fetching from db)
+      String recipientId = '';
+      
+      // Try to find it in the recent chats data first
+      final chatIndex = _chatControler.recentChats.indexWhere((chat) => chat['chat_id'] == chatId);
+      if (chatIndex != -1) {
+        // Get recipient from the existing chat data
+        final chat = _chatControler.recentChats[chatIndex];
+        final String currentUserId = _supabaseService.currentUser.value?.id ?? '';
+        recipientId = chat['user_two_id'] == currentUserId ? chat['user_one_id'] : chat['user_two_id'];
+      } else {
+        // If not in cache, fetch from database
+        final response = await _supabaseService.client
+            .from('chats')
+            .select()
+            .eq('chat_id', chatId)
+            .single();
+        
+        final String currentUserId = _supabaseService.currentUser.value?.id ?? '';
+        recipientId = response['user_two_id'] == currentUserId ? response['user_one_id'] : response['user_two_id'];
+      }
+      
+      // Set default expiration time (7 days from now)
+      final DateTime expiresAt = DateTime.now().toUtc().add(const Duration(days: 7));
+      
+      // Call the service with all required parameters
+      await Get.find<ChatMessageService>().uploadAndSendImage(
+        chatId: chatId,
+        recipientId: recipientId,
+        image: image,
+        expiresAt: expiresAt,
+      );
+    } catch (e) {
+      debugPrint('Error uploading and sending image: $e');
+    }
+  }
+  
+  // Force refresh all messages and caches to ensure proper decryption
+  Future<void> forceRefreshAllMessages(String chatId) async {
+    try {
+      // Clear all caches
+      _messagesCache.clear();
+      _messagesFetchTime.clear();
+      _chatsFetchTime.clear();
+      _deletedMessageIds.clear(); // Also clear deleted message tracking
+      
+      // Clear current messages
+      _chatControler.messages.clear();
+      _chatControler.messagesToAnimate.clear();
+      
+      debugPrint('Cleared all caches, loading fresh messages');
+      
+      // Either use the service method OR the controller method, not both
+      // The service has better encryption handling, so we'll use that
+      await Get.find<ChatMessageService>().forceRefreshMessages(chatId);
+      
+      // Update the cache timestamp to prevent immediate re-fetch
+      markMessagesFetched(chatId);
+      
+      // Update UI
+      _chatControler.messages.refresh();
+      
+      debugPrint('Successfully refreshed all messages for chat: $chatId');
+    } catch (e) {
+      debugPrint('Error refreshing messages: $e');
+      // Fall back to the controller's method if service method fails
+      await loadMessages(chatId, forceRefresh: true);
+    }
+    
+    // Also refresh recent chats
+    await preloadRecentChats();
+    
+    debugPrint('Forced complete refresh of all messages and caches');
   }
 
   // Marks all messages as read in a chat

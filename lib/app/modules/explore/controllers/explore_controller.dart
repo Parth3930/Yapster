@@ -46,18 +46,48 @@ class ExploreController extends GetxController {
   // Cache for user profiles
   final _profileCache = <String, Map<String, dynamic>>{}.obs;
   final _profileLastFetch = <String, DateTime>{};
+  
+  // Cache for follow state to reduce database calls
+  final _followStateCache = <String, bool>{}.obs;
+  final _followStateFetchTime = <String, DateTime>{};
+  static const Duration followStateCacheDuration = Duration(minutes: 15);
 
+  // Cache for recent searches with timestamp for expiration checking
+  final Map<String, DateTime> _recentSearchesFetchTime = <String, DateTime>{};
+  static const Duration searchCacheDuration = Duration(minutes: 30);
+  
+  // Track if we're on the explore page to prevent unnecessary loading elsewhere
+  final RxBool _isOnExplorePage = false.obs;
+  
   @override
   void onInit() {
     super.onInit();
-    // Debug: Clear search cache to start fresh
-    _storageService.remove(searchCacheKey);
-
-    loadRecentSearches();
-    loadCachedSearchResults();
-
     // Add listener to search text field
     searchController.addListener(_onSearchChanged);
+  }
+  
+  // Call this when explore page is opened
+  void onExplorePageOpened() {
+    _isOnExplorePage.value = true;
+    // Only load searches when we're actually on the explore page
+    if (_shouldRefreshRecentSearches()) {
+      loadRecentSearches();
+      debugPrint('Loading recent searches from database (cache expired)');
+    } else {
+      debugPrint('Using cached recent searches');
+    }
+  }
+  
+  // Call this when leaving the explore page
+  void onExplorePageClosed() {
+    _isOnExplorePage.value = false;
+  }
+  
+  // Check if we need to refresh searches based on cache time
+  bool _shouldRefreshRecentSearches() {
+    final lastFetch = _recentSearchesFetchTime['recent_searches'];
+    if (lastFetch == null) return true;
+    return DateTime.now().difference(lastFetch) > searchCacheDuration;
   }
 
   @override
@@ -173,13 +203,23 @@ class ExploreController extends GetxController {
   }
 
   void loadRecentSearches() {
+    // Only load if we're actually on the explore page
+    if (!_isOnExplorePage.value) {
+      debugPrint('Skipping loadRecentSearches since not on explore page');
+      return;
+    }
+    
     try {
-      // Force reload from database
+      // Load from database
       _accountFunctions.loadSearches().then((_) {
         // After loading from database, update the local list
         recentSearches.value = List<Map<String, dynamic>>.from(
           _accountDataProvider.searches,
         );
+        
+        // Update the timestamp to mark when data was last fetched
+        _recentSearchesFetchTime['recent_searches'] = DateTime.now();
+        
         debugPrint(
           'Loaded ${recentSearches.length} recent searches from database',
         );
@@ -420,7 +460,7 @@ class ExploreController extends GetxController {
       }
 
       userPosts.value = allPosts;
-      debugPrint('Loaded ${allPosts.length} posts for user: ${userId}');
+      debugPrint('Loaded ${allPosts.length} posts for user: $userId');
     } catch (e) {
       debugPrint('Error loading user posts: $e');
       userPosts.value = [];
@@ -507,11 +547,33 @@ class ExploreController extends GetxController {
     }
   }
 
+  /// Checks if follow state should be refreshed for a user based on cache age
+  bool shouldRefreshFollowState(String userId) {
+    final lastFetch = _followStateFetchTime[userId];
+    final now = DateTime.now();
+    
+    // Refresh if we haven't fetched before, or if cache is expired
+    return lastFetch == null || 
+           now.difference(lastFetch) > followStateCacheDuration;
+  }
+  
+  /// Updates the follow state cache timestamp for a user
+  void markFollowStateRefreshed(String userId) {
+    _followStateFetchTime[userId] = DateTime.now();
+    debugPrint('Marked follow state as refreshed for user: $userId');
+  }
+  
   // Refresh the follow state for a specific user - can be called when a view is built to ensure accurate UI
   Future<bool> refreshFollowState(String userId) async {
     try {
       final currentUserId = _supabaseService.currentUser.value?.id;
       if (currentUserId == null || userId.isEmpty) return false;
+
+      // If we have a cached follow state and it's not expired, use that
+      if (!shouldRefreshFollowState(userId) && _followStateCache.containsKey(userId)) {
+        debugPrint('Using cached follow state for user: $userId');
+        return _followStateCache[userId] ?? false;
+      }
 
       debugPrint('Refreshing follow state for target user: $userId');
 
@@ -523,6 +585,10 @@ class ExploreController extends GetxController {
           .eq('following_id', userId);
 
       final bool isFollowing = response.isNotEmpty;
+
+      // Cache the follow state
+      _followStateCache[userId] = isFollowing;
+      markFollowStateRefreshed(userId);
 
       // If we're following but it's not in our cache, update the cache
       if (isFollowing && !_accountDataProvider.isFollowing(userId)) {

@@ -28,10 +28,17 @@ class _AudioRecorderState extends State<AudioRecorder> {
   @override
   void initState() {
     super.initState();
-    // Check if we're already recording
-    isInitialized =
-        audioService.isRecording.value &&
-        audioService.currentRecordingPath.value.isNotEmpty;
+    // Initialize the recorder controller if not already initialized
+    _initializeRecorder();
+  }
+
+  Future<void> _initializeRecorder() async {
+    if (!isInitialized && !audioService.isRecording.value) {
+      await audioService.startRecording();
+    }
+    setState(() {
+      isInitialized = true;
+    });
   }
 
   Future<void> stopRecording() async {
@@ -111,32 +118,51 @@ class _AudioRecorderState extends State<AudioRecorder> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Obx(() {
-                final isRecording = audioService.isRecording.value;
-                final hasController = audioService.recorderController != null;
-
-                if (!isRecording || !hasController) {
+                if (!audioService.isRecording.value || audioService.recorderController == null) {
                   return const Center(
                     child: Text(
-                      'Recording...',
+                      'Starting recording...',
                       style: TextStyle(color: Colors.white54, fontSize: 14),
                     ),
                   );
                 }
 
-                return AudioWaveforms(
-                  enableGesture: true,
-                  size: Size(MediaQuery.of(context).size.width * 0.6, 50),
-                  recorderController: audioService.recorderController!,
-                  waveStyle: WaveStyle(
-                    waveColor: Colors.blue.shade400,
-                    extendWaveform: true,
-                    showMiddleLine: false,
-                    spacing: 4.0,
-                    showTop: true,
-                    showBottom: true,
-                    waveCap: StrokeCap.round,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                return Stack(
+                  children: [
+                    // Waveform visualization
+                    AudioWaveforms(
+                      enableGesture: true,
+                      size: Size(MediaQuery.of(context).size.width * 0.6, 50),
+                      recorderController: audioService.recorderController!,
+                      waveStyle: WaveStyle(
+                        waveColor: Colors.blue.shade400,
+                        extendWaveform: true,
+                        showMiddleLine: false,
+                        spacing: 4.0,
+                        showTop: true,
+                        showBottom: true,
+                        waveCap: StrokeCap.round,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    // Recording indicator
+                    if (audioService.isRecording.value)
+                      Positioned(
+                        right: 8,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               }),
             ),
@@ -159,16 +185,8 @@ class _AudioRecorderState extends State<AudioRecorder> {
 
   @override
   void dispose() {
-    // Only stop if we're still recording when disposed.
-    // audioService.stopRecording() now returns a Map, but here we don't need the result.
-    // This is a "best effort" cleanup.
-    if (audioService.isRecording.value) {
-      audioService.stopRecording().catchError((e) {
-        // Log error during dispose, but don't propagate further.
-        debugPrint('Error stopping recording during dispose: $e');
-        return null; // Ensure the Future completes.
-      });
-    }
+    // Don't stop recording here - let the parent handle it
+    // This prevents the recording from being stopped when the widget is rebuilt
     super.dispose();
   }
 }

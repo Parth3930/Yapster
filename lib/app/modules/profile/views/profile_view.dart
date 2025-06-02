@@ -12,9 +12,12 @@ import 'package:yapster/app/modules/explore/controllers/explore_controller.dart'
 
 class ProfileView extends GetView<ProfileController> {
   final String? userId;
-  final RxInt selectedTabIndex = 0.obs; // Add this line to track selected tab
+  final RxInt selectedTabIndex = 0.obs;
 
-  ProfileView({super.key, this.userId}); // Removed const keyword
+  // Track if initial data has been loaded to avoid repeated database calls
+  static final Map<String, bool> _initialDataLoaded = <String, bool>{};
+
+  ProfileView({super.key, this.userId});
 
   @override
   Widget build(BuildContext context) {
@@ -24,21 +27,45 @@ class ProfileView extends GetView<ProfileController> {
         userId == null ||
         userId == Get.find<SupabaseService>().currentUser.value?.id;
 
-    // Fetch user data based on whether it's the current user or another user
-    if (!isCurrentUser && userId != null) {
-      // Fetch complete profile data including accurate follow counts for the specified userId
-      exploreController.loadUserProfile(userId!);
-    } else if (isCurrentUser) {
-      // For current user profile, ensure follow counts are up-to-date
+    // Get a unique key for this profile instance based on user ID
+    final String cacheKey = userId ?? 'current_user';
+    
+    // Load data only once when the view is first built for this specific user
+    if (!_initialDataLoaded.containsKey(cacheKey) || _initialDataLoaded[cacheKey] != true) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
-        if (currentUserId != null) {
-          await accountDataProvider.loadFollowers(currentUserId);
-          await accountDataProvider.loadFollowing(currentUserId);
-          debugPrint(
-            'Updated current user follow counts - Followers: ${accountDataProvider.followerCount}, Following: ${accountDataProvider.followingCount}',
-          );
+        if (isCurrentUser) {
+          final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
+          if (currentUserId != null) {
+            // Check cache timestamps in accountDataProvider before loading
+            if (accountDataProvider.shouldRefreshFollowers(currentUserId)) {
+              await accountDataProvider.loadFollowers(currentUserId);
+              debugPrint('Loaded followers data from database');
+            } else {
+              debugPrint('Using cached followers data');
+            }
+            
+            if (accountDataProvider.shouldRefreshFollowing(currentUserId)) {
+              await accountDataProvider.loadFollowing(currentUserId);
+              debugPrint('Loaded following data from database');
+            } else {
+              debugPrint('Using cached following data');
+            }
+            
+            debugPrint(
+              'Profile counts - Followers: ${accountDataProvider.followerCount}, Following: ${accountDataProvider.followingCount}',
+            );
+          }
+        } else if (userId != null) {
+          // For other users' profiles, only load if we don't have the data cached
+          final userProfile = exploreController.selectedUserProfile;
+          if (userProfile.isEmpty || !userProfile.containsKey('follower_count')) {
+            // We don't have this user's data - let the ExploreController handle loading it
+            debugPrint('No cached data for user $userId, letting ExploreController handle it');
+          }
         }
+        
+        // Mark initial data as loaded to prevent repeated loading
+        _initialDataLoaded[cacheKey] = true;
       });
     }
 
@@ -571,20 +598,21 @@ class ProfileView extends GetView<ProfileController> {
     }
 
     final exploreController = Get.find<ExploreController>();
-    final accountDataProvider = Get.find<AccountDataProvider>();
 
     // Use cached state first
     final RxBool isFollowing = RxBool(
       exploreController.isFollowingUser(userId!),
     );
     final RxBool isLoadingFollow = RxBool(false);
-
-    // Only check database state once when view is first built
+    
+    // Only check database state once when view is first built and not already cached
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Skip if already loading or if we already have this user's data cached
-      if (!isLoadingFollow.value &&
-          userId != null &&
-          !exploreController.selectedUserProfile.containsKey('user_id')) {
+      // Only refresh follow state if we don't have this user's complete profile data cached
+      final shouldRefreshFollowState = 
+          !exploreController.selectedUserProfile.containsKey('user_id') ||
+          exploreController.shouldRefreshFollowState(userId!);
+          
+      if (!isLoadingFollow.value && userId != null && shouldRefreshFollowState) {
         try {
           final actualFollowState = await exploreController.refreshFollowState(
             userId!,
@@ -592,6 +620,8 @@ class ProfileView extends GetView<ProfileController> {
           if (actualFollowState != isFollowing.value) {
             isFollowing.value = actualFollowState;
           }
+          // Mark this follow state as refreshed recently
+          exploreController.markFollowStateRefreshed(userId!);
         } catch (e) {
           debugPrint('Error refreshing follow state in ProfileView: $e');
         }
@@ -625,6 +655,9 @@ class ProfileView extends GetView<ProfileController> {
                                     .value
                                     ?.id;
                             if (currentUserId != null) {
+                              // Get reference to accountDataProvider for count updates
+                              final accountDataProvider = Get.find<AccountDataProvider>();
+                              
                               // Update local counts immediately based on the action
                               if (isFollowing.value) {
                                 accountDataProvider.followingCount.value++;
@@ -644,11 +677,14 @@ class ProfileView extends GetView<ProfileController> {
                                     1;
                               }
 
-                              // Verify counts in database without updating UI
-                              exploreController.verifyDatabaseCounts(
-                                currentUserId,
-                                userId!,
-                              );
+                              // Asynchronously verify counts in database without blocking UI
+                              // Use Future.delayed to run this verification in the background
+                              Future.delayed(Duration.zero, () {
+                                exploreController.verifyDatabaseCounts(
+                                  currentUserId,
+                                  userId!,
+                                );
+                              });
                             }
                           } catch (e) {
                             // Revert local state if there was an error

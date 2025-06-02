@@ -6,17 +6,30 @@ import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import '../controllers/chat_controller.dart';
 
-class ChatView extends GetView<ChatController> {
+class ChatView extends StatefulWidget {
   const ChatView({super.key});
+  
+  @override
+  State<ChatView> createState() => _ChatViewState();
+}
 
+class _ChatViewState extends State<ChatView> {
+  // Get the controller
+  final ChatController controller = Get.find<ChatController>();
+  
+  @override
+  void initState() {
+    super.initState();
+    // Load chats in initState to ensure they're loaded once
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Always force a refresh of chats when this view appears
+      controller.preloadRecentChats();
+    });
+  }
+  
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (controller.recentChats.isEmpty) {
-        controller.fetchUsersRecentChats();
-      }
-    });
-
+    
     return Scaffold(
       appBar: AppBar(
         title: Row(

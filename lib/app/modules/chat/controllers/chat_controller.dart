@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/chat/modles/message_model.dart';
+import 'package:yapster/app/modules/chat/services/chat_message_service.dart';
 import 'chat_controller_messages.dart';
 import 'chat_controller_search.dart';
 import 'chat_controller_services.dart';
@@ -56,10 +57,24 @@ class ChatController extends GetxController
   // Expose supabase service for views
   SupabaseService get supabaseService => _supabaseService;
 
+  // Expose caching methods for use in views
+  Future<void> preloadRecentChats() => super.preloadRecentChats();
+  Future<void> preloadMessages(String chatId) => super.preloadMessages(chatId);
+
+  // Static flag to track controller initialization state
+  static bool _isInitialized = false;
+  
   @override
   void onInit() {
     super.onInit();
-    initializeServices();
+    
+    // Only preload chats once on first initialization
+    if (!_isInitialized) {
+      _isInitialized = true;
+      // Preload recent chats on controller initialization
+      preloadRecentChats();
+    }
+    
     searchController.addListener(handleSearchInputChanged);
   }
 
@@ -77,107 +92,58 @@ class ChatController extends GetxController
   }
 
   Future<void> uploadAndSendAudio(
-    String chatId,
-    String audioPath, {
-    Duration? duration,
-  }) async {
-    isSendingMessage.value = true;
-    try {
-      final messageId = Uuid().v4();
-      final senderId = _supabaseService.client.auth.currentUser?.id;
-
-      if (senderId == null) {
-        Get.snackbar('Error', 'User not logged in.');
-        print('Error: User not logged in.');
-        return;
-      }
-
-      // Optimistic UI Update (Part 1)
-      final tempMessage = MessageModel(
-        messageId: messageId,
-        chatId: chatId,
-        senderId: senderId,
-        content: audioPath, // Local path for now
-        messageType: 'audio',
-        recipientId: '', // Placeholder - adjust as needed
-        expiresAt: DateTime.now().add(Duration(days: 7)), // Placeholder
-        createdAt: DateTime.now(),
-        isRead: false,
-        duration: duration, // Pass duration to the temporary optimistic message
-      );
-
-      messages.insert(0, tempMessage);
-      messagesToAnimate.add(messageId);
-
-      // Upload to Supabase Storage
-      final filePathInStorage = '$senderId/$chatId/$messageId.m4a';
-      String audioUrl;
-
-      try {
-        await _supabaseService.client.storage
-            .from('audio_messages') // Bucket name
-            .upload(filePathInStorage, File(audioPath));
-
-        audioUrl = _supabaseService.client.storage
-            .from('audio_messages')
-            .getPublicUrl(filePathInStorage);
-      } catch (e) {
-        // Handle upload error
-        messages.removeWhere((m) => m.messageId == messageId);
-        messagesToAnimate.remove(messageId);
-        Get.snackbar('Error', 'Failed to upload audio: ${e.toString()}');
-        print('Error uploading audio: $e');
-        return; // Do not proceed if upload fails
-      }
-
-      // Save Message to Supabase Database
-      final messageData = {
-        'message_id': messageId,
-        'chat_id': chatId,
-        'sender_id': senderId,
-        'content': audioUrl,
-        'message_type': 'audio',
-        'recipient_id': '', // Adjust as needed
-        'expires_at':
-            DateTime.now().add(Duration(days: 7)).toIso8601String(), // Adjust
-        'created_at': DateTime.now().toIso8601String(),
-        'is_read': false,
-        'duration_seconds':
-            duration?.inSeconds, // Ensure this line is present and uncommented
-      };
-
-      try {
-        await _supabaseService.client.from('messages').insert(messageData);
-
-        // Optimistic UI Update (Part 2) - Update the existing temp message
-        final index = messages.indexWhere((m) => m.messageId == messageId);
-        if (index != -1) {
-          // Create a new MessageModel from the data that was sent to the DB
-          // This ensures the local model matches the remote one
-          // MessageModel.fromJson expects date strings to be in ISO8601 format
-          // and will parse them into DateTime objects.
-          messages[index] = MessageModel.fromJson(messageData);
-        }
-      } catch (e) {
-        // Handle database error
-        messages.removeWhere((m) => m.messageId == messageId);
-        messagesToAnimate.remove(messageId);
-        // Attempt to delete the already uploaded audio from storage to prevent orphans
-        try {
-          await _supabaseService.client.storage.from('audio_messages').remove([
-            filePathInStorage,
-          ]);
-        } catch (storageError) {
-          print('Error deleting orphaned audio from storage: $storageError');
-          // Optionally, inform the user about the orphaned file or log for manual cleanup
-        }
-        Get.snackbar('Error', 'Failed to send message: ${e.toString()}');
-        print('Error saving message to database: $e');
-      }
-    } finally {
-      isSendingMessage.value = false;
-    }
+  String chatId,
+  String audioPath, {
+  Duration? duration,
+}) async {
+  final senderId = _supabaseService.client.auth.currentUser?.id;
+  
+  if (senderId == null) {
+    Get.snackbar('Error', 'Not authenticated');
+    return;
   }
+
+  try {
+    // Get recipient ID from the chat (using existing data or fetching from db)
+    String recipientId = '';
+    
+    // Try to find it in the recent chats data first
+    final chatIndex = recentChats.indexWhere((chat) => chat['chat_id'] == chatId);
+    if (chatIndex != -1) {
+      // Get recipient from the existing chat data
+      final chat = recentChats[chatIndex];
+      final String currentUserId = _supabaseService.currentUser.value?.id ?? '';
+      if (chat['user_one_id'] == currentUserId) {
+        recipientId = chat['user_two_id'];
+      } else {
+        recipientId = chat['user_one_id'];
+      }
+    } else {
+      // If not found in recent chats, fetch from database
+      final response = await _supabaseService.client
+          .from('chats')
+          .select('user_one_id, user_two_id')
+          .eq('chat_id', chatId)
+          .single();
+      final String currentUserId = _supabaseService.currentUser.value?.id ?? '';
+      recipientId = response['user_two_id'] == currentUserId ? response['user_one_id'] : response['user_two_id'];
+    }
+    
+    // Set default expiration time (7 days from now)
+    final DateTime expiresAt = DateTime.now().toUtc().add(const Duration(days: 7));
+    
+    // Call the service with all required parameters
+    await Get.find<ChatMessageService>().uploadAndSendAudio(
+      chatId: chatId,
+      recipientId: recipientId,
+      audioFile: File(audioPath),
+      expiresAt: expiresAt,
+    );
+  } catch (e) {
+    debugPrint('Error uploading and sending audio: $e');
+    Get.snackbar('Error', 'Failed to send audio message');
+  }
+}
 
   String? _extractPathFromUrl(String url) {
     try {

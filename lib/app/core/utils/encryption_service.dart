@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:get/get.dart';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
@@ -164,13 +165,33 @@ class EncryptionService extends GetxService {
   ) async {
     try {
       if (encryptedMessage.isEmpty) return '';
+      
+      // Check if message is already decrypted or not in base64 format
+      if (!_isBase64(encryptedMessage)) {
+        print('Message appears to be already decrypted or not in base64 format: ${encryptedMessage.substring(0, math.min(10, encryptedMessage.length))}...');
+        return encryptedMessage; // Return as-is if not valid base64
+      }
 
       final encryption = await _getEncrypterForChat(chatId);
       final encrypted = encrypt.Encrypted(base64Decode(encryptedMessage));
       return encryption['encrypter'].decrypt(encrypted, iv: encryption['iv']);
     } catch (e) {
-      print('Decryption error: $e');
-      return '🔒 Encrypted message';
+      print('Decryption error for message: ${encryptedMessage.substring(0, math.min(20, encryptedMessage.length))}... Error: $e');
+      // Return original message instead of error placeholder to avoid showing "Encrypted message" everywhere
+      return encryptedMessage;
+    }
+  }
+  
+  // Helper to check if a string is base64 encoded
+  bool _isBase64(String str) {
+    try {
+      if (str.isEmpty || str.length % 4 != 0) return false;
+      final regex = RegExp(r'^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$');
+      if (!regex.hasMatch(str)) return false;
+      base64Decode(str); // Try to decode it
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
