@@ -1,8 +1,6 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:uuid/uuid.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/chat/modles/message_model.dart';
 import 'package:yapster/app/modules/chat/services/chat_message_service.dart';
@@ -56,10 +54,6 @@ class ChatController extends GetxController
 
   // Expose supabase service for views
   SupabaseService get supabaseService => _supabaseService;
-
-  // Expose caching methods for use in views
-  Future<void> preloadRecentChats() => super.preloadRecentChats();
-  Future<void> preloadMessages(String chatId) => super.preloadMessages(chatId);
 
   // Static flag to track controller initialization state
   static bool _isInitialized = false;
@@ -148,24 +142,34 @@ class ChatController extends GetxController
   String? _extractPathFromUrl(String url) {
     try {
       final uri = Uri.parse(url);
-      // Example: /storage/v1/object/public/audio_messages/path/to/file.m4a
-      // We need "path/to/file.m4a"
+      // Example: /storage/v1/object/public/chat-media/userId/filename.m4a
+      // We need "userId/filename.m4a"
       final pathSegments = uri.pathSegments;
-      // Ensure there are enough segments and the bucket name is correct
-      if (pathSegments.length > 5 && pathSegments[4] == 'audio_messages') {
+      
+      // Check if we have enough segments and the path follows the expected structure
+      if (pathSegments.length > 5 && 
+          (pathSegments[4] == 'audio_messages' || pathSegments[4] == 'chat-media')) {
+        // Return everything after the bucket name (chat-media or audio_messages)
         return pathSegments.sublist(5).join('/');
       }
-      print(
+      
+      debugPrint(
         'Error extracting path: URL structure not as expected. Segments: $pathSegments',
       );
       return null;
     } catch (e) {
-      print('Error parsing URL: $e');
+      debugPrint('Error parsing URL: $e');
       return null;
     }
   }
 
   Future<void> deleteAudioMessage(String messageId, String audioUrl) async {
+    // First, remove from local state immediately for better UX
+    if (messages.any((m) => m.messageId == messageId)) {
+      messages.removeWhere((m) => m.messageId == messageId);
+      messages.refresh();
+    }
+    
     deletingMessageId.value = messageId;
     try {
       // 1. Delete from Supabase Storage
@@ -183,10 +187,16 @@ class ChatController extends GetxController
       }
 
       try {
+        // Use the correct bucket name 'chat-media' and ensure proper path formatting
+        final storagePath = filePathInStorage.startsWith('chat-media/')
+            ? filePathInStorage.substring('chat-media/'.length)
+            : filePathInStorage;
+            
         await _supabaseService.client.storage
-            .from('audio_messages') // Bucket name
-            .remove([filePathInStorage]);
-        debugPrint('Successfully deleted $filePathInStorage from storage.');
+            .from('chat-media') // Updated bucket name
+            .remove([storagePath]);
+            
+        debugPrint('Successfully deleted $storagePath from chat-media bucket.');
       } catch (e) {
         debugPrint(
           'Error deleting audio from storage: $e. Path: $filePathInStorage',
@@ -205,11 +215,15 @@ class ChatController extends GetxController
             .delete()
             .eq('message_id', messageId);
 
-        print('Successfully deleted message $messageId from database.');
-        // Assuming real-time listener handles local list removal.
-        // If not, uncomment: messages.removeWhere((m) => m.messageId == messageId);
+        debugPrint('Successfully deleted message $messageId from database.');
+        
+        // Update the local messages list
+        if (messages.any((m) => m.messageId == messageId)) {
+          messages.removeWhere((m) => m.messageId == messageId);
+          messages.refresh(); // Notify listeners of the change
+        }
       } catch (e) {
-        print('Error deleting message $messageId from database: $e');
+        debugPrint('Error deleting message $messageId from database: $e');
         Get.snackbar(
           'Error',
           'Could not delete message details. Please try again.',
@@ -219,7 +233,7 @@ class ChatController extends GetxController
       }
     } catch (e) {
       // Catch any other unexpected errors from the try block
-      print('An unexpected error occurred in deleteAudioMessage: $e');
+      debugPrint('An unexpected error occurred in deleteAudioMessage: $e');
       Get.snackbar(
         'Error',
         'An unexpected error occurred while deleting the message.',

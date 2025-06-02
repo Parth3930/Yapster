@@ -51,11 +51,9 @@ class _AudioRecorderState extends State<AudioRecorder> {
       final recordingData = await audioService.stopRecording(); // This now returns a Map
       if (recordingData != null) {
         final String path = recordingData['path'] as String;
-        final Duration duration = recordingData['duration'] as Duration;
 
-        // Upload and send the audio message with duration
-        await controller.uploadAndSendAudio(widget.chatId, path, duration: duration);
-        widget.onStopRecording(path); // This callback might need adjustment if it expects duration too
+        // Only call the callback, let the parent handle the upload
+        widget.onStopRecording(path);
       } else {
         // audioService.stopRecording() returning null means it handled user feedback
         // or an error occurred that it already reported.

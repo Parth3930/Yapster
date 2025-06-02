@@ -378,6 +378,20 @@ class _MessageBubbleState extends State<MessageBubble>
   }
 
   Widget _buildMessageBubble() {
+    // For audio messages, render just the audio player without the bubble
+    if (_isAudioMessage) {
+      return Container(
+        margin: EdgeInsets.only(
+          top: 15,
+          bottom: 8,
+          left: widget.isMe ? 8 : 24,
+          right: widget.isMe ? 24 : 8,
+        ),
+        child: _buildAudioMessage(),
+      );
+    }
+
+    // For all other message types, use the bubble container
     return Stack(
       children: [
         Container(
@@ -393,7 +407,7 @@ class _MessageBubbleState extends State<MessageBubble>
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Colors.black,
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -407,8 +421,6 @@ class _MessageBubbleState extends State<MessageBubble>
                 _buildUploadingImageContent(_uploadId, _chatController)
               else if (_isImageMessage && _imageUrl != null)
                 _buildImageContent(_imageUrl)
-              else if (_isAudioMessage)
-                _buildAudioMessage()
               else
                 Text(
                   _messageContent,
