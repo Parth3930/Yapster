@@ -12,7 +12,7 @@ class AccountDataProvider extends GetxController {
   final RxString nickname = ''.obs;
   final RxString bio = ''.obs;
   final RxString avatar = ''.obs;
-  final RxString banner = ''.obs; // Add banner field
+  final RxString banner = ''.obs;
   final RxString email = ''.obs;
   final RxString googleAvatar = ''.obs;
 
@@ -43,6 +43,13 @@ class AccountDataProvider extends GetxController {
   
   // Cache duration constant - how long to cache follow data
   static const Duration followCacheDuration = Duration(minutes: 15);
+
+  @override
+  void onInit() {
+    super.onInit();
+    // Load banner URL when the provider initializes
+    initializeDefaultStructures();
+  }
 
   // Helper getters for easy access
   int get postsCount => userPostData['post_count'] as int? ?? 0;
@@ -278,13 +285,6 @@ class AccountDataProvider extends GetxController {
         _postsMap[post['id'].toString()] = post;
       }
     }
-  }
-
-  @override
-  void onInit() {
-    super.onInit();
-    // Initialize default structures
-    initializeDefaultStructures();
   }
 
   /// Clears all user data when signing out

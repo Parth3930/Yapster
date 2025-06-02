@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
+import 'package:yapster/app/core/utils/banner_utils.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
 import 'package:yapster/app/core/models/follow_type.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfileController extends GetxController {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
@@ -114,7 +114,7 @@ class ProfileController extends GetxController {
             await _supabaseService.client
                 .from('profiles')
                 .select(
-                  'nickname, username, bio, userNameUpdate, avatar, google_avatar',
+                  'nickname, username, bio, userNameUpdate, avatar, banner, google_avatar',
                 )
                 .eq('user_id', userId)
                 .single();
@@ -123,6 +123,11 @@ class ProfileController extends GetxController {
         _accountDataProvider.nickname.value = userData['nickname'] ?? '';
         _accountDataProvider.username.value = userData['username'] ?? '';
         _accountDataProvider.bio.value = userData['bio'] ?? '';
+        
+        // Update banner if available
+        if (userData['banner'] != null) {
+          _accountDataProvider.banner.value = userData['banner'];
+        }
 
         // Update avatar
         if (userData['avatar'] != null) {
@@ -312,7 +317,7 @@ class ProfileController extends GetxController {
       // Upload any new banner image if selected
       String? newBannerUrl;
       if (selectedBanner.value != null) {
-        newBannerUrl = await _uploadBannerImage();
+        newBannerUrl = await BannerUtils.uploadBannerImage(selectedBanner.value!);
         if (newBannerUrl != null) {
           _accountDataProvider.banner.value = newBannerUrl;
         }
@@ -438,42 +443,6 @@ class ProfileController extends GetxController {
     }
   }
 
-  /// Upload banner image to storage
-  Future<String?> _uploadBannerImage() async {
-    if (selectedBanner.value == null) return null;
-
-    try {
-      final userId = _supabaseService.currentUser.value?.id;
-      if (userId == null) throw Exception('User not authenticated');
-
-      final bytes = await selectedBanner.value!.readAsBytes();
-      final fileExt = selectedBanner.value!.path.split('.').last;
-      final fileName = 'banner.$fileExt';
-      final filePath = 'profiles/$userId/$fileName';
-
-      final result = await _supabaseService.client.storage
-          .from('profiles')
-          .uploadBinary(
-            filePath,
-            bytes,
-            fileOptions: const FileOptions(
-              contentType: 'image/jpeg',
-              upsert: true,
-            ),
-          );
-
-      if (result.isEmpty) throw Exception('Failed to upload banner');
-
-      final url = _supabaseService.client.storage
-          .from('profiles')
-          .getPublicUrl(filePath);
-
-      return url;
-    } catch (e) {
-      debugPrint('Error uploading banner: $e');
-      return null;
-    }
-  }
 
   @override
   void onClose() {

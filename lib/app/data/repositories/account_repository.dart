@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:get/get.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -67,6 +68,8 @@ class AccountRepository {
         'email': (val) => _provider.email.value = val,
         'follower_count': (val) => _provider.followerCount.value = val,
         'following_count': (val) => _provider.followingCount.value = val,
+        'google_avatar': (val) => _provider.googleAvatar.value = val,
+        'banner': (val) => _provider.banner.value = val,
       };
 
       fields.forEach((key, setter) {
@@ -249,6 +252,53 @@ class AccountRepository {
     } catch (_) {}
   }
 
+  /// Uploads banner image to Supabase storage and updates profile
+  Future<String> uploadBanner(File file) async {
+    try {
+      final userId = _supabase.client.auth.currentUser?.id;
+      if (userId == null) throw Exception('User not authenticated');
+
+      // Get file extension
+      final fileExtension = file.path.split('.').last.toLowerCase();
+      final fileName = 'banner.$fileExtension';
+      final storagePath = '$userId/$fileName';
+
+      // Read file as bytes
+      final fileBytes = await file.readAsBytes();
+
+      // Upload to Supabase storage
+      await _supabase.client.storage
+          .from('profiles')
+          .uploadBinary(
+            storagePath, 
+            fileBytes,
+            fileOptions: FileOptions(
+              cacheControl: 'no-cache',
+              upsert: true,
+            ),
+          );
+
+      // Get public URL with a timestamp to prevent caching
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final publicUrl = '${_supabase.client.storage
+          .from('profiles')
+          .getPublicUrl(storagePath)}?t=$timestamp';
+
+      // Update profile with banner URL
+      await _supabase.client
+          .from('profiles')
+          .update({'banner': publicUrl})
+          .eq('user_id', userId);
+
+      // Update local state
+      _provider.banner.value = publicUrl;
+      
+      return publicUrl;
+    } catch (e) {
+      throw Exception('Failed to upload banner: $e');
+    }
+  }
+
   /// Cleanup methods
   void cleanupSubscriptions() {
     try {
@@ -258,5 +308,11 @@ class AccountRepository {
     } catch (_) {}
   }
 
+  void dispose() {
+    _profilesSubscription?.unsubscribe();
+    _followsSubscription?.unsubscribe();
+  }
+
   void onClose() => cleanupSubscriptions();
+
 }

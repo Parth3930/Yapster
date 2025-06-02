@@ -1,11 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/custom_button.dart';
 import 'package:yapster/app/global_widgets/custom_input.dart';
 import 'package:yapster/app/modules/profile/constants/profile_constants.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
-import 'package:yapster/app/modules/profile/widgets/profile_banner_widget.dart';
 
 class EditProfileView extends StatelessWidget {
   const EditProfileView({super.key});
@@ -18,7 +20,7 @@ class EditProfileView extends StatelessWidget {
       data: Theme.of(context).copyWith(
         textSelectionTheme: TextSelectionThemeData(
           cursorColor: Colors.white,
-          selectionColor: Colors.white.withOpacity(0.3),
+          selectionColor: Colors.white,
           selectionHandleColor: Colors.white,
         ),
       ),
@@ -29,14 +31,93 @@ class EditProfileView extends StatelessWidget {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    GetX<ProfileController>(
-                      builder:
-                          (controller) => ProfileBannerWidget(
-                            selectedImage: controller.selectedBanner.value,
-                            onTap: () async => await controller.pickBanner(),
-                            isLoaded: controller.isBannerLoaded.value,
-                            showBackButton: true,
+                    Container(
+                      width: double.infinity,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[800],
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(20),
+                          bottomRight: Radius.circular(20),
+                        ),
+                      ),
+                      child: Stack(
+                        children: [
+                          GetX<ProfileController>(
+                            builder: (controller) {
+                              final accountDataProvider = Get.find<AccountDataProvider>();
+                              
+                              // Show selected banner if available, otherwise show existing banner
+                              if (controller.selectedBanner.value != null) {
+                                return ClipRRect(
+                                  borderRadius: const BorderRadius.only(
+                                    bottomLeft: Radius.circular(20),
+                                    bottomRight: Radius.circular(20),
+                                  ),
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: 150,
+                                    decoration: BoxDecoration(
+                                      image: DecorationImage(
+                                        image: FileImage(
+                                          File(controller.selectedBanner.value!.path),
+                                        ),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              } else if (accountDataProvider.banner.value.isNotEmpty) {
+                                return ClipRRect(
+                                  borderRadius: const BorderRadius.only(
+                                    bottomLeft: Radius.circular(20),
+                                    bottomRight: Radius.circular(20),
+                                  ),
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: 150,
+                                    decoration: BoxDecoration(
+                                      image: DecorationImage(
+                                        image: NetworkImage(accountDataProvider.banner.value),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                return const SizedBox.shrink();
+                              }
+                            },
                           ),
+                          Positioned(
+                            top: 10,
+                            left: 10,
+                            child: IconButton(
+                              icon: Icon(Icons.arrow_back, color: Colors.white),
+                              onPressed: () => Get.back(),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 10,
+                            right: 10,
+                            child: GestureDetector(
+                              onTap: () async => await profileController.pickBanner(),
+                              child: Container(
+                                padding: EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.edit,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     SizedBox(height: 30),
                     GetX<ProfileController>(

@@ -106,39 +106,37 @@ class ProfileView extends GetView<ProfileController> {
                     bottomRight: Radius.circular(20),
                   ),
                 ),
-                child: Stack(
-                  children: [
-                    Obx(() {
-                      final bannerUrl =
-                          isCurrentUser
-                              ? accountDataProvider.banner.value
-                              : exploreController
-                                      .selectedUserProfile['banner'] ??
-                                  '';
+                child: Obx(() {
+                  String bannerUrl = isCurrentUser
+                      ? accountDataProvider.banner.value
+                      : exploreController.selectedUserProfile['banner'] ?? '';
+                  
+                  // Add timestamp to prevent caching
+                  if (bannerUrl.isNotEmpty) {
+                    bannerUrl += '?t=${DateTime.now().millisecondsSinceEpoch}';
+                  }
 
-                      if (bannerUrl.isEmpty) return const SizedBox.shrink();
+                  if (bannerUrl.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
 
-                      return ClipRRect(
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(20),
-                          bottomRight: Radius.circular(20),
-                        ),
-                        child: CachedNetworkImage(
-                          imageUrl: bannerUrl,
-                          width: double.infinity,
-                          height: double.infinity,
+                  return ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(20),
+                      bottomRight: Radius.circular(20),
+                    ),
+                    child: Container(
+                      width: double.infinity,
+                      height: 150, // Fixed height to match parent container
+                      decoration: BoxDecoration(
+                        image: DecorationImage(
+                          image: CachedNetworkImageProvider(bannerUrl),
                           fit: BoxFit.cover,
-                          placeholder:
-                              (context, url) => const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                          errorWidget:
-                              (context, url, error) => const Icon(Icons.error),
                         ),
-                      );
-                    }),
-                  ],
-                ),
+                      ),
+                    ),
+                  );
+                }),
               ),
               Positioned(
                 top: 100,

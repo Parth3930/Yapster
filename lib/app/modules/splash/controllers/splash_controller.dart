@@ -84,6 +84,7 @@ class SplashController extends GetxController {
         _accountDataProvider.username.value = userData['username'] ?? '';
         _accountDataProvider.avatar.value = userData['avatar'] ?? '';
         _accountDataProvider.nickname.value = userData['nickname'] ?? '';
+        _accountDataProvider.banner.value = userData['banner'] ?? '';
         _accountDataProvider.bio.value = userData['bio'] ?? '';
         _accountDataProvider.email.value = currentUser.email ?? '';
         
