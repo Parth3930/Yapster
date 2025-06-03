@@ -21,6 +21,10 @@ class ExploreController extends GetxController {
       <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> recentSearches =
       <Map<String, dynamic>>[].obs;
+      
+  // Track loading state for profile to prevent multiple simultaneous loads
+  final _isLoadingProfile = false.obs;
+  final _currentLoadingUserId = ''.obs;
 
   // Observable search text to properly work with Obx
   final RxString searchText = ''.obs;
@@ -170,8 +174,7 @@ class ExploreController extends GetxController {
       if (recentSearchesJson != null && recentSearchesJson.isNotEmpty) {
         final decodedSearches = jsonDecode(recentSearchesJson) as List;
         recentSearches.value = decodedSearches
-            .map((item) => Map<String, dynamic>.from(item))
-            .toList();
+            .single();
 
         debugPrint('Loaded ${recentSearches.length} recent searches from cache');
 
@@ -280,169 +283,280 @@ class ExploreController extends GetxController {
     });
   }
 
-  // Load a user's profile data and posts
-  Future<void> loadUserProfile(String userId) async {
-    try {
-      isLoadingUserProfile.value = true;
-      debugPrint('Loading profile for user ID: $userId');
-
-      // Check if we have a cached profile and it's still valid
-      final lastFetch = _profileLastFetch[userId];
-      final now = DateTime.now();
-      if (lastFetch != null &&
-          now.difference(lastFetch) < SupabaseService.profileCacheDuration &&
-          _profileCache.containsKey(userId)) {
-        debugPrint('Using cached profile data for user: $userId');
-        selectedUserProfile.value = Map<String, dynamic>.from(
-          _profileCache[userId]!,
-        );
-        return;
-      }
-
-      // If not cached or cache expired, fetch from database
-      final List<dynamic> followers = await _supabaseService.client
-          .from('follows')
-          .select('follower_id')
-          .eq('following_id', userId);
-
-      final List<dynamic> following = await _supabaseService.client
-          .from('follows')
-          .select('following_id')
-          .eq('follower_id', userId);
-
-      final int accurateFollowerCount = followers.length;
-      final int accurateFollowingCount = following.length;
-
-      debugPrint('Fresh follow counts from database:');
-      debugPrint('Followers: $accurateFollowerCount');
-      debugPrint('Following: $accurateFollowingCount');
-
-      // Fetch the complete profile data
-      final List<dynamic> profileResponse = await _supabaseService.client
-          .from('profiles')
-          .select('''
-            user_id, 
-            username, 
-            nickname, 
-            avatar, 
-            bio,
-            banner,
-            google_avatar,
-            follower_count,
-            following_count
-          ''')
-          .eq('user_id', userId)
-          .limit(1);
-
-      if (profileResponse.isEmpty) {
-        debugPrint('User profile not found');
-        throw Exception('User profile not found');
-      }
-
-      // Initialize with profile data
-      var userData = Map<String, dynamic>.from(profileResponse.first);
-
-      // Update with accurate counts if needed
-      if (userData['follower_count'] != accurateFollowerCount ||
-          userData['following_count'] != accurateFollowingCount) {
-        debugPrint('Detected count discrepancy, updating profile...');
-
-        // Update the database with accurate counts
-        await _supabaseService.client.from('profiles').upsert({
-          'user_id': userId,
-          'follower_count': accurateFollowerCount,
-          'following_count': accurateFollowingCount,
-        });
-
-        // Update the userData map with accurate counts
-        userData['follower_count'] = accurateFollowerCount;
-        userData['following_count'] = accurateFollowingCount;
-      }
-
-      // Ensure required fields have default values
-      userData = {
-        'user_id': userId,
-        'username': userData['username'] ?? 'User',
-        'nickname': userData['nickname'] ?? 'User',
-        'avatar': userData['avatar'] ?? '',
-        'google_avatar': userData['google_avatar'] ?? '',
-        'bio': userData['bio'] ?? 'No bio available',
-        'banner': userData['banner'] ?? '',
-        'follower_count': accurateFollowerCount,
-        'following_count': accurateFollowingCount,
-        ...userData,
-      };
-
-      // Cache the profile data
-      _profileCache[userId] = userData;
-      _profileLastFetch[userId] = now;
-
-      // Store the processed profile data
-      selectedUserProfile.value = userData;
-
-      // Load posts only if needed (you might want to cache these separately)
-      await _loadUserPosts(userId);
-
-      // Force UI update
-      update();
-    } catch (e) {
-      debugPrint('Error loading user profile: $e');
-      selectedUserProfile.value = _getDefaultProfile(userId);
-      userPosts.value = [];
-      EasyLoading.showError('Failed to load profile data. Please try again.');
-    } finally {
-      isLoadingUserProfile.value = false;
-    }
-  }
-
+  // Creates a default profile with existing values if available
   Map<String, dynamic> _getDefaultProfile(String userId) {
+    debugPrint('\n=== _getDefaultProfile START ===');
+    debugPrint('🔍 Checking profile for user: $userId');
+    debugPrint('🔹 Current profile user: ${selectedUserProfile['user_id']}');
+    debugPrint('🔹 Current banner: ${selectedUserProfile['banner']}');
+    
+    // If we already have a profile for this user with valid data, return it to prevent flickering
+    if (selectedUserProfile.isNotEmpty && 
+        selectedUserProfile['user_id'] == userId) {
+      debugPrint('✅ Using existing profile for $userId');
+      debugPrint('🔹 Existing banner: ${selectedUserProfile['banner']}');
+      debugPrint('=== _getDefaultProfile END (existing) ===\n');
+      return Map<String, dynamic>.from(selectedUserProfile);
+    } else {
+      debugPrint('🔄 Creating new default profile for $userId');
+      debugPrint('=== _getDefaultProfile END (new) ===\n');
+    }
+    
+    // Otherwise create a new default profile with existing values if available
     return {
       'user_id': userId,
-      'username': 'User',
-      'nickname': 'User',
-      'avatar': '',
-      'google_avatar': '',
-      'bio': 'Profile data unavailable',
-      'follower_count': 0,
-      'following_count': 0,
+      'username': selectedUserProfile['username'] ?? '',
+      'nickname': selectedUserProfile['nickname'] ?? '',
+      'bio': selectedUserProfile['bio'] ?? '',
+      'avatar': selectedUserProfile['avatar'],
+      'banner': selectedUserProfile['banner'],
+      'follower_count': selectedUserProfile['follower_count'] ?? 0,
+      'following_count': selectedUserProfile['following_count'] ?? 0,
+      'post_count': selectedUserProfile['post_count'] ?? 0,
+      'is_verified': selectedUserProfile['is_verified'] ?? false,
+      'created_at': selectedUserProfile['created_at'] ?? DateTime.now().toIso8601String(),
     };
   }
 
-  // Separate method for loading posts
-  Future<void> _loadUserPosts(String userId) async {
-    try {
-      final List<dynamic> postsResponse = await _supabaseService.client
-          .from('posts')
-          .select()
-          .eq('user_id', userId)
-          .order('created_at', ascending: false);
-
-      final List<Map<String, dynamic>> allPosts =
-          postsResponse.map((post) => Map<String, dynamic>.from(post)).toList();
-
-      // Convert post_type to category for backward compatibility
-      for (var post in allPosts) {
-        post['category'] = post['post_type'];
-      }
-
-      userPosts.value = allPosts;
-      debugPrint('Loaded ${allPosts.length} posts for user: $userId');
-    } catch (e) {
-      debugPrint('Error loading user posts: $e');
-      userPosts.value = [];
+  // Load a user's profile data and posts
+  /// Loads user profile data with instant cache-first strategy
+  Future<void> loadUserProfile(String userId) async {
+    debugPrint('\n=== loadUserProfile START ===');
+    debugPrint('🔍 Requested user: $userId');
+    debugPrint('🔹 Current loading user: ${_currentLoadingUserId.value}');
+    debugPrint('🔹 Current profile user: ${selectedUserProfile['user_id']}');
+    debugPrint('🔹 Current banner: ${selectedUserProfile['banner']}');
+    
+    if (userId.isEmpty) {
+      debugPrint('❌ Error: Empty userId');
+      debugPrint('=== loadUserProfile END (error) ===\n');
+      return;
     }
-  }
-
-  // Clear cache for a specific user
-  void clearProfileCache(String userId) {
-    _profileCache.remove(userId);
-    _profileLastFetch.remove(userId);
+    
+    if (_isLoadingProfile.value) {
+      debugPrint('⏳ Already loading profile for ${_currentLoadingUserId.value}, requested: $userId');
+      debugPrint('=== loadUserProfile END (already loading) ===\n');
+      return;
+    }
+    
+    try {
+      debugPrint('🟢 loadUserProfile: Starting load for $userId');
+      _isLoadingProfile.value = true;
+      _currentLoadingUserId.value = userId;
+      
+      debugPrint('ℹ️ Current profile user: ${selectedUserProfile['user_id']}, requested: $userId');
+      if (selectedUserProfile['user_id'] != userId) {
+        debugPrint('🔄 loadUserProfile: Setting default profile for $userId');
+        final defaultProfile = _getDefaultProfile(userId);
+        debugPrint('🖼️ Default profile banner: ${defaultProfile['banner']}');
+        selectedUserProfile.value = defaultProfile;
+      } else {
+        debugPrint('ℹ️ Using existing profile for $userId');
+      }
+      
+      // Load fresh data in the background
+      await _loadFreshProfileData(userId, false);
+    } catch (e) {
+      debugPrint('Error loading fresh profile data: $e');
+    } finally {
+      _isLoadingProfile.value = false;
+      _currentLoadingUserId.value = '';
+    }
   }
 
   // Clear entire profile cache
   void clearAllProfileCache() {
     _profileCache.clear();
     _profileLastFetch.clear();
+  }
+
+  /// Fetches follow counts for a user
+  Future<Map<String, dynamic>> _fetchFollowCounts(String userId) async {
+    try {
+      final followerResponse = await _supabaseService.client
+          .from('follows')
+          .select()
+          .eq('following_id', userId);
+          
+      final followingResponse = await _supabaseService.client
+          .from('follows')
+          .select()
+          .eq('follower_id', userId);
+          
+      return {
+        'follower_count': followerResponse.length,
+        'following_count': followingResponse.length,
+      };
+    } catch (e) {
+      debugPrint('Error fetching follow counts: $e');
+      return {'follower_count': 0, 'following_count': 0};
+    }
+  }
+  
+  /// Fetches profile data for a user
+  Future<Map<String, dynamic>> _fetchProfileData(String userId) async {
+    try {
+      final response = await _supabaseService.client
+          .from('profiles')
+          .select()
+          .eq('user_id', userId)
+          .single();
+          
+      return response;
+    } catch (e) {
+      debugPrint('Error fetching profile data: $e');
+      return {};
+    }
+  }
+  
+  /// Compares two profile maps to check if they're effectively equal
+  bool _areProfilesEqual(Map<String, dynamic>? a, Map<String, dynamic>? b) {
+    if (a == b) return true;
+    if (a == null || b == null) return false;
+    
+    // Compare only the fields that affect the UI
+    final keys = {'user_id', 'username', 'nickname', 'bio', 'avatar', 'banner', 
+                 'follower_count', 'following_count', 'post_count', 'is_verified'};
+    
+    for (final key in keys) {
+      if (a[key] != b[key]) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+  /// Loads fresh profile data in the background
+  // Add this helper method at the top of the class
+  void _logBannerUpdate(String context, Map<String, dynamic> profile) {
+    final banner = profile['banner'];
+    final bannerType = banner != null ? banner.runtimeType.toString() : 'null';
+    debugPrint('\n🖼️ BANNER UPDATE - $context');
+    debugPrint('🔹 Banner URL: ${banner ?? 'null'}');
+    debugPrint('🔹 Banner type: $bannerType');
+    debugPrint('🔹 Profile user: ${profile['user_id']}');
+    debugPrint('🔹 Current time: ${DateTime.now().toIso8601String()}');
+    debugPrint('----------------------------------------');
+  }
+
+  Future<void> _loadFreshProfileData(String userId, bool hasCachedData) async {
+    debugPrint('\n=== _loadFreshProfileData START ===');
+    debugPrint('🔍 Requested user: $userId');
+    debugPrint('🔹 Current loading user: ${_currentLoadingUserId.value}');
+    debugPrint('🔹 Current profile user: ${selectedUserProfile['user_id']}');
+    debugPrint('🔹 Current banner: ${selectedUserProfile['banner']}');
+    
+    if (userId.isEmpty) {
+      debugPrint('❌ Error: Empty userId');
+      debugPrint('=== _loadFreshProfileData END (error) ===\n');
+      return;
+    }
+    
+    if (_currentLoadingUserId.value != userId) {
+      debugPrint('⚠️ Mismatched userId. Current: ${_currentLoadingUserId.value}, Requested: $userId');
+      debugPrint('=== _loadFreshProfileData END (mismatch) ===\n');
+      return;
+    }
+    
+    try {
+      debugPrint('🔄 _loadFreshProfileData: Fetching fresh data for $userId');
+      debugPrint('📊 Current banner before fetch: ${selectedUserProfile['banner']}');
+      
+      // Fetch fresh data in parallel
+      final results = await Future.wait([
+        _fetchFollowCounts(userId),
+        _fetchProfileData(userId),
+      ]);
+      
+      final followCounts = results[0];
+      final profileData = results[1];
+      
+      debugPrint('✅ _loadFreshProfileData: Fetched data for $userId');
+      debugPrint('📥 New banner from API: ${profileData['banner']}');
+      
+      // Only proceed if we're still loading the same user
+      if (_currentLoadingUserId.value != userId) {
+        debugPrint('🛑 _loadFreshProfileData: User changed during fetch. Current: ${_currentLoadingUserId.value}, Expected: $userId');
+        return;
+      }
+      
+      // Create a new profile with fresh data, preserving existing values if new ones are null
+      // Log current banner state before update
+      _logBannerUpdate('BEFORE UPDATE', selectedUserProfile);
+      _logBannerUpdate('NEW DATA', profileData);
+      
+      // Get banner and avatar, preserving existing if new ones are null
+      final banner = profileData['banner'] ?? selectedUserProfile['banner'];
+      final avatar = profileData['avatar'] ?? selectedUserProfile['avatar'];
+      
+      // Log the decision
+      debugPrint('\n🔄 BANNER SELECTION:');
+      debugPrint('🔹 New banner available: ${profileData['banner'] != null}');
+      debugPrint('🔹 Existing banner available: ${selectedUserProfile['banner'] != null}');
+      debugPrint('🔹 Selected banner: ${banner ?? 'null'}');
+      
+      debugPrint('\n🔍 Creating updated profile:');
+      debugPrint('🔹 New banner from API: ${profileData['banner']}');
+      debugPrint('🔹 Current banner in profile: ${selectedUserProfile['banner']}');
+      debugPrint('🔹 Will use banner: $banner');
+      
+      final updatedProfile = Map<String, dynamic>.from({
+        'user_id': userId,
+        'avatar': avatar,
+        'banner': banner,
+        ...profileData, // This will override the above if they exist in profileData
+        'follower_count': followCounts['follower_count'] ?? selectedUserProfile['follower_count'] ?? 0,
+        'following_count': followCounts['following_count'] ?? selectedUserProfile['following_count'] ?? 0,
+      });
+      
+      debugPrint('🔄 Created updated profile:');
+      debugPrint('   Banner: ${updatedProfile['banner']}');
+      debugPrint('   Avatar: ${updatedProfile['avatar']}');
+      debugPrint('   Follower count: ${updatedProfile['follower_count']}');
+      debugPrint('   Following count: ${updatedProfile['following_count']}');
+      
+      // Check if profiles are different
+      debugPrint('\n🔍 Comparing profiles:');
+      final profilesEqual = _areProfilesEqual(selectedUserProfile, updatedProfile);
+      
+      debugPrint('\n🔍 Profile Comparison:');
+      debugPrint('🔹 Current banner: ${selectedUserProfile['banner']}');
+      debugPrint('🔹 Updated banner: ${updatedProfile['banner']}');
+      debugPrint('🔹 Banners match: ${selectedUserProfile['banner'] == updatedProfile['banner']}');
+      
+      if (!profilesEqual) {
+        debugPrint('\n🔄 Profiles are different, updating...');
+        debugPrint('🔹 Old banner: ${selectedUserProfile['banner']}');
+        debugPrint('🔹 New banner: ${updatedProfile['banner']}');
+        
+        debugPrint('\n💾 Updating profile state...');
+        // Log the state before update
+        _logBannerUpdate('BEFORE STATE UPDATE', selectedUserProfile);
+        
+        // Update the state
+        selectedUserProfile.value = updatedProfile;
+        
+        // Log the state after update
+        _logBannerUpdate('AFTER STATE UPDATE', selectedUserProfile);
+        
+        // Update cache
+        _profileCache[userId] = updatedProfile;
+        _profileLastFetch[userId] = DateTime.now();
+        
+        debugPrint('✅ Profile updated successfully');
+        debugPrint('🔹 New banner in state: ${selectedUserProfile['banner']}');
+      } else {
+        debugPrint('\nℹ️ No changes to profile data');
+        debugPrint('🔹 Keeping existing banner: ${selectedUserProfile['banner']}');
+      }
+      
+      debugPrint('=== _loadFreshProfileData END ===\n');
+      
+    } catch (e) {
+      debugPrint('Error in _loadFreshProfileData: $e');
+      // Don't throw, just log the error
+    }
   }
 
   // Check if the current user is following the selected user

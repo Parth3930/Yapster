@@ -7,6 +7,7 @@ import 'package:yapster/app/routes/app_pages.dart';
 import '../controllers/profile_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
+import 'package:yapster/app/core/utils/banner_utils.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
@@ -71,19 +72,36 @@ class ProfileView extends GetView<ProfileController> {
     }
 
     // This will run when the view is built or becomes visible after navigation
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Get avatar URLs using the utility method
-      final avatars = AvatarUtils.getAvatarUrls(
-        isCurrentUser: isCurrentUser,
-        accountDataProvider: accountDataProvider,
-        exploreController: exploreController,
-      );
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Only preload if we haven't already done so for this user
+      final cacheKey = userId ?? 'current';
+      if (!_initialDataLoaded.containsKey(cacheKey) || _initialDataLoaded[cacheKey] != true) {
+        // Get avatar URLs using the utility method
+        final avatars = AvatarUtils.getAvatarUrls(
+          isCurrentUser: isCurrentUser,
+          accountDataProvider: accountDataProvider,
+          exploreController: exploreController,
+        );
 
-      if (avatars['avatar']!.isNotEmpty || avatars['google_avatar']!.isNotEmpty) {
-        if (isCurrentUser) {
-          AvatarUtils.preloadAvatarImages(accountDataProvider);
+        // Preload avatars if available
+        if (avatars['avatar']!.isNotEmpty || avatars['google_avatar']!.isNotEmpty) {
+          if (isCurrentUser) {
+            AvatarUtils.preloadAvatarImages(accountDataProvider);
+          }
+          controller.isAvatarLoaded.value = true;
         }
-        controller.isAvatarLoaded.value = true;
+
+        // Preload banner image
+        if (isCurrentUser) {
+          await BannerUtils.preloadBannerImages(accountDataProvider);
+        } else if (exploreController.selectedUserProfile['banner'] != null) {
+          // For other users, update the account data provider temporarily
+          final tempProvider = AccountDataProvider();
+          tempProvider.banner.value = exploreController.selectedUserProfile['banner'];
+          await BannerUtils.preloadBannerImages(tempProvider);
+        }
+        
+        _initialDataLoaded[cacheKey] = true;
       }
     });
 
@@ -105,13 +123,16 @@ class ProfileView extends GetView<ProfileController> {
                   ),
                 ),
                 child: Obx(() {
+                  debugPrint('Banner widget rebuilt at ${DateTime.now().toIso8601String()}');
+                  
                   String bannerUrl = isCurrentUser
                       ? accountDataProvider.banner.value
                       : exploreController.selectedUserProfile['banner'] ?? '';
                   
-                  // Add timestamp to prevent caching
-                  if (bannerUrl.isNotEmpty) {
-                    bannerUrl += '?t=${DateTime.now().millisecondsSinceEpoch}';
+                  debugPrint('Banner URL: $bannerUrl');
+                  
+                  if (bannerUrl.isEmpty) {
+                    debugPrint('No banner URL available');
                   }
 
                   if (bannerUrl.isEmpty) {
@@ -126,11 +147,26 @@ class ProfileView extends GetView<ProfileController> {
                     child: Container(
                       width: double.infinity,
                       height: 150, // Fixed height to match parent container
-                      decoration: BoxDecoration(
-                        image: DecorationImage(
-                          image: CachedNetworkImageProvider(bannerUrl),
-                          fit: BoxFit.cover,
+                      child: CachedNetworkImage(
+                        imageUrl: bannerUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[800],
                         ),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.grey[800],
+                          child: Icon(Icons.error, color: Colors.white),
+                        ),
+                        imageBuilder: (context, imageProvider) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              image: DecorationImage(
+                                image: imageProvider,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   );

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -193,6 +194,24 @@ class BannerUtils {
         colorText: Colors.white,
       );
       return null;
+    }
+  }
+
+  /// Preloads banner images to make them instantly available when needed
+  static Future<void> preloadBannerImages(AccountDataProvider provider) async {
+    try {
+      final bannerUrl = provider.banner.value;
+      if (bannerUrl.isNotEmpty) {
+        debugPrint('Preloading banner: $bannerUrl');
+        // This will cache the image in memory
+        await precacheImage(
+          CachedNetworkImageProvider(bannerUrl),
+          Get.context!,
+        );
+        debugPrint('Banner preloaded successfully');
+      }
+    } catch (e) {
+      debugPrint('Error preloading banner: $e');
     }
   }
 
