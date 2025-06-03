@@ -3,7 +3,6 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../controllers/explore_controller.dart';
 
 class ExploreView extends StatefulWidget {
@@ -217,34 +216,39 @@ class UserListItem extends StatelessWidget {
 
   Widget _buildAvatar() {
     // Check if user has regular avatar
-    final hasRegularAvatar =
-        user['avatar'] != null &&
+    bool isValidUrl(String? url) {
+      if (url == null) return false;
+      final uri = Uri.tryParse(url);
+      return uri != null && 
+             uri.isAbsolute &&
+             (uri.scheme == 'http' || uri.scheme == 'https');
+    }
+
+    // Check if user has regular avatar
+    final hasRegularAvatar = user['avatar'] != null &&
         user['avatar'].toString().isNotEmpty &&
         user['avatar'] != "skiped" &&
         user['avatar'].toString() != "skiped" &&
         user['avatar'].toString() != "null" &&
-        Uri.tryParse(user['avatar'].toString())?.hasScheme == true;
+        isValidUrl(user['avatar'].toString());
 
     // Check if user has Google avatar
-    final hasGoogleAvatar =
-        user['google_avatar'] != null &&
+    final hasGoogleAvatar = user['google_avatar'] != null &&
         user['google_avatar'].toString().isNotEmpty &&
         user['google_avatar'].toString() != "null" &&
-        Uri.tryParse(user['google_avatar'].toString())?.hasScheme == true;
+        isValidUrl(user['google_avatar'].toString());
 
     return CircleAvatar(
       radius: 24,
       backgroundColor: Colors.grey[300],
-      backgroundImage:
-          hasRegularAvatar
-              ? CachedNetworkImageProvider(user['avatar'].toString())
-              : hasGoogleAvatar
-              ? CachedNetworkImageProvider(user['google_avatar'].toString())
+      backgroundImage: hasRegularAvatar
+          ? NetworkImage(user['avatar'].toString())
+          : hasGoogleAvatar
+              ? NetworkImage(user['google_avatar'].toString())
               : null,
-      child:
-          (!hasRegularAvatar && !hasGoogleAvatar)
-              ? const Icon(Icons.person, color: Colors.white)
-              : null,
+      child: !hasRegularAvatar && !hasGoogleAvatar
+          ? const Icon(Icons.person, color: Colors.white)
+          : null,
     );
   }
 }

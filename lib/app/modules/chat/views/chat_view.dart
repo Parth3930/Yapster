@@ -234,17 +234,18 @@ class _ChatViewState extends State<ChatView> {
         // Create a temporary provider just for avatar display
         final tempProvider = AccountDataProvider();
 
-        // Properly handle avatars with prioritization of Google avatar when regular avatar is missing
-        String? profileAvatar = chat['other_avatar'];
-        String? googleAvatar = chat['other_google_avatar'];
+        // Use the avatar utility to handle avatar retrieval
+        final avatars = AvatarUtils.getAvatarUrls(
+          isCurrentUser: false,
+          accountDataProvider: tempProvider,
+          exploreController: null,
+          customAvatar: chat['other_avatar'],
+          customGoogleAvatar: chat['other_google_avatar'],
+        );
 
-        if (profileAvatar == null ||
-            profileAvatar.isEmpty ||
-            profileAvatar == "skiped") {
-          tempProvider.googleAvatar.value = googleAvatar ?? '';
-        } else {
-          tempProvider.avatar.value = profileAvatar;
-        }
+        // Set the avatar values in the temporary provider
+        tempProvider.avatar.value = avatars['avatar']!;
+        tempProvider.googleAvatar.value = avatars['google_avatar']!;
 
         // Check if this user sent the last message
         final bool didUserSendLastMessage =
@@ -356,17 +357,18 @@ class _ChatViewState extends State<ChatView> {
     // Create a temporary provider just for avatar display
     final tempProvider = AccountDataProvider();
 
-    // Properly handle avatars with prioritization of Google avatar when regular avatar is missing
-    String? profileAvatar = user['avatar'];
-    String? googleAvatar = user['google_avatar'];
+    // Use the avatar utility to handle avatar retrieval
+    final avatars = AvatarUtils.getAvatarUrls(
+      isCurrentUser: false,
+      accountDataProvider: tempProvider,
+      exploreController: null,
+      customAvatar: user['avatar'],
+      customGoogleAvatar: user['google_avatar'],
+    );
 
-    if (profileAvatar == null ||
-        profileAvatar.isEmpty ||
-        profileAvatar == "skiped") {
-      tempProvider.googleAvatar.value = googleAvatar ?? '';
-    } else {
-      tempProvider.avatar.value = profileAvatar;
-    }
+    // Set the avatar values in the temporary provider
+    tempProvider.avatar.value = avatars['avatar']!;
+    tempProvider.googleAvatar.value = avatars['google_avatar']!;
 
     return ListTile(
       leading: GestureDetector(

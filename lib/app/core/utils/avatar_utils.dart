@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:get/get.dart';
 
 /// Utility class for handling avatar-related operations
 /// This centralizes common avatar functionality used across controllers
@@ -262,5 +262,67 @@ class AvatarUtils {
         ),
       );
     }
+  }
+
+  /// Retrieves the appropriate avatar URL based on whether it's the current user or another user
+  /// 
+  /// [isCurrentUser] - Whether the avatar is for the current user
+  /// [accountDataProvider] - The account data provider instance
+  /// [exploreController] - The explore controller instance (only needed if isCurrentUser is false)
+  static String getAvatarUrl({
+    required bool isCurrentUser,
+    required AccountDataProvider accountDataProvider,
+    dynamic exploreController,
+  }) {
+    if (isCurrentUser) {
+      return accountDataProvider.avatar.value;
+    } else {
+      return (exploreController?.selectedUserProfile?['avatar'] as String?) ?? '';
+    }
+  }
+
+  /// Retrieves the appropriate Google avatar URL based on whether it's the current user or another user
+  /// 
+  /// [isCurrentUser] - Whether the avatar is for the current user
+  /// [accountDataProvider] - The account data provider instance
+  /// [exploreController] - The explore controller instance (only needed if isCurrentUser is false)
+  static String getGoogleAvatarUrl({
+    required bool isCurrentUser,
+    required AccountDataProvider accountDataProvider,
+    dynamic exploreController,
+  }) {
+    if (isCurrentUser) {
+      return accountDataProvider.googleAvatar.value;
+    } else {
+      return (exploreController?.selectedUserProfile?['google_avatar'] as String?) ?? '';
+    }
+  }
+
+  /// Retrieves both avatar and Google avatar URLs in a single call
+  /// 
+  /// [isCurrentUser] - Whether the avatar is for the current user
+  /// [accountDataProvider] - The account data provider instance
+  /// [exploreController] - The explore controller instance (only needed if isCurrentUser is false)
+  /// [customAvatar] - Optional custom avatar URL to use instead of the one from accountDataProvider
+  /// [customGoogleAvatar] - Optional custom Google avatar URL to use instead of the one from accountDataProvider
+  static Map<String, String> getAvatarUrls({
+    required bool isCurrentUser,
+    required AccountDataProvider accountDataProvider,
+    dynamic exploreController,
+    String? customAvatar,
+    String? customGoogleAvatar,
+  }) {
+    return {
+      'avatar': customAvatar ?? getAvatarUrl(
+        isCurrentUser: isCurrentUser,
+        accountDataProvider: accountDataProvider,
+        exploreController: exploreController,
+      ),
+      'google_avatar': customGoogleAvatar ?? getGoogleAvatarUrl(
+        isCurrentUser: isCurrentUser,
+        accountDataProvider: accountDataProvider,
+        exploreController: exploreController,
+      ),
+    };
   }
 }

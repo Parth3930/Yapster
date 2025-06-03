@@ -15,8 +15,13 @@ class AccountAvatarSetupView extends GetView<AccountSetupController> {
 
     // Preload any existing avatar images when view is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (accountDataProvider.avatar.value.isNotEmpty ||
-          accountDataProvider.googleAvatar.value.isNotEmpty) {
+      final avatars = AvatarUtils.getAvatarUrls(
+        isCurrentUser: true,
+        accountDataProvider: accountDataProvider,
+        exploreController: null,
+      );
+      
+      if (avatars['avatar']!.isNotEmpty || avatars['google_avatar']!.isNotEmpty) {
         AvatarUtils.preloadAvatarImages(accountDataProvider);
       }
     });

@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
+import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 
 class ProfileView extends GetView<ProfileController> {
   final String? userId;
@@ -71,17 +72,14 @@ class ProfileView extends GetView<ProfileController> {
 
     // This will run when the view is built or becomes visible after navigation
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Use a different data source if viewing another user's profile
-      final avatar =
-          isCurrentUser
-              ? accountDataProvider.avatar.value
-              : exploreController.selectedUserProfile['avatar'] ?? '';
-      final googleAvatar =
-          isCurrentUser
-              ? accountDataProvider.googleAvatar.value
-              : exploreController.selectedUserProfile['google_avatar'] ?? '';
+      // Get avatar URLs using the utility method
+      final avatars = AvatarUtils.getAvatarUrls(
+        isCurrentUser: isCurrentUser,
+        accountDataProvider: accountDataProvider,
+        exploreController: exploreController,
+      );
 
-      if (avatar.isNotEmpty || googleAvatar.isNotEmpty) {
+      if (avatars['avatar']!.isNotEmpty || avatars['google_avatar']!.isNotEmpty) {
         if (isCurrentUser) {
           AvatarUtils.preloadAvatarImages(accountDataProvider);
         }
@@ -351,15 +349,20 @@ class ProfileView extends GetView<ProfileController> {
                 Expanded(
                   child: Center(
                     child: Obx(
-                      () => _buildStatColumn(
-                        isCurrentUser
-                            ? accountDataProvider.postsCount.toString()
-                            : (exploreController
-                                        .selectedUserProfile['posts_count'] ??
-                                    0)
-                                .toString(),
-                        'Posts',
-                      ),
+                      () {
+                        // Get the post count from the appropriate source
+                        final postCount = isCurrentUser
+                            ? accountDataProvider.posts.length
+                            : (exploreController.selectedUserProfile['post_count'] as int?) ?? 0;
+                        
+                        return _buildStatColumn(
+                          postCount.toString(),
+                          'Posts',
+                          onTap: () {
+                            // Handle posts tap if needed
+                          },
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -377,23 +380,25 @@ class ProfileView extends GetView<ProfileController> {
                 Expanded(
                   child: Center(
                     child: Obx(
-                      () => _buildStatColumn(
-                        isCurrentUser
-                            ? accountDataProvider.followerCount.toString()
-                            : (exploreController
-                                        .selectedUserProfile['follower_count'] ??
-                                    0)
-                                .toString(),
-                        'Followers',
-                        onTap: () {
-                          Get.toNamed(
-                            Routes.FOLLOWERS,
-                            arguments: {
-                              'userId': isCurrentUser ? null : userId,
-                            },
-                          );
-                        },
-                      ),
+                      () {
+                        // Get the followers count from the appropriate source
+                        final followersCount = isCurrentUser
+                            ? accountDataProvider.followers.length
+                            : (exploreController.selectedUserProfile['follower_count'] as int?) ?? 0;
+                            
+                        return _buildStatColumn(
+                          followersCount.toString(),
+                          'Followers',
+                          onTap: () {
+                            Get.toNamed(
+                              Routes.FOLLOWERS,
+                              arguments: {
+                                'userId': isCurrentUser ? null : userId,
+                              },
+                            );
+                          },
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -411,23 +416,25 @@ class ProfileView extends GetView<ProfileController> {
                 Expanded(
                   child: Center(
                     child: Obx(
-                      () => _buildStatColumn(
-                        isCurrentUser
-                            ? accountDataProvider.followingCount.toString()
-                            : (exploreController
-                                        .selectedUserProfile['following_count'] ??
-                                    0)
-                                .toString(),
-                        'Following',
-                        onTap: () {
-                          Get.toNamed(
-                            Routes.FOLLOWING,
-                            arguments: {
-                              'userId': isCurrentUser ? null : userId,
-                            },
-                          );
-                        },
-                      ),
+                      () {
+                        // Get the following count from the appropriate source
+                        final followingCount = isCurrentUser
+                            ? accountDataProvider.following.length
+                            : (exploreController.selectedUserProfile['following_count'] as int?) ?? 0;
+                            
+                        return _buildStatColumn(
+                          followingCount.toString(),
+                          'Following',
+                          onTap: () {
+                            Get.toNamed(
+                              Routes.FOLLOWING,
+                              arguments: {
+                                'userId': isCurrentUser ? null : userId,
+                              },
+                            );
+                          },
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -436,6 +443,8 @@ class ProfileView extends GetView<ProfileController> {
           ),
           const SizedBox(height: 10),
           // Tab buttons
+          // Add follow and message buttons if this is not the current user's profile
+          _buildActionButtons(context),
           Stack(
             children: [
               Container(
@@ -539,8 +548,6 @@ class ProfileView extends GetView<ProfileController> {
               }),
             ],
           ),
-          // Add follow and message buttons if this is not the current user's profile
-          _buildActionButtons(context),
         ],
       ),
       bottomNavigationBar: BottomNavigation(),
@@ -653,30 +660,7 @@ class ProfileView extends GetView<ProfileController> {
                                     .value
                                     ?.id;
                             if (currentUserId != null) {
-                              // Get reference to accountDataProvider for count updates
-                              final accountDataProvider = Get.find<AccountDataProvider>();
-                              
-                              // Update local counts immediately based on the action
-                              if (isFollowing.value) {
-                                accountDataProvider.followingCount.value++;
-                                exploreController
-                                        .selectedUserProfile['follower_count'] =
-                                    (exploreController
-                                            .selectedUserProfile['follower_count'] ??
-                                        0) +
-                                    1;
-                              } else {
-                                accountDataProvider.followingCount.value--;
-                                exploreController
-                                        .selectedUserProfile['follower_count'] =
-                                    (exploreController
-                                            .selectedUserProfile['follower_count'] ??
-                                        1) -
-                                    1;
-                              }
-
                               // Asynchronously verify counts in database without blocking UI
-                              // Use Future.delayed to run this verification in the background
                               Future.delayed(Duration.zero, () {
                                 exploreController.verifyDatabaseCounts(
                                   currentUserId,
@@ -713,7 +697,7 @@ class ProfileView extends GetView<ProfileController> {
                       : isFollowing.value
                       ? "Following"
                       : "Follow",
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: Colors.white, fontSize: 15, fontFamily: GoogleFonts.inter().fontFamily, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -723,16 +707,63 @@ class ProfileView extends GetView<ProfileController> {
             child: ElevatedButton(
               onPressed: () {
                 if (userId == null) return;
-                Get.toNamed(Routes.CHAT_WINDOW, arguments: {'userId': userId});
+                
+                // Get the current user ID
+                final currentUser = Get.find<SupabaseService>().currentUser.value;
+                if (currentUser == null) {
+                  Get.snackbar('Error', 'You need to be logged in to send messages');
+                  return;
+                }
+                
+                try {
+                  // Get the other user's username from the explore controller or parameters
+                  final exploreController = Get.find<ExploreController>();
+                  
+                  // Debug print to check the selectedUserProfile
+                  debugPrint('Selected User Profile: ${exploreController.selectedUserProfile}');
+                  
+                  final otherUsername = exploreController.selectedUserProfile['username']?.toString() ?? 'User';
+                  
+                  // Debug print to check user IDs
+                  debugPrint('Current User ID: ${currentUser.id}');
+                  debugPrint('Other User ID: $userId');
+                  
+                  try {
+                    // Get the chat controller
+                    final chatController = Get.find<ChatController>();
+                    
+                    // Open or create a chat with the user
+                    chatController.openChat(userId!, otherUsername);
+                  } catch (e) {
+                    debugPrint('Error in chat navigation: $e');
+                    Get.snackbar(
+                      'Error',
+                      'Could not start chat. Please try again.',
+                      snackPosition: SnackPosition.BOTTOM,
+                    );
+                  }
+                  
+                } catch (e, stackTrace) {
+                  debugPrint('Error navigating to chat: $e');
+                  debugPrint('Stack trace: $stackTrace');
+                  Get.snackbar('Error', 'Could not start chat. Please try again.');
+                }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF171717),
-                minimumSize: Size(double.infinity, 40),
+                backgroundColor: const Color(0xFF171717),
+                minimumSize: const Size(double.infinity, 40),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
               ),
-              child: Text("Message", style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Message',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ),
         ],
