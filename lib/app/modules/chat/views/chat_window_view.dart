@@ -205,18 +205,29 @@ class ChatWindowView extends GetView<ChatController> {
     _loadMessagesOnce(chatId);
   }
 
-  // Load messages only once and mark as read
-  void _loadMessagesOnce(String chatId) {
+  // Track if messages have been marked as read for this chat
+  static final Set<String> _chatsMarkedAsRead = <String>{};
+  
+  // Load messages once when chat is opened
+  void _loadMessagesOnce(String chatId) async {
     try {
       debugPrint('Initial load of messages for chat: $chatId');
-      // Use preloadMessages for better caching performance
-      controller.preloadMessages(chatId).then((_) {
-        // Mark messages as read after loading
-        controller.markMessagesAsRead(chatId);
-      });
+      
+      // Load messages first
+      await controller.preloadMessages(chatId);
+      
+      // Mark as read only if we haven't done so for this chat
+      if (!_chatsMarkedAsRead.contains(chatId)) {
+        debugPrint('Marking messages as read for chat: $chatId');
+        await controller.markMessagesAsRead(chatId);
+        _chatsMarkedAsRead.add(chatId);
+      }
+      
     } catch (e) {
       debugPrint('Error loading messages initially: $e');
-      Get.snackbar('Error', 'Failed to load messages. Please try again.');
+      if (!e.toString().contains('cancelled')) {
+        Get.snackbar('Error', 'Failed to load messages. Please try again.');
+      }
     }
   }
 
@@ -227,7 +238,6 @@ class ChatWindowView extends GetView<ChatController> {
         debugPrint('App resumed - syncing messages');
         // Only sync when app resumes (not full reload)
         controller.syncMessagesWithDatabase(chatId);
-        controller.markMessagesAsRead(chatId);
       },
       onPause: () {
         debugPrint('App paused - preparing for background');
@@ -259,31 +269,9 @@ class ChatWindowView extends GetView<ChatController> {
     WidgetsBinding.instance.addObserver(observer);
   }
 
-  // Set up message observers with heavy debouncing
+  // No longer using message observers for read status
   void _setupMessageObservers(String chatId) {
-    // Use longer debounce to prevent excessive calls
-    final readStatusDebouncer = Debouncer(
-      milliseconds: 2000,
-    ); // Increased to 2 seconds
-
-    // Track the last message count to avoid unnecessary updates
-    int lastMessageCount = 0;
-
-    ever(controller.messages, (messages) {
-      try {
-        // Only mark as read if message count actually changed
-        if (messages.length != lastMessageCount) {
-          lastMessageCount = messages.length;
-
-          readStatusDebouncer.call(() {
-            debugPrint('Messages count changed - marking as read (debounced)');
-            controller.markMessagesAsRead(chatId);
-          });
-        }
-      } catch (e) {
-        debugPrint('Error in message observer: $e');
-      }
-    });
+    // This method is kept for future use if needed
   }
 
   // Set up cleanup

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
+import '../../../core/utils/supabase_service.dart';
 import '../controllers/chat_controller.dart';
 
 class ChatView extends StatefulWidget {
@@ -349,13 +350,18 @@ class _ChatViewState extends State<ChatView> {
   }
 
   Widget _buildUserTile(Map<String, dynamic> user) {
-    final userId =
-        user['user_id'] ?? user['follower_id'] ?? user['following_id'];
-    final username = user['username'] ?? 'User';
+    // Safely extract user ID with fallbacks
+    final String userId = (user['user_id'] ?? 
+                         user['follower_id'] ?? 
+                         user['following_id'] ?? 
+                         user['id'] ?? 
+                         '').toString();
+    final String username = user['username'] ?? user['name'] ?? 'User';
     final userSource = user['source'];
 
     // Create a temporary provider just for avatar display
     final tempProvider = AccountDataProvider();
+    final _supabaseService = Get.find<SupabaseService>();
 
     // Use the avatar utility to handle avatar retrieval
     final avatars = AvatarUtils.getAvatarUrls(
@@ -399,7 +405,20 @@ class _ChatViewState extends State<ChatView> {
         ],
       ),
       subtitle: Text(user['nickname'] ?? ''),
-      onTap: () => controller.openChat(userId, username),
+      onTap: () async {
+        final userId = _supabaseService.client.auth.currentUser?.id;
+        if (userId == null) {
+          debugPrint('Cannot open chat: User not logged in');
+          return;
+        }
+        
+        if (userId.isEmpty) {
+          debugPrint('Cannot open chat: Invalid user ID');
+          return;
+        }
+        // Opens chat window
+        controller.openChat(userId, username);
+      },
     );
   }
 

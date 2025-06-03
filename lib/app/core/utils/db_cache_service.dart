@@ -34,12 +34,19 @@ class DbCacheService extends GetxService {
   };
   
   // Key prefixes for different data types
+  // ignore: constant_identifier_names
   static const String _PROFILE_PREFIX = 'profile_';
+  // ignore: constant_identifier_names
   static const String _POSTS_PREFIX = 'posts_';
+  // ignore: constant_identifier_names
   static const String _FOLLOWERS_PREFIX = 'followers_';
+  // ignore: constant_identifier_names
   static const String _FOLLOWING_PREFIX = 'following_';
+  // ignore: constant_identifier_names
   static const String _FEED_PREFIX = 'feed_';
+  // ignore: constant_identifier_names
   static const String _COMMENTS_PREFIX = 'comments_';
+  // ignore: constant_identifier_names
   static const String _SEARCH_PREFIX = 'search_';
   
   // Initialize service

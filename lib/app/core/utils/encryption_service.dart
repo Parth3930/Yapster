@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
@@ -37,7 +38,7 @@ class EncryptionService extends GetxService {
         throw Exception('Cannot initialize encryption: User ID is null');
       }
     } catch (e) {
-      print('Error initializing encryption service: $e');
+      debugPrint('Error initializing encryption service: $e');
       rethrow;
     }
   }

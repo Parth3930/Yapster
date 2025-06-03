@@ -8,7 +8,22 @@ import 'package:yapster/app/core/utils/encryption_service.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/chat/modles/message_model.dart';
+import 'package:yapster/app/routes/app_pages.dart';
 import '../services/chat_message_service.dart';
+
+/// Cache entry for storing messages with timestamp
+class MessageCacheEntry {
+  final List<MessageModel> messages;
+  final DateTime timestamp;
+  
+  static const Duration cacheDuration = Duration(minutes: 10);
+  static const Duration backgroundRefreshThreshold = Duration(minutes: 1);
+  
+  MessageCacheEntry(this.messages) : timestamp = DateTime.now();
+  
+  bool get isStale => DateTime.now().difference(timestamp) > backgroundRefreshThreshold;
+  bool get isExpired => DateTime.now().difference(timestamp) > cacheDuration;
+}
 
 mixin ChatControllerMessages {
   // Initializes the chat controller
@@ -25,11 +40,15 @@ mixin ChatControllerMessages {
   
   // Track deleted messages to prevent showing them again
   static final Set<String> _deletedMessageIds = <String>{};
+  
+  // Chat list caching
   final Map<String, DateTime> _chatsFetchTime = {};
-  final Map<String, DateTime> _messagesFetchTime = {};
-  final Map<String, List<MessageModel>> _messagesCache = {};
-  static const Duration chatCacheDuration = Duration(minutes: 5);
-  static const Duration messageCacheDuration = Duration(minutes: 10);
+  
+  // Message caching with TTL
+  final Map<String, MessageCacheEntry> _messagesCache = {};
+  
+  // Track active background refreshes to prevent duplicates
+  final Set<String> _activeBackgroundRefreshes = {};
   
   // Store whether initial data has loaded
   final RxBool _chatsInitiallyLoaded = false.obs;
@@ -37,6 +56,27 @@ mixin ChatControllerMessages {
   // Static flag to prevent repeated preload calls
   static bool _isPreloadingChats = false;
   
+  // Cache duration constants
+  static const Duration chatCacheDuration = Duration(minutes: 5);
+  static const Duration messageCacheDuration = Duration(minutes: 10);
+  
+  /// Clears all cached data
+  void clearCache() {
+    _chatCache.clear();
+    _chatsFetchTime.clear();
+    _messagesCache.clear();
+    _activeBackgroundRefreshes.clear();
+    _lastChatFetchTime = null;
+    debugPrint('Cleared all chat and message caches');
+  }
+  
+  /// Clears the cache for a specific chat
+  void clearChatCache(String chatId) {
+    _messagesCache.remove(chatId);
+    _activeBackgroundRefreshes.remove(chatId);
+    debugPrint('Cleared cache for chat $chatId');
+  }
+
   // Method to mark a message as deleted
   void markMessageAsDeleted(String messageId) {
     _deletedMessageIds.add(messageId);
@@ -79,30 +119,80 @@ mixin ChatControllerMessages {
     }
   }
 
-  /// Checks if messages need to be refreshed based on cache age
+  // Check if messages for a chat need to be refreshed based on cache age
   bool shouldRefreshMessages(String chatId) {
-    final lastFetch = _messagesFetchTime[chatId];
-    final now = DateTime.now();
+    final cacheEntry = _messagesCache[chatId];
     
-    // Refresh if we haven't fetched before, or if cache is expired
-    return lastFetch == null || 
-           now.difference(lastFetch) > messageCacheDuration;
+    // If we have a cache entry and it's not expired, use it
+    if (cacheEntry != null && !cacheEntry.isExpired) {
+      debugPrint('Using cached messages for chat $chatId');
+      return false;
+    }
+    
+    // If we get here, we need to refresh
+    debugPrint('Cache expired or missing for chat $chatId, refreshing...');
+    return true;
   }
   
-  /// Updates the messages cache timestamp
-  void markMessagesFetched(String chatId) {
-    _messagesFetchTime[chatId] = DateTime.now();
-    debugPrint('Marked messages for chat $chatId as fetched - cache updated');
+  /// Checks if messages should be refreshed in the background
+  bool _shouldRefreshInBackground(String chatId) {
+    final cacheEntry = _messagesCache[chatId];
+    return cacheEntry != null && 
+           cacheEntry.isStale && 
+           !_activeBackgroundRefreshes.contains(chatId);
+  }
+  
+  /// Updates the messages cache with new data
+  void _updateMessagesCache(String chatId, List<MessageModel> messages) {
+    _messagesCache[chatId] = MessageCacheEntry(messages);
+    debugPrint('Updated message cache for chat $chatId with ${messages.length} messages');
+  }
+  
+  /// Gets cached messages if available and fresh
+  List<MessageModel>? _getCachedMessages(String chatId) {
+    final cacheEntry = _messagesCache[chatId];
+    if (cacheEntry != null && !cacheEntry.isExpired) {
+      debugPrint('Returning cached messages for chat $chatId');
+      return cacheEntry.messages;
+    }
+    return null;
   }
   
   /// Preload messages for a specific chat in the background
   Future<void> preloadMessages(String chatId) async {
-    // Check if we need to refresh from DB
-    if (shouldRefreshMessages(chatId)) {
-      debugPrint('Preloading messages for chat $chatId in background');
-      await loadMessages(chatId, forceRefresh: false);
-    } else {
+    // Return cached messages immediately if available and fresh
+    final cachedMessages = _getCachedMessages(chatId);
+    if (cachedMessages != null) {
       debugPrint('Using cached messages for chat $chatId');
+      _chatControler.messages.value = List.from(cachedMessages);
+      
+      // Refresh in background if cache is getting stale
+      if (_shouldRefreshInBackground(chatId)) {
+        _refreshMessagesInBackground(chatId);
+      }
+      return;
+    }
+    
+    // If no cache or cache expired, load fresh data
+    debugPrint('Preloading messages for chat $chatId in background');
+    await loadMessages(chatId, forceRefresh: false);
+  }
+  
+  /// Refresh messages in background without blocking UI
+  Future<void> _refreshMessagesInBackground(String chatId) async {
+    if (_activeBackgroundRefreshes.contains(chatId)) return;
+    
+    try {
+      _activeBackgroundRefreshes.add(chatId);
+      debugPrint('Starting background refresh of messages for chat $chatId');
+      
+      await loadMessages(chatId, forceRefresh: true);
+      
+      debugPrint('Background refresh of messages completed for chat $chatId');
+    } catch (e) {
+      debugPrint('Error during background refresh of messages: $e');
+    } finally {
+      _activeBackgroundRefreshes.remove(chatId);
     }
   }
   
@@ -110,24 +200,34 @@ mixin ChatControllerMessages {
   Future<void> loadMessages(String chatId, {bool forceRefresh = false}) async {
     final supabase = Get.find<SupabaseService>().client;
     final nowIso = DateTime.now().toUtc().toIso8601String();
+    final userId = _supabaseService.client.auth.currentUser?.id;
+    
+    if (userId == null) {
+      debugPrint('User not authenticated, cannot load messages');
+      return;
+    }
 
-    debugPrint('Loading messages... $chatId');
+    debugPrint('Loading messages for chat $chatId, forceRefresh: $forceRefresh');
+    
     try {
       // Cancel any previous real-time message subscription
       await _messageSubscription?.unsubscribe();
       _messageSubscription = null;
       
-      // Check if we have cached messages and they're still fresh
-      if (!forceRefresh && !shouldRefreshMessages(chatId) && 
-          _messagesCache.containsKey(chatId) && 
-          _messagesCache[chatId]!.isNotEmpty) {
-        debugPrint('Using cached messages for chat $chatId');
-        _chatControler.messages.clear();
-        _chatControler.messages.assignAll(_messagesCache[chatId]!);
-        
-        // Still set up real-time subscription even when using cache
-        _setupRealtimeSubscription(chatId);
-        return;
+      // Return cached messages if available and not forcing refresh
+      if (!forceRefresh) {
+        final cachedMessages = _getCachedMessages(chatId);
+        if (cachedMessages != null) {
+          debugPrint('Using cached messages for chat $chatId');
+          _chatControler.messages.value = List.from(cachedMessages);
+          _setupRealtimeSubscription(chatId);
+          
+          // Refresh in background if cache is getting stale
+          if (_shouldRefreshInBackground(chatId)) {
+            _refreshMessagesInBackground(chatId);
+          }
+          return;
+        }
       }
 
       // If cache is stale or empty, fetch from database
@@ -177,15 +277,20 @@ mixin ChatControllerMessages {
         }
 
         // Update cache with decrypted messages
-        _messagesCache[chatId] = loadedMessages;
-        markMessagesFetched(chatId);
+        _updateMessagesCache(chatId, loadedMessages);
         
-        _chatControler.messages.assignAll(loadedMessages);
+        // Only update UI if this is not a background refresh
+        if (!_activeBackgroundRefreshes.contains(chatId)) {
+          _chatControler.messages.assignAll(loadedMessages);
+        }
+        
         debugPrint('Loaded and decrypted ${loadedMessages.length} messages from database');
       } else {
-        // Even if no messages, mark as fetched to avoid repeated calls
-        _messagesCache[chatId] = [];
-        markMessagesFetched(chatId);
+        // Even if no messages, update cache to avoid repeated calls
+        _updateMessagesCache(chatId, []);
+        if (!_activeBackgroundRefreshes.contains(chatId)) {
+          _chatControler.messages.clear();
+        }
         debugPrint('No messages found in database for chat $chatId');
       }
 
@@ -265,7 +370,9 @@ mixin ChatControllerMessages {
               debugPrint('Adding new message ${message.messageId} from real-time event');
               // Add to cache
               if (_messagesCache.containsKey(chatId)) {
-                _messagesCache[chatId]!.add(message);
+                final cachedMessages = _messagesCache[chatId]!.messages.toList();
+                cachedMessages.add(message);
+                _messagesCache[chatId] = MessageCacheEntry(cachedMessages);
               }
               
               // Update UI
@@ -321,26 +428,8 @@ mixin ChatControllerMessages {
                   }
                 }
                 
-                // Create the message model with decrypted content
-                final message = MessageModel.fromJson(msgMap);
-                final index = _chatControler.messages.indexWhere(
-                  (m) => m.messageId == message.messageId,
-                );
-                if (index != -1) {
-                  // Update cache
-                  if (_messagesCache.containsKey(chatId)) {
-                    final cacheIndex = _messagesCache[chatId]!.indexWhere(
-                      (m) => m.messageId == message.messageId
-                    );
-                    if (cacheIndex != -1) {
-                      _messagesCache[chatId]![cacheIndex] = message;
-                    }
-                  }
-                  
-                  // Update UI
-                  _chatControler.messages[index] = message;
-                }
-                _cleanupExpiredMessages();
+                // Handle message update from real-time subscription
+                _handleMessageUpdate(chatId, msgMap);
               },
             )
             .onPostgresChanges(
@@ -364,7 +453,7 @@ mixin ChatControllerMessages {
 
                 // Update cache
                 if (_messagesCache.containsKey(chatId)) {
-                  _messagesCache[chatId]!.removeWhere(
+                  _messagesCache[chatId]!.messages.removeWhere(
                     (m) => m.messageId == messageId
                   );
                 }
@@ -385,6 +474,35 @@ mixin ChatControllerMessages {
               },
             )
             .subscribe();
+  }
+
+  void _handleMessageUpdate(String chatId, Map<String, dynamic> msgMap) {
+    try {
+      final message = MessageModel.fromJson(msgMap);
+      final index = _chatControler.messages.indexWhere(
+        (m) => m.messageId == message.messageId,
+      );
+
+      if (index != -1) {
+        // Update cache
+        if (_messagesCache.containsKey(chatId)) {
+          final cacheIndex = _messagesCache[chatId]!.messages.indexWhere(
+            (m) => m.messageId == message.messageId
+          );
+          if (cacheIndex != -1) {
+            final updatedMessages = _messagesCache[chatId]!.messages.toList();
+            updatedMessages[cacheIndex] = message;
+            _messagesCache[chatId] = MessageCacheEntry(updatedMessages);
+          }
+        }
+        
+        // Update UI
+        _chatControler.messages[index] = message;
+        _chatControler.messages.refresh();
+      }
+    } catch (e) {
+      debugPrint('Error handling message update: $e');
+    }
   }
 
   void _cleanupExpiredMessages() {
@@ -665,66 +783,39 @@ mixin ChatControllerMessages {
   }
 
   // Opens chat window
+   // opens chat window
   Future<void> openChat(String userTwoId, String username) async {
-    final userId = _supabaseService.client.auth.currentUser?.id;
-    if (userId == null) return;
+    final supabaseService = Get.find<SupabaseService>();
+    final currentUserId = supabaseService.client.auth.currentUser?.id;
 
-    // Check if we already have a chat with this user in cache
-    final existingChat = _chatControler.recentChats.firstWhereOrNull(
-      (chat) =>
-          chat['other_user_id'] == userTwoId ||
-          chat['user_one_id'] == userTwoId,
-    );
-
-    if (existingChat != null) {
-      // Navigate to existing chat
-      await Get.toNamed(
-        '/chat/${existingChat['chat_id']}',
-        arguments: {
-          'chatId': existingChat['chat_id'],
-          'username': username,
-          'userId': userTwoId,
-        },
-      );
+    if (currentUserId == null) {
+      debugPrint('User not logged in');
       return;
     }
 
-    // Create new chat if it doesn't exist
     try {
-      _chatControler.isLoading.value = true;
-      
-      // Create new chat in database
-      final response = await _supabaseService.client.rpc(
-        'create_chat',
-        params: {
-          'p_user_one_id': userId,
-          'p_user_two_id': userTwoId,
-        },
+      // Call the RPC to get or create a chat_id connecting both users
+      final chatId = await supabaseService.client.rpc(
+        'user_chat_connect',
+        params: {'user_one': currentUserId, 'user_two': userTwoId},
       );
 
-      if (response != null && response['chat_id'] != null) {
-        // Invalidate cache to ensure fresh data on next load
-        _lastChatFetchTime = null;
-        _chatCache.remove(userId);
-        
-        // Force refresh chats to include the new one
-        await fetchUsersRecentChats(forceRefresh: true);
-        
-        // Navigate to the new chat
-        await Get.toNamed(
-          '/chat/${response['chat_id']}',
+      // chatId is expected to be a String UUID or null
+      if (chatId != null && (chatId is String) && chatId.isNotEmpty) {
+        // Navigate to the chat detail screen with chatId and username
+        Get.toNamed(
+          Routes.CHAT_WINDOW,
           arguments: {
-            'chatId': response['chat_id'],
+            'chatId': chatId,
             'username': username,
-            'userId': userTwoId,
+            'otherUserId': userTwoId,
           },
         );
+      } else {
+        debugPrint('Chat ID not found in response');
       }
     } catch (e) {
-      debugPrint('Error creating chat: $e');
-      Get.snackbar('Error', 'Could not start chat');
-    } finally {
-      _chatControler.isLoading.value = false;
+      debugPrint('Failed to connect/open chat: $e');
     }
   }
 
@@ -734,17 +825,17 @@ mixin ChatControllerMessages {
       final userId = _supabaseService.client.auth.currentUser?.id;
       if (userId == null) return;
       
-      await _supabaseService.client.rpc(
-        'mark_messages_as_read',
-        params: {
-          'p_chat_id': chatId,
-          'p_user_id': userId,
-        },
-      );
+      // Update messages where current user is the recipient and they're not already read
+      await _supabaseService.client
+          .from('messages')
+          .update({'is_read': true})
+          .eq('chat_id', chatId)
+          .eq('recipient_id', userId)
+          .eq('is_read', false);
       
       // Update local state to reflect read status
       final updatedMessages = _chatControler.messages.map((message) {
-        if (message.senderId != userId && !message.isRead) {
+        if (message.recipientId == userId && !message.isRead) {
           return message.copyWith(isRead: true);
         }
         return message;
@@ -840,38 +931,43 @@ mixin ChatControllerMessages {
   Future<void> forceRefreshAllMessages(String chatId) async {
     try {
       // Clear all caches
-      _messagesCache.clear();
-      _messagesFetchTime.clear();
-      _chatsFetchTime.clear();
-      _deletedMessageIds.clear(); // Also clear deleted message tracking
+      clearCache();
       
       // Clear current messages
       _chatControler.messages.clear();
       _chatControler.messagesToAnimate.clear();
       
+      // Mark messages as fetched to prevent immediate refetch
+      _messagesCache[chatId] = MessageCacheEntry([]);
+      
       debugPrint('Cleared all caches, loading fresh messages');
       
-      // Either use the service method OR the controller method, not both
-      // The service has better encryption handling, so we'll use that
-      await Get.find<ChatMessageService>().forceRefreshMessages(chatId);
+      try {
+        // Try using the service method first (has better encryption handling)
+        await Get.find<ChatMessageService>().forceRefreshMessages(chatId);
+      } catch (e) {
+        debugPrint('Error using service refresh, falling back to controller method: $e');
+        // Fall back to the controller's method if service method fails
+        await loadMessages(chatId, forceRefresh: true);
+      }
       
-      // Update the cache timestamp to prevent immediate re-fetch
-      markMessagesFetched(chatId);
+      // Update the cache with current messages
+      if (_chatControler.messages.isNotEmpty) {
+        _updateMessagesCache(chatId, _chatControler.messages.toList());
+      }
       
       // Update UI
       _chatControler.messages.refresh();
       
       debugPrint('Successfully refreshed all messages for chat: $chatId');
     } catch (e) {
-      debugPrint('Error refreshing messages: $e');
-      // Fall back to the controller's method if service method fails
-      await loadMessages(chatId, forceRefresh: true);
+      debugPrint('Error in forceRefreshAllMessages: $e');
+      rethrow; // Re-throw to allow callers to handle the error
+    } finally {
+      // Always refresh recent chats
+      await preloadRecentChats();
+      debugPrint('Completed refresh of all messages and caches for chat: $chatId');
     }
-    
-    // Also refresh recent chats
-    await preloadRecentChats();
-    
-    debugPrint('Forced complete refresh of all messages and caches');
   }
 
   // Example: Edit a message (stub)
