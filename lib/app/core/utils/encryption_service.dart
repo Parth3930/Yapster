@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
@@ -154,7 +153,7 @@ class EncryptionService extends GetxService {
       );
       return encrypted.base64;
     } catch (e) {
-      print('Encryption error: $e');
+      debugPrint('Encryption error: $e');
       return '🔒 Error encrypting message';
     }
   }
@@ -169,7 +168,7 @@ class EncryptionService extends GetxService {
       
       // Check if message is already decrypted or not in base64 format
       if (!_isBase64(encryptedMessage)) {
-        print('Message appears to be already decrypted or not in base64 format: ${encryptedMessage.substring(0, math.min(10, encryptedMessage.length))}...');
+        debugPrint('Message appears to be already decrypted or not in base64 format: ${encryptedMessage.substring(0, math.min(10, encryptedMessage.length))}...');
         return encryptedMessage; // Return as-is if not valid base64
       }
 
@@ -177,7 +176,7 @@ class EncryptionService extends GetxService {
       final encrypted = encrypt.Encrypted(base64Decode(encryptedMessage));
       return encryption['encrypter'].decrypt(encrypted, iv: encryption['iv']);
     } catch (e) {
-      print('Decryption error for message: ${encryptedMessage.substring(0, math.min(20, encryptedMessage.length))}... Error: $e');
+      debugPrint('Decryption error for message: ${encryptedMessage.substring(0, math.min(20, encryptedMessage.length))}... Error: $e');
       // Return original message instead of error placeholder to avoid showing "Encrypted message" everywhere
       return encryptedMessage;
     }
@@ -204,7 +203,7 @@ class EncryptionService extends GetxService {
       final encrypted = _defaultEncrypter.encrypt(message, iv: _defaultIV);
       return encrypted.base64;
     } catch (e) {
-      print('Encryption error: $e');
+      debugPrint('Encryption error: $e');
       return '🔒 Error encrypting message';
     }
   }
@@ -217,7 +216,7 @@ class EncryptionService extends GetxService {
       final encrypted = encrypt.Encrypted(base64Decode(encryptedMessage));
       return _defaultEncrypter.decrypt(encrypted, iv: _defaultIV);
     } catch (e) {
-      print('Decryption error: $e');
+      debugPrint('Decryption error: $e');
       return '🔒 Encrypted message';
     }
   }

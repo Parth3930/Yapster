@@ -221,6 +221,15 @@ class ChatMessageService extends GetxService {
               }
             }
             
+            // Get current user ID
+            final String? currentUserId = _supabaseService.currentUser.value?.id;
+            
+            // Skip if this is a message we just sent (it's already in the UI)
+            if (msgData['sender_id'] == currentUserId) {
+              debugPrint('Skipping real-time update for self-sent message: $messageId');
+              return;
+            }
+            
             // Mark this message as processed
             _processedMessageIds.add(messageId);
             
@@ -228,11 +237,18 @@ class ChatMessageService extends GetxService {
             final MessageModel message = MessageModel.fromJson(msgData);
             
             // Check if message already exists in the list
-            if (!messages.any((m) => m.messageId == message.messageId)) {
+            final existingIndex = messages.indexWhere((m) => m.messageId == message.messageId);
+            if (existingIndex == -1) {
               // Add to messages list
               messages.add(message);
-              // Add to animation list in controller
-              controller.messagesToAnimate.add(message.messageId);
+              // Add to animation list in controller only if not from current user
+              if (message.senderId != currentUserId) {
+                controller.messagesToAnimate.add(message.messageId);
+              }
+              messages.refresh();
+            } else {
+              // Update existing message
+              messages[existingIndex] = message;
               messages.refresh();
             }
           }
@@ -301,44 +317,59 @@ class ChatMessageService extends GetxService {
         'is_read': false,
       };
       
-      // Insert the message into the database
-      final response = await _supabaseService.client
-        .from('messages')
-        .insert(messageData)
-        .select();
+      // Mark this message as being processed to prevent duplicates
+      _processedMessageIds.add(tempMessage.messageId);
+      
+      try {
+        // Insert the message into the database
+        final response = await _supabaseService.client
+          .from('messages')
+          .insert(messageData)
+          .select();
+          
+        if (response.isEmpty) {
+          debugPrint('Error: Empty response when sending message');
+          // Keep the plaintext version in the UI
+          messages.refresh();
+          return;
+        }
+
+        debugPrint('Message sent to database: ${response.first['message_id']}');
+
+        // Get the real message from database with server-generated ID
+        final sentMessage = MessageModel.fromJson(response.first);
         
-      if (response.isEmpty) {
-        debugPrint('Error: Empty response when sending message');
-        // Keep the plaintext version in the UI
+        // Replace the temporary message with the real one from database
+        final index = messages.indexWhere((m) => m.messageId == tempMessage.messageId);
+        if (index != -1) {
+          // Create a copy of the sent message with the decrypted content
+          final updatedMessage = sentMessage.copyWith(
+            content: plainMessageContent,
+            isEncrypted: false,
+          );
+          
+          // Replace the temporary message
+          messages[index] = updatedMessage;
+          
+          // Update animation tracking
+          controller.messagesToAnimate.remove(tempMessage.messageId);
+          controller.messagesToAnimate.add(sentMessage.messageId);
+          
+          // Mark the new message ID as processed to prevent duplicates
+          _processedMessageIds.add(sentMessage.messageId);
+        }
+        
+        // Update UI
         messages.refresh();
-        return;
-      }
-
-      debugPrint('Message sent to database: ${response.first['message_id']}');
-
-      // Get the real message from database with server-generated ID
-      final sentMessage = MessageModel.fromJson(response.first);
-      
-      // Replace the temporary message with the real one from database
-      final index = messages.indexWhere((m) => m.messageId == tempMessage.messageId);
-      if (index != -1) {
-        // Create a copy of the sent message with the decrypted content
-        final updatedMessage = sentMessage.copyWith(
-          content: plainMessageContent,
-          isEncrypted: false,
-        );
+        controller.messages.refresh();
         
-        messages[index] = updatedMessage;
-        controller.messagesToAnimate.remove(tempMessage.messageId);
-        controller.messagesToAnimate.add(sentMessage.messageId);
+        // Update recent chats list to show latest message
+        await _updateRecentChat(chatId, plainMessageContent);
+      } catch (e) {
+        // On error, ensure we clean up the processed message ID
+        _processedMessageIds.remove(tempMessage.messageId);
+        rethrow;
       }
-      
-      // Force update both UI lists
-      messages.refresh();
-      controller.messages.refresh();
-      
-      // Also refresh recent chats list to show latest message
-      await _updateRecentChat(chatId, plainMessageContent);
       
     } catch (e) {
       debugPrint('Error sending message: $e');

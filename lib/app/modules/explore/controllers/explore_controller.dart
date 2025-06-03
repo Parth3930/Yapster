@@ -173,8 +173,8 @@ class ExploreController extends GetxController {
       final recentSearchesJson = _storageService.getString('recent_searches');
       if (recentSearchesJson != null && recentSearchesJson.isNotEmpty) {
         final decodedSearches = jsonDecode(recentSearchesJson) as List;
-        recentSearches.value = decodedSearches
-            .single();
+        recentSearches.clear();
+        recentSearches.addAll(List<Map<String, dynamic>>.from(decodedSearches));
 
         debugPrint('Loaded ${recentSearches.length} recent searches from cache');
 

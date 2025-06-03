@@ -40,6 +40,47 @@ mixin ChatControllerMessages {
   
   // Track deleted messages to prevent showing them again
   static final Set<String> _deletedMessageIds = <String>{};
+  static DateTime? _lastCleanupTime;
+  
+  // Clean up expired messages from all caches
+  void _cleanupExpiredMessages() {
+    final now = DateTime.now().toUtc();
+    
+    // Only run cleanup once per hour to avoid performance hits
+    if (_lastCleanupTime != null && 
+        now.difference(_lastCleanupTime!) < const Duration(hours: 1)) {
+      return;
+    }
+    
+    _lastCleanupTime = now;
+    final cutoffTime = now.subtract(const Duration(hours: 24));
+    
+    // Clean up message caches
+    _messagesCache.removeWhere((chatId, cacheEntry) {
+      // Remove any messages older than 24 hours from each cache entry
+      cacheEntry.messages.removeWhere((message) {
+        final isExpired = message.createdAt.isBefore(cutoffTime);
+        if (isExpired) {
+          debugPrint('Removing expired message from cache: ${message.messageId}');
+        }
+        return isExpired;
+      });
+      
+      // Remove the cache entry if it's now empty
+      if (cacheEntry.messages.isEmpty) {
+        debugPrint('Removing empty cache for chat: $chatId');
+        return true;
+      }
+      return false;
+    });
+    
+    // Also clean up any expired messages from the active controller
+    if (_chatControler.messages.isNotEmpty) {
+      _chatControler.messages.removeWhere((message) {
+        return message.createdAt.isBefore(cutoffTime);
+      });
+    }
+  }
   
   // Chat list caching
   final Map<String, DateTime> _chatsFetchTime = {};
@@ -199,8 +240,12 @@ mixin ChatControllerMessages {
   // Loads messages for a conversation
   Future<void> loadMessages(String chatId, {bool forceRefresh = false}) async {
     final supabase = Get.find<SupabaseService>().client;
-    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final now = DateTime.now().toUtc();
+    final nowIso = now.toIso8601String();
     final userId = _supabaseService.client.auth.currentUser?.id;
+    
+    // Clean up any expired messages from the cache first
+    _cleanupExpiredMessages();
     
     if (userId == null) {
       debugPrint('User not authenticated, cannot load messages');
@@ -364,25 +409,34 @@ mixin ChatControllerMessages {
 
           // Check if message is not deleted and not expired
           if (message.expiresAt.isAfter(now) && !_deletedMessageIds.contains(message.messageId)) {
-            if (!_chatControler.messages.any(
+            // Check if this is a new message or an update to an existing one
+            final existingMsgIndex = _chatControler.messages.indexWhere(
               (m) => m.messageId == message.messageId,
-            )) {
+            );
+            
+            // Only process if this is a new message or an update to an existing one
+            if (existingMsgIndex == -1) {
+              // This is a new message
               debugPrint('Adding new message ${message.messageId} from real-time event');
-              // Add to cache
+              
+              // Add to cache if not already there
               if (_messagesCache.containsKey(chatId)) {
                 final cachedMessages = _messagesCache[chatId]!.messages.toList();
-                cachedMessages.add(message);
-                _messagesCache[chatId] = MessageCacheEntry(cachedMessages);
+                if (!cachedMessages.any((m) => m.messageId == message.messageId)) {
+                  cachedMessages.add(message);
+                  _messagesCache[chatId] = MessageCacheEntry(cachedMessages);
+                  
+                  // Only add to UI if this is not the current user's message (which is already added)
+                  final currentUserId = _supabaseService.client.auth.currentUser?.id;
+                  if (message.senderId != currentUserId) {
+                    _chatControler.messages.add(message);
+                    _chatControler.messagesToAnimate.add(message.messageId);
+                    _chatControler.messages.refresh();
+                  }
+                }
               }
               
-              // Update UI
-              _chatControler.messages.add(message);
-              _chatControler.messagesToAnimate.add(message.messageId);
-              
-              // Force UI refresh
-              _chatControler.messages.refresh();
-              
-              // Also refresh recent chats to show latest message
+              // Refresh recent chats to show latest message
               _chatsFetchTime.clear(); // Force refresh of recent chats
               preloadRecentChats();
             }
@@ -503,15 +557,6 @@ mixin ChatControllerMessages {
     } catch (e) {
       debugPrint('Error handling message update: $e');
     }
-  }
-
-  void _cleanupExpiredMessages() {
-    final now = DateTime.now().toUtc();
-    _chatControler.messages.removeWhere((m) => m.expiresAt.isBefore(now));
-    _chatControler.messagesToAnimate.removeWhere(
-      (id) => !_chatControler.messages.any((m) => m.messageId == id),
-    );
-    _chatControler.messages.refresh(); // 
   }
 
   /// Checks if chats need to be refreshed based on cache age
@@ -651,16 +696,78 @@ mixin ChatControllerMessages {
         debugPrint('Encryption service initialized for recent chats');
       }
       
-      // Process each chat to ensure it has a valid last_message property
+      // Process each chat to ensure it has all required fields
       final processedChats = await Future.wait(chats.map((chat) async {
-        // Ensure each chat has a proper last_message
-        if (chat is Map<String, dynamic>) {
-          // Only set 'No new messages' for actual null values, not for empty strings
+        if (chat is! Map<String, dynamic>) return chat;
+        
+        try {
+          final currentUserId = _supabaseService.client.auth.currentUser?.id ?? '';
+          debugPrint('Processing chat: ${chat['chat_id']}');
+          
+          // Debug print to see what fields we have
+          debugPrint('Chat fields: ${chat.keys.toList()}');
+          
+          // Try to determine the other user's ID
+          String? otherId;
+          String? otherUsername;
+          String? otherAvatar;
+          String? otherGoogleAvatar;
+          
+          // Check if we have direct user info
+          if (chat['user'] is Map<String, dynamic>) {
+            final user = chat['user'] as Map<String, dynamic>;
+            otherId = user['id']?.toString();
+            otherUsername = user['username']?.toString();
+            otherAvatar = user['avatar']?.toString();
+            otherGoogleAvatar = user['google_avatar']?.toString();
+          } 
+          // Check if we have user_one/user_two structure
+          else if (chat.containsKey('user_one_id') && chat.containsKey('user_two_id')) {
+            final isUserOne = chat['user_one_id'] == currentUserId;
+            otherId = isUserOne ? chat['user_two_id']?.toString() : chat['user_one_id']?.toString();
+            otherUsername = isUserOne ? chat['user_two_username']?.toString() : chat['user_one_username']?.toString();
+            otherAvatar = isUserOne ? chat['user_two_avatar']?.toString() : chat['user_one_avatar']?.toString();
+            otherGoogleAvatar = isUserOne ? chat['user_two_google_avatar']?.toString() : chat['user_one_google_avatar']?.toString();
+          }
+          // Fallback to any ID that's not the current user
+          else {
+            final possibleIds = {
+              'user_id': chat['user_id'],
+              'id': chat['id'],
+              'sender_id': chat['sender_id'],
+              'user_one_id': chat['user_one_id'],
+              'user_two_id': chat['user_two_id'],
+            };
+            
+            for (final entry in possibleIds.entries) {
+              if (entry.value != null && entry.value.toString() != currentUserId) {
+                otherId = entry.value.toString();
+                break;
+              }
+            }
+          }
+          
+          // Set other user info with fallbacks
+          chat['other_id'] = otherId ?? chat['other_user_id']?.toString() ?? 'unknown_user';
+          chat['other_username'] = otherUsername ?? chat['other_username']?.toString() ?? 'User';
+          chat['other_avatar'] = otherAvatar ?? chat['other_avatar']?.toString() ?? '';
+          chat['other_google_avatar'] = otherGoogleAvatar ?? chat['other_google_avatar']?.toString() ?? '';
+          
+          // Debug print the avatar URLs
+          debugPrint('Setting avatar for user ${chat['other_username']}:');
+          debugPrint('- Avatar: ${chat['other_avatar']}');
+          debugPrint('- Google Avatar: ${chat['other_google_avatar']}');
+          
+          // Set current user info
+          chat['current_id'] = currentUserId;
+          chat['current_username'] = chat['username'] ?? 'You';
+          chat['current_avatar'] = chat['avatar'] ?? '';
+          chat['current_google_avatar'] = chat['google_avatar'] ?? '';
+          
+          // Ensure last_message is properly set
           if (chat['last_message'] == null) {
             chat['last_message'] = 'No new messages';
           } else if (chat['last_message'].toString().trim().isEmpty) {
-            // If message is just whitespace, use a space to avoid 'No new messages'
-            // but still show an empty bubble
             chat['last_message'] = ' ';
           } else {
             // Try to decrypt the last message if it's encrypted
@@ -677,29 +784,59 @@ mixin ChatControllerMessages {
               }
             } catch (e) {
               debugPrint('Could not decrypt last message: $e');
-              // If decryption fails, leave content as is (might be plaintext or old format)
             }
           }
           
-          // Also ensure other required fields are present
-          if (chat['username'] == null) {
-            chat['username'] = 'User';
-          }
+          // Ensure all required fields have fallbacks
+          chat['username'] = chat['other_username'] ?? 'User';
+          chat['profile_picture'] = chat['other_avatar'] ?? '';
+          chat['google_avatar'] = chat['other_google_avatar'] ?? '';
           
-          // Ensure profile picture is set
-          if (chat['profile_picture'] == null || chat['profile_picture'].toString().isEmpty) {
-            chat['profile_picture'] = '';
-          }
+          return chat;
+          
+        } catch (e) {
+          debugPrint('Error processing chat: $e');
+          return chat;
         }
-        return chat;
       }));
-
-      final chatList = processedChats.cast<Map<String, dynamic>>();
-      _chatControler.recentChats.value = chatList;
+      
+      // Process and filter chats
+      debugPrint('Processed ${processedChats.length} chats before filtering');
+      
+      final validChats = <Map<String, dynamic>>[];
+      for (final chat in processedChats) {
+        if (chat is! Map<String, dynamic>) {
+          debugPrint('Skipping invalid chat (not a map): $chat');
+          continue;
+        }
+        
+        // Debug print the chat data
+        debugPrint('Processing chat: ${chat['chat_id']}');
+        debugPrint('Available keys: ${chat.keys.join(', ')}');
+        
+        // Skip if we can't identify the chat
+        if (chat['chat_id'] == null) {
+          debugPrint('Skipping chat with missing chat_id: $chat');
+          continue;
+        }
+        
+        // Ensure required fields exist with defaults
+        chat['other_id'] ??= 'unknown_user';
+        chat['other_username'] ??= 'User';
+        chat['last_message'] ??= 'No messages yet';
+        chat['last_message_time'] ??= DateTime.now().toIso8601String();
+        chat['unread_count'] ??= 0;
+        
+        debugPrint('Added chat with ID: ${chat['chat_id']}, other_id: ${chat['other_id']}');
+        validChats.add(chat);
+      }
+      
+      debugPrint('Found ${validChats.length} valid chats after filtering');
+      _chatControler.recentChats.value = validChats;
       
       // Update cache
       _chatCache[userId] = {
-        'chats': List<Map<String, dynamic>>.from(chatList),
+        'chats': List<Map<String, dynamic>>.from(validChats),
         'timestamp': DateTime.now().toIso8601String(),
       };
       _lastChatFetchTime = DateTime.now();

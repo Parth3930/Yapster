@@ -72,7 +72,7 @@ class _MessageInputState extends State<MessageInput> {
     super.dispose();
   }
 
-  void handleSendMessage() {
+  Future<void> handleSendMessage() async {
     final text = textController.text.trim();
     if (text.isEmpty || isSending.value) return;
 
@@ -82,33 +82,35 @@ class _MessageInputState extends State<MessageInput> {
     if (MessageInput.isEditingMessage.value &&
         MessageInput.messageBeingEdited.value != null) {
       final messageId = MessageInput.messageBeingEdited.value!['message_id'];
-      controller.updateMessage(widget.chatId, messageId, text);
+      await controller.updateMessage(widget.chatId, messageId, text);
 
       MessageInput.messageBeingEdited.value = null;
       MessageInput.isEditingMessage.value = false;
       textController.clear();
 
+      isSending.value = false;
+      isTyping.value = false;
+      return;
+    }
+
+    try {
+      // Clear text immediately before sending to prevent double sends
+      textController.clear();
+      
+      // Send the message without any animation here
+      // The real-time subscription will handle adding it with animation
+      await controller.sendChatMessage(widget.chatId, text);
+    } catch (e) {
+      debugPrint('Error sending message: $e');
+      // Optionally show error to user
+      Get.snackbar('Error', 'Failed to send message');
+    } finally {
+      // Reset states after a short delay to ensure UI updates
       Future.delayed(const Duration(milliseconds: 200), () {
         isSending.value = false;
         isTyping.value = false;
       });
-      return;
     }
-
-    Future.delayed(const Duration(milliseconds: 50), () {
-      controller.sendChatMessage(widget.chatId, text);
-
-      Future.delayed(const Duration(milliseconds: 200), () {
-        isSending.value = false;
-        final hasText = textController.text.isNotEmpty;
-        if (isTyping.value != hasText) {
-          isTyping.value = hasText;
-        }
-      });
-    });
-
-    // Clear text immediately after sending to improve UX
-    textController.clear();
   }
 
   Future<void> _pickImage(ImageSource source) async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
+import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import '../../../core/utils/supabase_service.dart';
@@ -33,6 +34,7 @@ class _ChatViewState extends State<ChatView> {
     
     return Scaffold(
       appBar: AppBar(
+        leading: null,
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -232,22 +234,16 @@ class _ChatViewState extends State<ChatView> {
       itemBuilder: (context, index) {
         final chat = controller.recentChats[index];
 
-        // Create a temporary provider just for avatar display
         final tempProvider = AccountDataProvider();
-
-        // Use the avatar utility to handle avatar retrieval
-        final avatars = AvatarUtils.getAvatarUrls(
-          isCurrentUser: false,
-          accountDataProvider: tempProvider,
-          exploreController: null,
-          customAvatar: chat['other_avatar'],
-          customGoogleAvatar: chat['other_google_avatar'],
-        );
-
+       
+        // Directly use the avatar URLs from the chat data
+        final avatarUrl = chat['other_avatar']?.toString();
+        final googleAvatarUrl = chat['other_google_avatar']?.toString() ?? '';
+        
         // Set the avatar values in the temporary provider
-        tempProvider.avatar.value = avatars['avatar']!;
-        tempProvider.googleAvatar.value = avatars['google_avatar']!;
-
+        tempProvider.avatar.value = avatarUrl ?? '';
+        tempProvider.googleAvatar.value = googleAvatarUrl;
+    
         // Check if this user sent the last message
         final bool didUserSendLastMessage =
             chat['last_sender_id'] == currentUserId;
@@ -276,12 +272,34 @@ class _ChatViewState extends State<ChatView> {
 
         return ListTile(
           leading: GestureDetector(
-            onTap:
-                () => Get.toNamed(
-                  '/profile',
-                  arguments: {'userId': chat['other_id']},
+            onTap: () {
+              final otherId = chat['other_id']?.toString();
+              final otherUsername = chat['other_username']?.toString() ?? 'User';
+              
+              if (otherId == null || otherId.isEmpty) {
+                debugPrint('Cannot open profile: missing user ID');
+                return;
+              }
+              
+              final exploreController = Get.find<ExploreController>();
+              exploreController.openUserProfile({
+                'user_id': otherId,
+                'username': otherUsername,
+                'avatar': chat['other_avatar']?.toString() ?? '',
+                'google_avatar': chat['other_google_avatar']?.toString() ?? '',
+              });
+            },
+            child: CircleAvatar(
+              radius: 24,
+              backgroundColor: Colors.grey[800],
+              child: ClipOval(
+                child: AvatarUtils.getAvatarWidget(
+                  null,
+                  tempProvider,
+                  radius: 24,
                 ),
-            child: AvatarUtils.getAvatarWidget(null, tempProvider, radius: 24),
+              ),
+            ),
           ),
           title: Row(
             children: [
@@ -350,7 +368,6 @@ class _ChatViewState extends State<ChatView> {
   }
 
   Widget _buildUserTile(Map<String, dynamic> user) {
-    // Safely extract user ID with fallbacks
     final String userId = (user['user_id'] ?? 
                          user['follower_id'] ?? 
                          user['following_id'] ?? 
@@ -358,27 +375,40 @@ class _ChatViewState extends State<ChatView> {
                          '').toString();
     final String username = user['username'] ?? user['name'] ?? 'User';
     final userSource = user['source'];
-
-    // Create a temporary provider just for avatar display
+    final currentUser = Get.find<SupabaseService>().currentUser.value?.id;
     final tempProvider = AccountDataProvider();
-    final _supabaseService = Get.find<SupabaseService>();
-
+    
     // Use the avatar utility to handle avatar retrieval
     final avatars = AvatarUtils.getAvatarUrls(
-      isCurrentUser: false,
+      isCurrentUser: userId == currentUser,
       accountDataProvider: tempProvider,
-      exploreController: null,
+      exploreController: Get.find<ExploreController>(),
       customAvatar: user['avatar'],
       customGoogleAvatar: user['google_avatar'],
     );
-
-    // Set the avatar values in the temporary provider
     tempProvider.avatar.value = avatars['avatar']!;
     tempProvider.googleAvatar.value = avatars['google_avatar']!;
 
     return ListTile(
       leading: GestureDetector(
-        onTap: () => Get.toNamed('/profile', arguments: {'userId': userId}),
+        onTap: () {
+          if (userId.isEmpty) {
+            debugPrint('❌ [ChatView] Cannot open profile: Invalid user ID');
+            return;
+          }
+          
+          try {
+            final exploreController = Get.find<ExploreController>();
+            exploreController.openUserProfile({
+              'user_id': userId,
+              'username': username,
+              'avatar': user['avatar']?.toString() ?? '',
+              'google_avatar': user['google_avatar']?.toString() ?? '',
+            });
+          } catch (e) {
+            debugPrint('❌ [ChatView] Error opening profile: $e');
+          }
+        },
         child: AvatarUtils.getAvatarWidget(null, tempProvider, radius: 24),
       ),
       title: Row(
@@ -406,8 +436,8 @@ class _ChatViewState extends State<ChatView> {
       ),
       subtitle: Text(user['nickname'] ?? ''),
       onTap: () async {
-        final userId = _supabaseService.client.auth.currentUser?.id;
-        if (userId == null) {
+        final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
+        if (currentUserId == null) {
           debugPrint('Cannot open chat: User not logged in');
           return;
         }
@@ -416,7 +446,8 @@ class _ChatViewState extends State<ChatView> {
           debugPrint('Cannot open chat: Invalid user ID');
           return;
         }
-        // Opens chat window
+        
+        // Opens chat window with the other user's ID and username
         controller.openChat(userId, username);
       },
     );
