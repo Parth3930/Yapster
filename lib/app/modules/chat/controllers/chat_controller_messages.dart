@@ -8,7 +8,6 @@ import 'package:yapster/app/core/utils/encryption_service.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/chat/modles/message_model.dart';
-import 'package:yapster/app/routes/app_pages.dart';
 import '../services/chat_message_service.dart';
 
 mixin ChatControllerMessages {
@@ -19,6 +18,13 @@ mixin ChatControllerMessages {
   RealtimeChannel? _messageSubscription;
   
   // Caching variables
+  static final Map<String, Map<String, dynamic>> _chatCache = {};
+  static DateTime? _lastChatFetchTime;
+  static const Duration _chatCacheDuration = Duration(minutes: 5);
+  static const Duration _backgroundRefreshThreshold = Duration(minutes: 1);
+  
+  // Track deleted messages to prevent showing them again
+  static final Set<String> _deletedMessageIds = <String>{};
   final Map<String, DateTime> _chatsFetchTime = {};
   final Map<String, DateTime> _messagesFetchTime = {};
   final Map<String, List<MessageModel>> _messagesCache = {};
@@ -30,9 +36,6 @@ mixin ChatControllerMessages {
   
   // Static flag to prevent repeated preload calls
   static bool _isPreloadingChats = false;
-  
-  // Set to track deleted message IDs to prevent them from reappearing
-  static final Set<String> _deletedMessageIds = <String>{};
   
   // Method to mark a message as deleted
   void markMessageAsDeleted(String messageId) {
@@ -390,7 +393,7 @@ mixin ChatControllerMessages {
     _chatControler.messagesToAnimate.removeWhere(
       (id) => !_chatControler.messages.any((m) => m.messageId == id),
     );
-    _chatControler.messages.refresh(); // ✅ Correct usage
+    _chatControler.messages.refresh(); // 
   }
 
   /// Checks if chats need to be refreshed based on cache age
@@ -424,10 +427,30 @@ mixin ChatControllerMessages {
       return;
     }
     
-    // If we have cached chats, use them immediately while refreshing in background
-    if (_chatsInitiallyLoaded.value && _chatControler.recentChats.isNotEmpty) {
-      debugPrint('Using cached recent chats while refreshing in background');
-      // Start background refresh without blocking UI
+    final userId = _supabaseService.client.auth.currentUser?.id;
+    if (userId == null) return;
+    
+    // Check if we have valid cached data
+    final bool shouldUseCache = _lastChatFetchTime != null && 
+        DateTime.now().difference(_lastChatFetchTime!) < _chatCacheDuration;
+    
+    // If we have valid cached chats, use them immediately
+    if (shouldUseCache && _chatCache.containsKey(userId)) {
+      debugPrint('Using cached recent chats');
+      _chatControler.recentChats.value = List<Map<String, dynamic>>.from(_chatCache[userId]!['chats']);
+      _chatControler.isLoadingChats.value = false;
+      
+      // Refresh in background if cache is older than threshold
+      if (_lastChatFetchTime != null && 
+          DateTime.now().difference(_lastChatFetchTime!) > _backgroundRefreshThreshold) {
+        _refreshChatsInBackground();
+      }
+      return;
+    }
+    
+    // If we have cached chats but they're expired, show them while refreshing
+    if (_chatControler.recentChats.isNotEmpty) {
+      debugPrint('Using expired cache while refreshing recent chats');
       _refreshChatsInBackground();
       return;
     }
@@ -437,7 +460,6 @@ mixin ChatControllerMessages {
       _isPreloadingChats = true;
       debugPrint('Preloading recent chats (initial load)');
       await fetchUsersRecentChats(forceRefresh: true);
-      // Mark as initially loaded after successful fetch
       _chatsInitiallyLoaded.value = true;
     } finally {
       _isPreloadingChats = false;
@@ -451,7 +473,18 @@ mixin ChatControllerMessages {
       if (_isPreloadingChats) return;
       try {
         _isPreloadingChats = true;
-        await fetchUsersRecentChats(forceRefresh: shouldRefreshChats());
+        final userId = _supabaseService.client.auth.currentUser?.id;
+        if (userId != null) {
+          // Only force refresh if cache is actually stale
+          final bool shouldForce = shouldRefreshChats() || 
+              (_lastChatFetchTime != null && 
+               DateTime.now().difference(_lastChatFetchTime!) > _chatCacheDuration);
+          
+          await fetchUsersRecentChats(forceRefresh: shouldForce);
+          debugPrint('Background chat refresh completed');
+        }
+      } catch (e) {
+        debugPrint('Error in background chat refresh: $e');
       } finally {
         _isPreloadingChats = false;
       }
@@ -469,8 +502,12 @@ mixin ChatControllerMessages {
     }
     
     // Use cached data if available and fresh, unless force refresh is requested
-    if (!forceRefresh && !shouldRefreshChats() && _chatControler.recentChats.isNotEmpty) {
-      debugPrint('Using cached recent chats');
+    final bool shouldUseCache = _lastChatFetchTime != null && 
+        DateTime.now().difference(_lastChatFetchTime!) < _chatCacheDuration;
+    
+    if (!forceRefresh && shouldUseCache && _chatCache.containsKey(userId)) {
+      debugPrint('Using cached recent chats from memory');
+      _chatControler.recentChats.value = List<Map<String, dynamic>>.from(_chatCache[userId]!['chats']);
       _chatControler.isLoadingChats.value = false;
       return;
     }
@@ -539,12 +576,18 @@ mixin ChatControllerMessages {
         return chat;
       }));
 
-      _chatControler.recentChats.assignAll(processedChats.cast<Map<String, dynamic>>());
-      markChatsFetched(); // Update cache timestamp
-
-      debugPrint(
-        'Recent chats fetched successfully: ${_chatControler.recentChats.length} chats',
-      );
+      final chatList = processedChats.cast<Map<String, dynamic>>();
+      _chatControler.recentChats.value = chatList;
+      
+      // Update cache
+      _chatCache[userId] = {
+        'chats': List<Map<String, dynamic>>.from(chatList),
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+      _lastChatFetchTime = DateTime.now();
+      
+      markChatsFetched();
+      debugPrint('Fetched ${processedChats.length} recent chats');
     } catch (e) {
       debugPrint('Error fetching chats: $e');
     } finally {
@@ -621,50 +664,136 @@ mixin ChatControllerMessages {
     return message['content']?.toString() ?? '';
   }
 
-  // opens chat window
+  // Opens chat window
   Future<void> openChat(String userTwoId, String username) async {
-    final supabaseService = Get.find<SupabaseService>();
-    final currentUserId = supabaseService.client.auth.currentUser?.id;
+    final userId = _supabaseService.client.auth.currentUser?.id;
+    if (userId == null) return;
 
-    if (currentUserId == null) {
-      debugPrint('User not logged in');
+    // Check if we already have a chat with this user in cache
+    final existingChat = _chatControler.recentChats.firstWhereOrNull(
+      (chat) =>
+          chat['other_user_id'] == userTwoId ||
+          chat['user_one_id'] == userTwoId,
+    );
+
+    if (existingChat != null) {
+      // Navigate to existing chat
+      await Get.toNamed(
+        '/chat/${existingChat['chat_id']}',
+        arguments: {
+          'chatId': existingChat['chat_id'],
+          'username': username,
+          'userId': userTwoId,
+        },
+      );
       return;
     }
 
+    // Create new chat if it doesn't exist
     try {
-      // Call the RPC to get or create a chat_id connecting both users
-      final chatId = await supabaseService.client.rpc(
-        'user_chat_connect',
-        params: {'user_one': currentUserId, 'user_two': userTwoId},
+      _chatControler.isLoading.value = true;
+      
+      // Create new chat in database
+      final response = await _supabaseService.client.rpc(
+        'create_chat',
+        params: {
+          'p_user_one_id': userId,
+          'p_user_two_id': userTwoId,
+        },
       );
 
-      // chatId is expected to be a String UUID or null
-      if (chatId != null && (chatId is String) && chatId.isNotEmpty) {
-        // Navigate to the chat detail screen with chatId and username
-        Get.toNamed(
-          Routes.CHAT_WINDOW,
+      if (response != null && response['chat_id'] != null) {
+        // Invalidate cache to ensure fresh data on next load
+        _lastChatFetchTime = null;
+        _chatCache.remove(userId);
+        
+        // Force refresh chats to include the new one
+        await fetchUsersRecentChats(forceRefresh: true);
+        
+        // Navigate to the new chat
+        await Get.toNamed(
+          '/chat/${response['chat_id']}',
           arguments: {
-            'chatId': chatId,
+            'chatId': response['chat_id'],
             'username': username,
-            'otherUserId': userTwoId,
+            'userId': userTwoId,
           },
         );
-      } else {
-        debugPrint('Chat ID not found in response');
       }
     } catch (e) {
-      debugPrint('Failed to connect/open chat: $e');
+      debugPrint('Error creating chat: $e');
+      Get.snackbar('Error', 'Could not start chat');
+    } finally {
+      _chatControler.isLoading.value = false;
     }
   }
 
-  // Updates a message (stub)
+  /// Marks all messages in a chat as read for the current user
+  Future<void> markMessagesAsRead(String chatId) async {
+    try {
+      final userId = _supabaseService.client.auth.currentUser?.id;
+      if (userId == null) return;
+      
+      await _supabaseService.client.rpc(
+        'mark_messages_as_read',
+        params: {
+          'p_chat_id': chatId,
+          'p_user_id': userId,
+        },
+      );
+      
+      // Update local state to reflect read status
+      final updatedMessages = _chatControler.messages.map((message) {
+        if (message.senderId != userId && !message.isRead) {
+          return message.copyWith(isRead: true);
+        }
+        return message;
+      }).toList();
+      
+      _chatControler.messages.value = updatedMessages;
+      
+    } catch (e) {
+      debugPrint('Error marking messages as read: $e');
+    }
+  }
+
+  // Update an existing message
   Future<void> updateMessage(
     String chatId,
     String messageId,
     String newContent,
   ) async {
-    // Example: Call a service to update the message content in the backend.
-    throw UnimplementedError('Update message not implemented');
+    try {
+      _chatControler.isSendingMessage.value = true;
+      
+      await _supabaseService.client.rpc(
+        'update_chat_message',
+        params: {
+          'p_message_id': messageId,
+          'p_new_content': newContent,
+        },
+      );
+      
+      // Update local message
+      final messageIndex = _chatControler.messages.indexWhere(
+        (m) => m.messageId == messageId,
+      );
+      
+      if (messageIndex != -1) {
+        final message = _chatControler.messages[messageIndex];
+        final updatedMessage = message.copyWith(
+          content: newContent,
+        );
+        _chatControler.messages[messageIndex] = updatedMessage;
+        _chatControler.messages.refresh();
+      }
+      
+    } catch (e) {
+      debugPrint('Error updating message: $e');
+      Get.snackbar('Error', 'Failed to update message');
+    } finally {
+      _chatControler.isSendingMessage.value = false;
+    }
   }
 
   // Uploads and sends an image
@@ -743,11 +872,6 @@ mixin ChatControllerMessages {
     await preloadRecentChats();
     
     debugPrint('Forced complete refresh of all messages and caches');
-  }
-
-  // Marks all messages as read in a chat
-  Future<void> markMessagesAsRead(String chatId) async {
-    await Get.find<ChatMessageService>().markMessagesAsRead(chatId);
   }
 
   // Example: Edit a message (stub)
