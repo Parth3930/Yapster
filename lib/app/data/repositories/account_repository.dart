@@ -238,19 +238,8 @@ class AccountRepository {
     } catch (_) {}
   }
 
-  void processSearchesData(dynamic searchesData) {
-    if (searchesData == null) return;
-    try {
-      final searchesList = List<dynamic>.from(searchesData);
-      _provider.searches.value =
-          searchesList.map((item) => Map<String, dynamic>.from(item)).toList();
-
-      _provider.updateSearchesMap({
-        for (final search in _provider.searches)
-          if (search['user_id'] != null) search['user_id'].toString(): search,
-      });
-    } catch (_) {}
-  }
+  // Search functionality has been moved to use local storage only
+  // All search-related data is now managed by the StorageService
 
   /// Uploads banner image to Supabase storage and updates profile
   Future<String> uploadBanner(File file) async {

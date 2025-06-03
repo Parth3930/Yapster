@@ -26,15 +26,10 @@ class AccountDataProvider extends GetxController {
   final RxList<Map<String, dynamic>> posts = <Map<String, dynamic>>[].obs;
   final RxMap<String, dynamic> userPostData = <String, dynamic>{}.obs;
 
-  // Recent searches
-  final RxList<Map<String, dynamic>> searches = <Map<String, dynamic>>[].obs;
-
   // Optimized HashMaps for O(1) lookups
   final RxMap<String, bool> _followersMap = <String, bool>{}.obs;
   final RxMap<String, bool> _followingMap = <String, bool>{}.obs;
   final RxMap<String, Map<String, dynamic>> _postsMap =
-      <String, Map<String, dynamic>>{}.obs;
-  final RxMap<String, Map<String, dynamic>> _searchesMap =
       <String, Map<String, dynamic>>{}.obs;
 
   // Cache times for follow data
@@ -133,15 +128,10 @@ class AccountDataProvider extends GetxController {
       userPostData.value = {'post_count': 0};
     }
 
-    if (searches.isEmpty) {
-      searches.value = [];
-    }
-
     // Rebuild HashMaps from primary data structures
     _rebuildFollowersMap();
     _rebuildFollowingMap();
     _rebuildPostsMap();
-    _rebuildSearchesMap();
   }
 
   // Update entire following list and ensure count accuracy
@@ -299,7 +289,6 @@ class AccountDataProvider extends GetxController {
     following.clear();
     followerCount.value = 0;
     followingCount.value = 0;
-    searches.clear();
     posts.clear();
     userPostData.value = {'post_count': 0};
 
@@ -510,91 +499,6 @@ class AccountDataProvider extends GetxController {
     }
   }
 
-  /// Load searches from database with caching
-  Future<void> loadSearches() async {
-    try {
-      final supabaseService = Get.find<SupabaseService>();
-      final dbCacheService = Get.find<DbCacheService>();
-
-      final userId = supabaseService.currentUser.value?.id;
-      if (userId == null) return;
-
-      // Try to get profile data from cache or API
-      final userData = await dbCacheService.getUserProfile(userId, () async {
-        // Fetch from database
-        final profile =
-            await supabaseService.client
-                .from('profiles')
-                .select('searches')
-                .eq('user_id', userId)
-                .single();
-
-        return profile;
-      });
-
-      if (userData != null &&
-          userData.isNotEmpty &&
-          userData['searches'] != null) {
-        List<dynamic> searchesList = userData['searches'];
-        searches.value = List<Map<String, dynamic>>.from(
-          searchesList.map((item) => Map<String, dynamic>.from(item)),
-        );
-        _rebuildSearchesMap();
-        debugPrint('Loaded ${searches.length} recent searches');
-      }
-    } catch (e) {
-      debugPrint('Error loading searches: $e');
-      // Initialize with empty list if there's an error
-      searches.value = [];
-    }
-  }
-
-  /// Update searches in memory and database
-  Future<void> updateSearches(List<Map<String, dynamic>> newSearches) async {
-    try {
-      searches.value = List<Map<String, dynamic>>.from(newSearches);
-      _rebuildSearchesMap();
-
-      // Update in database
-      final supabaseService = Get.find<SupabaseService>();
-      final userId = supabaseService.currentUser.value?.id;
-
-      if (userId == null) return;
-
-      await supabaseService.client
-          .from('profiles')
-          .update({'searches': searches})
-          .eq('user_id', userId);
-
-      debugPrint('Updated searches in database');
-    } catch (e) {
-      debugPrint('Error updating searches: $e');
-    }
-  }
-
-  /// Check if a user exists in recent searches
-  bool hasUserInSearches(String userId) => _searchesMap.containsKey(userId);
-
-  /// Get a user from recent searches by ID
-  Map<String, dynamic>? getUserFromSearches(String userId) =>
-      _searchesMap[userId];
-
-  /// Rebuild the searches map for O(1) lookups
-  void _rebuildSearchesMap() {
-    _searchesMap.clear();
-    for (final search in searches) {
-      if (search['id'] != null) {
-        _searchesMap[search['id'].toString()] = search;
-      }
-    }
-  }
-
-  /// Update the searches map directly
-  void updateSearchesMap(Map<String, Map<String, dynamic>> newMap) {
-    _searchesMap.clear();
-    _searchesMap.addAll(newMap);
-  }
-
   /// Fetch user profile data using AccountRepository
   Future<Map<String, dynamic>> fetchUserData() async {
     return await _accountRepository.userRealtimeData();
@@ -633,10 +537,7 @@ class AccountDataProvider extends GetxController {
     _accountRepository.processFollowingData(followingData);
   }
 
-  /// Process searches data using AccountRepository
-  void processSearchesData(dynamic searchesData) {
-    _accountRepository.processSearchesData(searchesData);
-  }
+
   
   /// Checks if followers data should be refreshed for a specific user
   bool shouldRefreshFollowers(String userId) {

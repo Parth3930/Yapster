@@ -1,21 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/data/providers/account_data_provider.dart';
+import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
+import 'package:yapster/app/data/providers/account_data_provider.dart';
+import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
 
 import 'dart:async';
 import 'dart:convert';
-import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
-import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 
 class ExploreController extends GetxController {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
-  AccountDataProvider get _accountDataProvider =>
-      Get.find<AccountDataProvider>();
-  AccountDataProvider get _accountFunctions => Get.find<AccountDataProvider>();
   final StorageService _storageService = Get.find<StorageService>();
 
   final searchController = TextEditingController();
@@ -52,12 +49,14 @@ class ExploreController extends GetxController {
   final _followStateFetchTime = <String, DateTime>{};
   static const Duration followStateCacheDuration = Duration(minutes: 15);
 
-  // Cache for recent searches with timestamp for expiration checking
-  final Map<String, DateTime> _recentSearchesFetchTime = <String, DateTime>{};
+  // Cache for recent searches
   static const Duration searchCacheDuration = Duration(minutes: 30);
   
   // Track if we're on the explore page to prevent unnecessary loading elsewhere
   final RxBool _isOnExplorePage = false.obs;
+
+  // account data provider
+  final AccountDataProvider _accountDataProvider = Get.find<AccountDataProvider>();
   
   @override
   void onInit() {
@@ -69,13 +68,9 @@ class ExploreController extends GetxController {
   // Call this when explore page is opened
   void onExplorePageOpened() {
     _isOnExplorePage.value = true;
-    // Only load searches when we're actually on the explore page
-    if (_shouldRefreshRecentSearches()) {
-      loadRecentSearches();
-      debugPrint('Loading recent searches from database (cache expired)');
-    } else {
-      debugPrint('Using cached recent searches');
-    }
+    // Load any cached searches
+    loadCachedSearchResults();
+    debugPrint('Loaded cached search results');
   }
   
   // Call this when leaving the explore page
@@ -83,12 +78,7 @@ class ExploreController extends GetxController {
     _isOnExplorePage.value = false;
   }
   
-  // Check if we need to refresh searches based on cache time
-  bool _shouldRefreshRecentSearches() {
-    final lastFetch = _recentSearchesFetchTime['recent_searches'];
-    if (lastFetch == null) return true;
-    return DateTime.now().difference(lastFetch) > searchCacheDuration;
-  }
+
 
   @override
   void onClose() {
@@ -172,33 +162,30 @@ class ExploreController extends GetxController {
     }
   }
 
-  // Load cached search results on init
+  // Load recent searches from local storage
   void loadCachedSearchResults() {
     try {
-      // Get cached results
-      final cachedResultsJson = _storageService.getString(searchCacheKey);
-      if (cachedResultsJson != null && cachedResultsJson.isNotEmpty) {
-        final decodedResults = jsonDecode(cachedResultsJson) as List;
-        final results =
-            decodedResults
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList();
+      // Get recent searches from local storage
+      final recentSearchesJson = _storageService.getString('recent_searches');
+      if (recentSearchesJson != null && recentSearchesJson.isNotEmpty) {
+        final decodedSearches = jsonDecode(recentSearchesJson) as List;
+        recentSearches.value = decodedSearches
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
 
-        // Update search results only if no active search is happening
+        debugPrint('Loaded ${recentSearches.length} recent searches from cache');
+
+        // If there's no active search, show recent searches in results
         if (searchController.text.isEmpty) {
-          searchResults.value = results;
-          debugPrint('Loaded ${results.length} cached search results');
-
-          // Debug info about the results
-          for (var result in results) {
-            debugPrint(
-              'Cached result: ${result['username']}, ${result['user_id']}',
-            );
-          }
+          searchResults.value = List<Map<String, dynamic>>.from(recentSearches);
         }
+      } else {
+        recentSearches.clear();
+        debugPrint('No recent searches found in cache');
       }
     } catch (e) {
-      debugPrint('Error loading cached search results: $e');
+      debugPrint('Error loading recent searches from cache: $e');
+      recentSearches.clear();
     }
   }
 
@@ -210,51 +197,22 @@ class ExploreController extends GetxController {
     }
     
     try {
-      // Load from database
-      _accountFunctions.loadSearches().then((_) {
-        // After loading from database, update the local list
-        recentSearches.value = List<Map<String, dynamic>>.from(
-          _accountDataProvider.searches,
-        );
-        
-        // Update the timestamp to mark when data was last fetched
-        _recentSearchesFetchTime['recent_searches'] = DateTime.now();
-        
-        debugPrint(
-          'Loaded ${recentSearches.length} recent searches from database',
-        );
-
-        // Debug info about recent searches
-        for (var search in recentSearches) {
-          debugPrint(
-            'Recent search: ${search['username']}, ${search['user_id']}',
-          );
-        }
-      });
+      // Load from local storage
+      loadCachedSearchResults();
+      debugPrint('Loaded ${recentSearches.length} recent searches from cache');
+      
+      // Debug info about recent searches
+      for (var search in recentSearches) {
+        debugPrint('Recent search: ${search['username']}, ${search['user_id']}');
+      }
     } catch (e) {
-      debugPrint('Error loading recent searches: $e');
+      debugPrint('Error loading recent searches from cache: $e');
+      recentSearches.clear();
     }
   }
 
   Future<void> addToRecentSearches(Map<String, dynamic> user) async {
     try {
-      // Make sure we have complete user data
-      if (!user.containsKey('google_avatar')) {
-        // Fetch complete profile data if we don't have google_avatar
-        final userData =
-            await _supabaseService.client
-                .from('profiles')
-                .select('user_id, username, nickname, avatar, google_avatar')
-                .eq('user_id', user['user_id'])
-                .single();
-
-        // Update user with complete data
-        user = Map<String, dynamic>.from(userData);
-        debugPrint(
-          'Updated user data with complete profile including Google avatar',
-        );
-      }
-
       // Check if user is already in recent searches
       final existingIndex = recentSearches.indexWhere(
         (item) => item['user_id'] == user['user_id'],
@@ -273,8 +231,11 @@ class ExploreController extends GetxController {
         recentSearches.removeLast();
       }
 
-      // Update AccountDataProvider searches
-      await _accountFunctions.updateSearches(recentSearches.toList());
+      // Save to local storage
+      await _storageService.saveString(
+        'recent_searches',
+        jsonEncode(recentSearches.toList()),
+      );
     } catch (e) {
       debugPrint('Error adding to recent searches: $e');
     }
@@ -289,9 +250,12 @@ class ExploreController extends GetxController {
 
       if (existingIndex != -1) {
         recentSearches.removeAt(existingIndex);
-
-        // Update AccountDataProvider searches
-        await _accountFunctions.updateSearches(recentSearches.toList());
+        
+        // Save to local storage
+        await _storageService.saveString(
+          'recent_searches',
+          jsonEncode(recentSearches.toList()),
+        );
         debugPrint('Removed user from recent searches');
       }
     } catch (e) {
@@ -361,7 +325,8 @@ class ExploreController extends GetxController {
             username, 
             nickname, 
             avatar, 
-            bio,  
+            bio,
+            banner,
             google_avatar,
             follower_count,
             following_count
@@ -402,6 +367,7 @@ class ExploreController extends GetxController {
         'avatar': userData['avatar'] ?? '',
         'google_avatar': userData['google_avatar'] ?? '',
         'bio': userData['bio'] ?? 'No bio available',
+        'banner': userData['banner'] ?? '',
         'follower_count': accurateFollowerCount,
         'following_count': accurateFollowingCount,
         ...userData,
