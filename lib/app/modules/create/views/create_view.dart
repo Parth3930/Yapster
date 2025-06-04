@@ -7,6 +7,7 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/global_widgets/icon_button_widget.dart';
 import '../controllers/create_controller.dart';
+import 'package:yapster/app/routes/app_pages.dart';
 
 class CreateView extends GetView<CreateController> {
   const CreateView({super.key});
@@ -28,7 +29,12 @@ class CreateView extends GetView<CreateController> {
                 fontSize: 38,
               ),
             ),
-            Image.asset("assets/icons/story.png", width: 20, height: 20),
+            GestureDetector(
+              onTap: () {
+                Get.toNamed(Routes.CREATE_STORY);
+              },
+              child: Image.asset("assets/icons/story.png", width: 20, height: 20),
+            ), 
           ],
         ),
         backgroundColor: Colors.transparent,

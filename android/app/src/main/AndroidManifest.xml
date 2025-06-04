@@ -1,10 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Add these permission declarations before the application tag -->
+    <!-- Permissions for Android 9 and below -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.CAMERA" />
     
+    <!-- Permission for Android 13 (API 33) and above -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    
+    <!-- Camera permission -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    
     <application
+        android:requestLegacyExternalStorage="true"
         android:label="yapster"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

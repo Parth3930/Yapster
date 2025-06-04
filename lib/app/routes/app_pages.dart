@@ -1,3 +1,5 @@
+// ignore_for_file: constant_identifier_names
+
 import 'package:get/get.dart';
 import 'package:yapster/app/modules/account_setup/bindings/account_setup_binding.dart';
 import 'package:yapster/app/modules/account_setup/views/account_avatar.dart';
@@ -20,6 +22,8 @@ import 'package:yapster/app/modules/profile/views/profile_view.dart';
 
 import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
+import 'package:yapster/app/modules/stories/views/create_story_view.dart';
+import 'package:yapster/app/modules/stories/bindings/stories_binding.dart';
 import '../modules/home/bindings/home_binding.dart';
 import '../modules/home/views/home_view.dart';
 import '../modules/login/bindings/login_binding.dart';
@@ -36,6 +40,17 @@ class AppPages {
   static const INITIAL = Routes.SPLASH;
 
   static final routes = [
+    GetPage(
+      name: _Paths.CREATE_STORY,
+      page: () => const CreateStoryView(),
+      binding: StoriesBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      fullscreenDialog: true,
+      opaque: true,
+      popGesture: true,
+    ),
     GetPage(
       name: _Paths.SPLASH,
       page: () => const SplashView(),
@@ -224,6 +239,19 @@ class AppPages {
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
+    ),
+    // make the effect to move from left to right
+    GetPage(
+      name: _Paths.CREATE_STORY,
+      page: () => const CreateStoryView(),
+      binding: CreateBinding(),
+      transition: Transition.leftToRight,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      fullscreenDialog: false,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: false,
     ),
   ];
 }

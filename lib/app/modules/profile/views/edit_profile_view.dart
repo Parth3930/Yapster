@@ -45,8 +45,9 @@ class EditProfileView extends StatelessWidget {
                         children: [
                           GetX<ProfileController>(
                             builder: (controller) {
-                              final accountDataProvider = Get.find<AccountDataProvider>();
-                              
+                              final accountDataProvider =
+                                  Get.find<AccountDataProvider>();
+
                               // Show selected banner if available, otherwise show existing banner
                               if (controller.selectedBanner.value != null) {
                                 return ClipRRect(
@@ -60,14 +61,22 @@ class EditProfileView extends StatelessWidget {
                                     decoration: BoxDecoration(
                                       image: DecorationImage(
                                         image: FileImage(
-                                          File(controller.selectedBanner.value!.path),
+                                          File(
+                                            controller
+                                                .selectedBanner
+                                                .value!
+                                                .path,
+                                          ),
                                         ),
                                         fit: BoxFit.cover,
                                       ),
                                     ),
                                   ),
                                 );
-                              } else if (accountDataProvider.banner.value.isNotEmpty) {
+                              } else if (accountDataProvider
+                                  .banner
+                                  .value
+                                  .isNotEmpty) {
                                 return ClipRRect(
                                   borderRadius: const BorderRadius.only(
                                     bottomLeft: Radius.circular(20),
@@ -78,7 +87,9 @@ class EditProfileView extends StatelessWidget {
                                     height: 150,
                                     decoration: BoxDecoration(
                                       image: DecorationImage(
-                                        image: NetworkImage(accountDataProvider.banner.value),
+                                        image: NetworkImage(
+                                          accountDataProvider.banner.value,
+                                        ),
                                         fit: BoxFit.cover,
                                       ),
                                     ),
@@ -101,7 +112,9 @@ class EditProfileView extends StatelessWidget {
                             bottom: 10,
                             right: 10,
                             child: GestureDetector(
-                              onTap: () async => await profileController.pickBanner(),
+                              onTap:
+                                  () async =>
+                                      await profileController.pickBanner(),
                               child: Container(
                                 padding: EdgeInsets.all(8),
                                 decoration: BoxDecoration(
@@ -121,12 +134,51 @@ class EditProfileView extends StatelessWidget {
                     ),
                     SizedBox(height: 30),
                     GetX<ProfileController>(
-                      builder:
-                          (controller) => ProfileAvatarWidget(
-                            selectedImage: controller.selectedImage.value,
-                            onTap: () async => await controller.pickImage(),
-                            isLoaded: controller.isAvatarLoaded.value,
-                          ),
+                      builder: (controller) {
+                        final accountDataProvider =
+                            Get.find<AccountDataProvider>();
+                        return Stack(
+                          children: [
+                            ProfileAvatarWidget(
+                              selectedImage: controller.selectedImage.value,
+                              imageUrl:
+                                  controller.selectedImage.value == null &&
+                                          accountDataProvider
+                                              .avatar
+                                              .value
+                                              .isNotEmpty
+                                      ? accountDataProvider.avatar.value
+                                      : null,
+                              radius: 50,
+                              onTap: () async => await controller.pickImage(),
+                              isLoaded: controller.isAvatarLoaded.value,
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: GestureDetector(
+                                onTap: () async => await controller.pickImage(),
+                                behavior: HitTestBehavior.opaque,
+                                child: Container(
+                                  width: 30,
+                                  height: 30,
+                                  decoration: BoxDecoration(
+                                    color: ProfileConstants.primaryBlue,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.add,
+                                      color: Colors.white,
+                                      size: 30,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     SizedBox(height: ProfileConstants.defaultSpacing * 2),
                     Padding(

@@ -12,9 +12,7 @@ class AudioService extends GetxService {
 
   record_plugin.AudioRecorder? _recorder;
   record_plugin.AudioRecorder get recorder {
-    if (_recorder == null) {
-      _recorder = record_plugin.AudioRecorder();
-    }
+    _recorder ??= record_plugin.AudioRecorder();
     return _recorder!;
   }
 
@@ -111,9 +109,7 @@ class AudioService extends GetxService {
       await recorderController?.record();
 
       // Start recording with main recorder
-      if (_recorder == null) {
-        _recorder = record_plugin.AudioRecorder();
-      }
+      _recorder ??= record_plugin.AudioRecorder();
       
       await _recorder!.start(
         const record_plugin.RecordConfig(

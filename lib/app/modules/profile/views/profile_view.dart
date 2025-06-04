@@ -11,6 +11,7 @@ import 'package:yapster/app/core/utils/banner_utils.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
+import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
 
 class ProfileView extends GetView<ProfileController> {
   final String? userId;
@@ -31,12 +32,14 @@ class ProfileView extends GetView<ProfileController> {
 
     // Get a unique key for this profile instance based on user ID
     final String cacheKey = userId ?? 'current_user';
-    
+
     // Load data only once when the view is first built for this specific user
-    if (!_initialDataLoaded.containsKey(cacheKey) || _initialDataLoaded[cacheKey] != true) {
+    if (!_initialDataLoaded.containsKey(cacheKey) ||
+        _initialDataLoaded[cacheKey] != true) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (isCurrentUser) {
-          final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
+          final currentUserId =
+              Get.find<SupabaseService>().currentUser.value?.id;
           if (currentUserId != null) {
             // Check cache timestamps in accountDataProvider before loading
             if (accountDataProvider.shouldRefreshFollowers(currentUserId)) {
@@ -45,14 +48,14 @@ class ProfileView extends GetView<ProfileController> {
             } else {
               debugPrint('Using cached followers data');
             }
-            
+
             if (accountDataProvider.shouldRefreshFollowing(currentUserId)) {
               await accountDataProvider.loadFollowing(currentUserId);
               debugPrint('Loaded following data from database');
             } else {
               debugPrint('Using cached following data');
             }
-            
+
             debugPrint(
               'Profile counts - Followers: ${accountDataProvider.followerCount}, Following: ${accountDataProvider.followingCount}',
             );
@@ -60,12 +63,15 @@ class ProfileView extends GetView<ProfileController> {
         } else if (userId != null) {
           // For other users' profiles, only load if we don't have the data cached
           final userProfile = exploreController.selectedUserProfile;
-          if (userProfile.isEmpty || !userProfile.containsKey('follower_count')) {
+          if (userProfile.isEmpty ||
+              !userProfile.containsKey('follower_count')) {
             // We don't have this user's data - let the ExploreController handle loading it
-            debugPrint('No cached data for user $userId, letting ExploreController handle it');
+            debugPrint(
+              'No cached data for user $userId, letting ExploreController handle it',
+            );
           }
         }
-        
+
         // Mark initial data as loaded to prevent repeated loading
         _initialDataLoaded[cacheKey] = true;
       });
@@ -75,7 +81,8 @@ class ProfileView extends GetView<ProfileController> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Only preload if we haven't already done so for this user
       final cacheKey = userId ?? 'current';
-      if (!_initialDataLoaded.containsKey(cacheKey) || _initialDataLoaded[cacheKey] != true) {
+      if (!_initialDataLoaded.containsKey(cacheKey) ||
+          _initialDataLoaded[cacheKey] != true) {
         // Get avatar URLs using the utility method
         final avatars = AvatarUtils.getAvatarUrls(
           isCurrentUser: isCurrentUser,
@@ -84,7 +91,8 @@ class ProfileView extends GetView<ProfileController> {
         );
 
         // Preload avatars if available
-        if (avatars['avatar']!.isNotEmpty || avatars['google_avatar']!.isNotEmpty) {
+        if (avatars['avatar']!.isNotEmpty ||
+            avatars['google_avatar']!.isNotEmpty) {
           if (isCurrentUser) {
             AvatarUtils.preloadAvatarImages(accountDataProvider);
           }
@@ -97,10 +105,11 @@ class ProfileView extends GetView<ProfileController> {
         } else if (exploreController.selectedUserProfile['banner'] != null) {
           // For other users, update the account data provider temporarily
           final tempProvider = AccountDataProvider();
-          tempProvider.banner.value = exploreController.selectedUserProfile['banner'];
+          tempProvider.banner.value =
+              exploreController.selectedUserProfile['banner'];
           await BannerUtils.preloadBannerImages(tempProvider);
         }
-        
+
         _initialDataLoaded[cacheKey] = true;
       }
     });
@@ -123,14 +132,18 @@ class ProfileView extends GetView<ProfileController> {
                   ),
                 ),
                 child: Obx(() {
-                  debugPrint('Banner widget rebuilt at ${DateTime.now().toIso8601String()}');
-                  
-                  String bannerUrl = isCurrentUser
-                      ? accountDataProvider.banner.value
-                      : exploreController.selectedUserProfile['banner'] ?? '';
-                  
+                  debugPrint(
+                    'Banner widget rebuilt at ${DateTime.now().toIso8601String()}',
+                  );
+
+                  String bannerUrl =
+                      isCurrentUser
+                          ? accountDataProvider.banner.value
+                          : exploreController.selectedUserProfile['banner'] ??
+                              '';
+
                   debugPrint('Banner URL: $bannerUrl');
-                  
+
                   if (bannerUrl.isEmpty) {
                     debugPrint('No banner URL available');
                   }
@@ -144,19 +157,20 @@ class ProfileView extends GetView<ProfileController> {
                       bottomLeft: Radius.circular(20),
                       bottomRight: Radius.circular(20),
                     ),
-                    child: Container(
+                    child: SizedBox(
                       width: double.infinity,
                       height: 150, // Fixed height to match parent container
                       child: CachedNetworkImage(
                         imageUrl: bannerUrl,
                         fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: Colors.grey[800],
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          color: Colors.grey[800],
-                          child: Icon(Icons.error, color: Colors.white),
-                        ),
+                        placeholder:
+                            (context, url) =>
+                                Container(color: Colors.grey[800]),
+                        errorWidget:
+                            (context, url, error) => Container(
+                              color: Colors.grey[800],
+                              child: Icon(Icons.error, color: Colors.white),
+                            ),
                         imageBuilder: (context, imageProvider) {
                           return Container(
                             decoration: BoxDecoration(
@@ -172,115 +186,82 @@ class ProfileView extends GetView<ProfileController> {
                   );
                 }),
               ),
-              Positioned(
-                top: 100,
-                child: Stack(
-                  children: [
-                    GetX<AccountDataProvider>(
-                      builder: (provider) {
-                        if (!isCurrentUser) {
-                          debugPrint(
-                            'Selected user profile data for avatar: ${exploreController.selectedUserProfile}',
-                          );
-                        }
+              // Avatar section positioned 100px from top
+              Container(
+                margin: EdgeInsets.only(top: 100), // Position 100px from top
+                child: Obx(() {
+                  // Get avatar and Google avatar URLs based on whether it's current user or another user
+                  final avatarUrl = isCurrentUser
+                      ? accountDataProvider.avatar.value
+                      : exploreController.selectedUserProfile['avatar'] ?? '';
+                  final googleAvatarUrl = isCurrentUser
+                      ? accountDataProvider.googleAvatar.value
+                      : exploreController.selectedUserProfile['google_avatar'] ?? '';
 
-                        // Get avatar URLs with proper fallbacks
-                        final String avatarUrl =
-                            isCurrentUser
-                                ? provider.avatar.value
-                                : exploreController
-                                        .selectedUserProfile['avatar']
-                                        ?.toString() ??
-                                    '';
-
-                        final String googleAvatarUrl =
-                            isCurrentUser
-                                ? provider.googleAvatar.value
-                                : exploreController
-                                        .selectedUserProfile['google_avatar']
-                                        ?.toString() ??
-                                    '';
-
-                        if (!isCurrentUser) {
-                          debugPrint('Raw Avatar URL: $avatarUrl');
-                          debugPrint('Raw Google Avatar URL: $googleAvatarUrl');
-                        }
-
-                        // Determine if the regular avatar should be skiped
-                        final bool useGoogleAvatar =
-                            avatarUrl == 'skiped' ||
-                            (avatarUrl.isEmpty && googleAvatarUrl.isNotEmpty);
-                        final bool showDefaultIcon =
-                            avatarUrl.isEmpty &&
-                            googleAvatarUrl.isEmpty &&
-                            avatarUrl != 'skiped';
-
-                        // Determine which image to use
-                        final ImageProvider? imageProvider;
-                        if (useGoogleAvatar && googleAvatarUrl.isNotEmpty) {
-                          imageProvider = CachedNetworkImageProvider(
-                            googleAvatarUrl,
-                          );
-                        } else if (avatarUrl.isNotEmpty &&
-                            avatarUrl != 'skiped') {
-                          imageProvider = CachedNetworkImageProvider(avatarUrl);
-                        } else {
-                          imageProvider = null;
-                        }
-
-                        return Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Colors.black, Color(0xff666666)],
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                            ),
-                            borderRadius: BorderRadius.circular(54),
-                          ),
-                          padding: EdgeInsets.all(4),
-                          child: CircleAvatar(
-                            radius: 50,
-                            backgroundImage: imageProvider,
-                            backgroundColor: Colors.grey[300],
-                            child:
-                                showDefaultIcon
-                                    ? Icon(
-                                      Icons.person,
-                                      size: 50,
-                                      color: Colors.grey[600],
-                                    )
-                                    : null,
-                          ),
-                        );
-                      },
-                    ),
-                    if (isCurrentUser)
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          height: 25,
-                          width: 25,
-                          decoration: BoxDecoration(
-                            color: Colors.blue,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.add, color: Colors.white, size: 20),
-                        ),
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.topCenter,
+                    children: [
+                      ProfileAvatarWidget(
+                        selectedImage: null,
+                        imageUrl: avatarUrl,
+                        googleAvatarUrl: googleAvatarUrl,
+                        onTap: () {
+                          debugPrint('Profile image tapped');
+                        },
+                        radius: 45,
+                        isLoaded: true,
                       ),
-                  ],
-                ),
+                      if (isCurrentUser)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                debugPrint('+ button tapped - navigating to create story');
+                                Get.toNamed(Routes.CREATE_STORY);
+                              },
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: Colors.blue,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.black, width: 2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black,
+                                      blurRadius: 4,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  Icons.add,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                }),
               ),
             ],
           ),
-          SizedBox(height: 60), // 50 (radius) + 10 (gap)
-          // User info section
-          GetX<AccountDataProvider>(
-            builder:
-                (provider) => Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
+          // Content below avatar with reduced top margin
+          Container(
+            margin: EdgeInsets.only(top: 20),
+            child: GetX<AccountDataProvider>(
+              builder: (provider) => Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
                     // Nickname with edit icon
                     Stack(
                       alignment: Alignment.center,
@@ -369,9 +350,10 @@ class ProfileView extends GetView<ProfileController> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                  ],
-                ),
-          ),
+                    ],
+                  ),
+                ),       
+    ),
           SizedBox(height: 20),
           // Stats row for Posts, Followers, Following
           Container(
@@ -384,22 +366,24 @@ class ProfileView extends GetView<ProfileController> {
               children: [
                 Expanded(
                   child: Center(
-                    child: Obx(
-                      () {
-                        // Get the post count from the appropriate source
-                        final postCount = isCurrentUser
-                            ? accountDataProvider.posts.length
-                            : (exploreController.selectedUserProfile['post_count'] as int?) ?? 0;
-                        
-                        return _buildStatColumn(
-                          postCount.toString(),
-                          'Posts',
-                          onTap: () {
-                            // Handle posts tap if needed
-                          },
-                        );
-                      },
-                    ),
+                    child: Obx(() {
+                      // Get the post count from the appropriate source
+                      final postCount =
+                          isCurrentUser
+                              ? accountDataProvider.posts.length
+                              : (exploreController
+                                          .selectedUserProfile['post_count']
+                                      as int?) ??
+                                  0;
+
+                      return _buildStatColumn(
+                        postCount.toString(),
+                        'Posts',
+                        onTap: () {
+                          // Handle posts tap if needed
+                        },
+                      );
+                    }),
                   ),
                 ),
                 Container(
@@ -415,27 +399,29 @@ class ProfileView extends GetView<ProfileController> {
                 ),
                 Expanded(
                   child: Center(
-                    child: Obx(
-                      () {
-                        // Get the followers count from the appropriate source
-                        final followersCount = isCurrentUser
-                            ? accountDataProvider.followers.length
-                            : (exploreController.selectedUserProfile['follower_count'] as int?) ?? 0;
-                            
-                        return _buildStatColumn(
-                          followersCount.toString(),
-                          'Followers',
-                          onTap: () {
-                            Get.toNamed(
-                              Routes.FOLLOWERS,
-                              arguments: {
-                                'userId': isCurrentUser ? null : userId,
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
+                    child: Obx(() {
+                      // Get the followers count from the appropriate source
+                      final followersCount =
+                          isCurrentUser
+                              ? accountDataProvider.followers.length
+                              : (exploreController
+                                          .selectedUserProfile['follower_count']
+                                      as int?) ??
+                                  0;
+
+                      return _buildStatColumn(
+                        followersCount.toString(),
+                        'Followers',
+                        onTap: () {
+                          Get.toNamed(
+                            Routes.FOLLOWERS,
+                            arguments: {
+                              'userId': isCurrentUser ? null : userId,
+                            },
+                          );
+                        },
+                      );
+                    }),
                   ),
                 ),
                 Container(
@@ -451,27 +437,29 @@ class ProfileView extends GetView<ProfileController> {
                 ),
                 Expanded(
                   child: Center(
-                    child: Obx(
-                      () {
-                        // Get the following count from the appropriate source
-                        final followingCount = isCurrentUser
-                            ? accountDataProvider.following.length
-                            : (exploreController.selectedUserProfile['following_count'] as int?) ?? 0;
-                            
-                        return _buildStatColumn(
-                          followingCount.toString(),
-                          'Following',
-                          onTap: () {
-                            Get.toNamed(
-                              Routes.FOLLOWING,
-                              arguments: {
-                                'userId': isCurrentUser ? null : userId,
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
+                    child: Obx(() {
+                      // Get the following count from the appropriate source
+                      final followingCount =
+                          isCurrentUser
+                              ? accountDataProvider.following.length
+                              : (exploreController
+                                          .selectedUserProfile['following_count']
+                                      as int?) ??
+                                  0;
+
+                      return _buildStatColumn(
+                        followingCount.toString(),
+                        'Following',
+                        onTap: () {
+                          Get.toNamed(
+                            Routes.FOLLOWING,
+                            arguments: {
+                              'userId': isCurrentUser ? null : userId,
+                            },
+                          );
+                        },
+                      );
+                    }),
                   ),
                 ),
               ],
@@ -584,7 +572,7 @@ class ProfileView extends GetView<ProfileController> {
               }),
             ],
           ),
-        ],
+        ]
       ),
       bottomNavigationBar: BottomNavigation(),
     );
@@ -645,15 +633,17 @@ class ProfileView extends GetView<ProfileController> {
       exploreController.isFollowingUser(userId!),
     );
     final RxBool isLoadingFollow = RxBool(false);
-    
+
     // Only check database state once when view is first built and not already cached
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Only refresh follow state if we don't have this user's complete profile data cached
-      final shouldRefreshFollowState = 
+      final shouldRefreshFollowState =
           !exploreController.selectedUserProfile.containsKey('user_id') ||
           exploreController.shouldRefreshFollowState(userId!);
-          
-      if (!isLoadingFollow.value && userId != null && shouldRefreshFollowState) {
+
+      if (!isLoadingFollow.value &&
+          userId != null &&
+          shouldRefreshFollowState) {
         try {
           final actualFollowState = await exploreController.refreshFollowState(
             userId!,
@@ -733,7 +723,12 @@ class ProfileView extends GetView<ProfileController> {
                       : isFollowing.value
                       ? "Following"
                       : "Follow",
-                  style: TextStyle(color: Colors.white, fontSize: 15, fontFamily: GoogleFonts.inter().fontFamily, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontFamily: GoogleFonts.inter().fontFamily,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -743,31 +738,40 @@ class ProfileView extends GetView<ProfileController> {
             child: ElevatedButton(
               onPressed: () {
                 if (userId == null) return;
-                
+
                 // Get the current user ID
-                final currentUser = Get.find<SupabaseService>().currentUser.value;
+                final currentUser =
+                    Get.find<SupabaseService>().currentUser.value;
                 if (currentUser == null) {
-                  Get.snackbar('Error', 'You need to be logged in to send messages');
+                  Get.snackbar(
+                    'Error',
+                    'You need to be logged in to send messages',
+                  );
                   return;
                 }
-                
+
                 try {
                   // Get the other user's username from the explore controller or parameters
                   final exploreController = Get.find<ExploreController>();
-                  
+
                   // Debug print to check the selectedUserProfile
-                  debugPrint('Selected User Profile: ${exploreController.selectedUserProfile}');
-                  
-                  final otherUsername = exploreController.selectedUserProfile['username']?.toString() ?? 'User';
-                  
+                  debugPrint(
+                    'Selected User Profile: ${exploreController.selectedUserProfile}',
+                  );
+
+                  final otherUsername =
+                      exploreController.selectedUserProfile['username']
+                          ?.toString() ??
+                      'User';
+
                   // Debug print to check user IDs
                   debugPrint('Current User ID: ${currentUser.id}');
                   debugPrint('Other User ID: $userId');
-                  
+
                   try {
                     // Get the chat controller
                     final chatController = Get.find<ChatController>();
-                    
+
                     // Open or create a chat with the user
                     chatController.openChat(userId!, otherUsername);
                   } catch (e) {
@@ -778,11 +782,13 @@ class ProfileView extends GetView<ProfileController> {
                       snackPosition: SnackPosition.BOTTOM,
                     );
                   }
-                  
                 } catch (e, stackTrace) {
                   debugPrint('Error navigating to chat: $e');
                   debugPrint('Stack trace: $stackTrace');
-                  Get.snackbar('Error', 'Could not start chat. Please try again.');
+                  Get.snackbar(
+                    'Error',
+                    'Could not start chat. Please try again.',
+                  );
                 }
               },
               style: ElevatedButton.styleFrom(

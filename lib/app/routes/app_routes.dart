@@ -19,6 +19,7 @@ abstract class Routes {
   static const ERROR = _Paths.ERROR;
   static const FOLLOWERS = _Paths.FOLLOWERS;
   static const FOLLOWING = _Paths.FOLLOWING;
+  static const CREATE_STORY = _Paths.CREATE_STORY;
 }
 
 abstract class _Paths {
@@ -38,4 +39,5 @@ abstract class _Paths {
   static const ERROR = '/error';
   static const FOLLOWERS = '/followers';
   static const FOLLOWING = '/following';
+  static const CREATE_STORY = '/create-story';
 }
