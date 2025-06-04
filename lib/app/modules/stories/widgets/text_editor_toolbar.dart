@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/modules/stories/models/text_element.dart';
 
 class TextEditorToolbar extends StatelessWidget {
   final TextEditingController textController;

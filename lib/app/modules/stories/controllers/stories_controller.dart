@@ -4,29 +4,45 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:yapster/app/modules/stories/models/drawing_point.dart';
+import 'package:yapster/app/modules/stories/views/create_story_view.dart';
 
 class StoriesController extends GetxController {
   // Track if the story creation panel is visible
   final RxBool isStoryPanelVisible = false.obs;
-  
+
   // Store recent media files
   final RxList<File> recentMedia = <File>[].obs;
-  
+
   // Image picker instance
   final ImagePicker _picker = ImagePicker();
-  
+
   // Track loading state
   final RxBool isLoading = false.obs;
-  
+
   // Track currently selected image
   final Rxn<File> selectedImage = Rxn<File>();
+
+  final Rx<DrawingMode> drawingMode = DrawingMode.none.obs;
+  final Rx<Offset> textPosition = const Offset(100, 100).obs;
+
+  // Text styling
+  final Rx<Color> textColor = Colors.white.obs;
+  final Rx<Color> textBackgroundColor = Colors.transparent.obs;
+  final RxDouble textSize = 24.0.obs;
+  final Rx<FontWeight> textFontWeight = FontWeight.normal.obs;
+
+  // Doodle properties
+  final RxList<DrawingPoint> drawingPoints = <DrawingPoint>[].obs;
+  final Rx<Color> doodleColor = Colors.red.obs;
+  final RxDouble doodleStrokeWidth = 5.0.obs;
 
   @override
   void onInit() {
     super.onInit();
     requestPhotoPermission();
   }
-  
+
   // Request photo library permission
   Future<void> requestPhotoPermission() async {
     final status = await Permission.photos.request();
@@ -53,7 +69,7 @@ class StoriesController extends GetxController {
         ),
         barrierDismissible: false,
       );
-      
+
       if (shouldOpenSettings == true) {
         await openAppSettings();
       }
@@ -65,19 +81,19 @@ class StoriesController extends GetxController {
       );
     }
   }
-  
+
   // Load recent images from gallery
   Future<void> loadRecentGalleryImages() async {
     try {
       isLoading.value = true;
-      
+
       // Check if we have permission
       final status = await Permission.photos.status;
       if (!status.isGranted) {
         // If permission was denied, don't proceed
         return;
       }
-      
+
       // If we have permission, load the gallery images
       final List<AssetEntity> assets = await PhotoManager.getAssetListRange(
         start: 0,
@@ -89,7 +105,7 @@ class StoriesController extends GetxController {
           ),
         ),
       );
-      
+
       // Convert assets to files
       final List<File> files = [];
       for (var asset in assets) {
@@ -98,7 +114,7 @@ class StoriesController extends GetxController {
           files.add(file);
         }
       }
-      
+
       recentMedia.assignAll(files);
     } catch (e) {
       Get.snackbar('Error', 'Failed to load recent images: $e');
@@ -106,17 +122,17 @@ class StoriesController extends GetxController {
       isLoading.value = false;
     }
   }
-  
+
   // Toggle the story creation panel
   void toggleStoryPanel() {
     isStoryPanelVisible.value = !isStoryPanelVisible.value;
   }
-  
+
   // Select an image from the recent media
   void selectImage(File file) {
     selectedImage.value = file;
   }
-  
+
   // Open image picker to select media
   Future<void> pickMedia() async {
     try {
@@ -126,7 +142,7 @@ class StoriesController extends GetxController {
         maxHeight: 2000,
         imageQuality: 90,
       );
-      
+
       if (image != null) {
         final file = File(image.path);
         // Add to recent media if not already present
@@ -139,7 +155,7 @@ class StoriesController extends GetxController {
       Get.snackbar('Error', 'Failed to pick media: $e');
     }
   }
-  
+
   // Pick image from gallery
   Future<File?> pickImage() async {
     try {
@@ -149,7 +165,7 @@ class StoriesController extends GetxController {
         maxHeight: 2000,
         imageQuality: 90,
       );
-      
+
       if (image != null) {
         final file = File(image.path);
         // Add to recent media if not already present
@@ -163,7 +179,7 @@ class StoriesController extends GetxController {
     }
     return null;
   }
-  
+
   // Take photo with camera
   Future<File?> takePhoto() async {
     try {
@@ -173,7 +189,7 @@ class StoriesController extends GetxController {
         maxHeight: 2000,
         imageQuality: 90,
       );
-      
+
       if (photo != null) {
         final file = File(photo.path);
         // Add to recent media

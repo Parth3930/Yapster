@@ -10,4 +10,15 @@ class DrawingPoint {
     required this.color,
     required this.width,
   });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DrawingPoint &&
+          runtimeType == other.runtimeType &&
+          color == other.color &&
+          width == other.width;
+
+  @override
+  int get hashCode => color.hashCode ^ width.hashCode;
 }
