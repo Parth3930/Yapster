@@ -17,8 +17,18 @@ class DrawingPoint {
       other is DrawingPoint &&
           runtimeType == other.runtimeType &&
           color == other.color &&
-          width == other.width;
+          width == other.width &&
+          _listEquals(points, other.points);
+
+  bool _listEquals<T>(List<T>? a, List<T>? b) {
+    if (a == null) return b == null;
+    if (b == null || a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   @override
-  int get hashCode => color.hashCode ^ width.hashCode;
+  int get hashCode => Object.hash(Object.hashAll(points), color, width);
 }

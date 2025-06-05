@@ -37,20 +37,21 @@ class DoodlePainter extends CustomPainter {
 }
 
 class DoodleWidget extends GetView<DoodleController> {
-  const DoodleWidget({Key? key}) : super(key: key);
+  DoodleWidget({super.key});
+
+  final GlobalKey _sliderKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
-    final List<Color> _colors = const [
-      Colors.red,
-      Colors.orange,
-      Colors.yellow,
-      Colors.green,
-      Colors.blue,
-      Colors.indigo,
-      Colors.purple,
-      Colors.black,
-      Colors.white,
+    // Define key colors for a rainbow gradient
+    const List<Color> rainbowColors = [
+      Color(0xFFF44336), // Red
+      Color(0xFFFFEB3B), // Yellow
+      Color(0xFF4CAF50), // Green
+      Color(0xFF00BCD4), // Cyan
+      Color(0xFF2196F3), // Blue
+      Color(0xFF9C27B0), // Purple
+      Color(0xFFF44336), // Red (loop)
     ];
 
     return Stack(
@@ -71,123 +72,146 @@ class DoodleWidget extends GetView<DoodleController> {
           ),
         ),
 
-        // Color picker slider on the right
+        // Color picker slider and controls on the right
         Positioned(
-          right: 8,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Gradient slider
-                Container(
-                  width: 20,
-                  height: 300,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white, width: 1),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.red,
-                        Colors.orange,
-                        Colors.yellow,
-                        Colors.green,
-                        Colors.blue,
-                        Colors.indigo,
-                        Colors.purple,
-                        Colors.black,
-                        Colors.white,
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Gesture detector for the entire area
-                GestureDetector(
-                  onVerticalDragStart: (details) {
-                    _updateColorFromPosition(
-                      context,
-                      details.globalPosition,
-                      _colors,
-                    );
-                  },
-                  onVerticalDragUpdate: (details) {
-                    _updateColorFromPosition(
-                      context,
-                      details.globalPosition,
-                      _colors,
-                    );
-                  },
-                  child: Container(
-                    width: 40, // Wider touch area
-                    height: 300,
-                    color: Colors.transparent,
-                  ),
-                ),
-
-                // Circle thumb indicator
-                Obx(() {
-                  // Calculate position based on current color
-                  final int colorIndex = _colors.indexOf(
-                    controller.currentColor.value,
-                  );
-                  final double position =
-                      colorIndex != -1
-                          ? (colorIndex / (_colors.length - 1) * 300).clamp(
-                            0.0,
-                            300.0,
-                          )
-                          : 0.0;
-
-                  return Positioned(
-                    top: position - 10, // Center the circle on the color
-                    left:
-                        10, // Position the circle to be centered on the slider (20px slider width / 2 = 10)
-                    child: Container(
+          right: 16,
+          top: 16, // Position at the top
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Color slider
+              Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Gradient slider
+                    Container(
+                      key: _sliderKey,
                       width: 20,
-                      height: 20,
+                      height: 250,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        // Use Color directly without casting to MaterialColor
-                        color: Color(controller.currentColor.value.value),
-                        border: Border.all(color: Colors.white, width: 2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 1),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: rainbowColors,
+                        ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 4,
+                            color: Colors.black.withOpacity(0.5),
+                            blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
                         ],
                       ),
                     ),
-                  );
-                }),
-              ],
-            ),
-          ),
-        ),
 
-        // Bottom controls
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 16,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildControlButton(Icons.undo, controller.undo),
-              const SizedBox(width: 24),
-              _buildControlButton(Icons.clear, controller.clear),
+                    // Gesture detector for the entire area
+                    GestureDetector(
+                      onVerticalDragStart: (details) {
+                        _updateColorFromPosition(
+                          context,
+                          details.globalPosition,
+                        );
+                      },
+                      onVerticalDragUpdate: (details) {
+                        _updateColorFromPosition(
+                          context,
+                          details.globalPosition,
+                        );
+                      },
+                      child: Container(
+                        width:
+                            40, // Touch area width, can be wider than the visual slider for easier interaction
+                        height: 250, // Match the slider height
+                        // No margin needed if we want the gesture detector to perfectly overlay the slider
+                        decoration: BoxDecoration(
+                          // borderRadius: BorderRadius.circular(20), // Optional: if you want rounded touch area
+                          color: Colors.transparent, // Make it invisible
+                        ),
+                      ),
+                    ),
+
+                    // Circle thumb indicator
+                    Obx(() {
+                      // Use the stored slider position instead of calculating from color
+                      double positionRatio =
+                          controller.lastSliderPosition.value;
+
+                      // Slider visual height is 250, thumb height is 20
+                      const double sliderPixelHeight = 250.0;
+                      const double thumbPixelHeight = 20.0;
+                      final double draggableRange =
+                          sliderPixelHeight - thumbPixelHeight;
+
+                      // Calculate position and ensure it stays within bounds
+                      double position = (positionRatio * draggableRange);
+                      position = position.clamp(0.0, draggableRange);
+
+                      return Positioned(
+                        left: 0, // Center the thumb on the slider
+                        right:
+                            0, // By setting both left and right to 0, we center it
+                        top: position,
+                        child: GestureDetector(
+                          // Add gesture detection to the thumb itself
+                          onVerticalDragStart: (details) {
+                            _updateColorFromPosition(
+                              context,
+                              details.globalPosition,
+                            );
+                          },
+                          onVerticalDragUpdate: (details) {
+                            _updateColorFromPosition(
+                              context,
+                              details.globalPosition,
+                            );
+                          },
+                          child: Center(
+                            child: Container(
+                              width: 20, // Match the slider width
+                              height: 20, // Smaller circle
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: controller.currentColor.value,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.5),
+                                    blurRadius: 4,
+                                    spreadRadius: 1,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+
+              // Control buttons in column format below the slider
+              const SizedBox(height: 16),
+              SizedBox(
+                child: Column(
+                  children: [
+                    _buildControlButton(Icons.undo, controller.undo),
+                    _buildControlButton(Icons.redo, controller.redo),
+                    _buildControlButton(Icons.clear, controller.clear),
+                    _buildControlButton(
+                      Icons.cleaning_services,
+                      controller.erase,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -196,39 +220,36 @@ class DoodleWidget extends GetView<DoodleController> {
   }
 
   Widget _buildControlButton(IconData icon, VoidCallback onPressed) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.5),
-        shape: BoxShape.circle,
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: Colors.white),
-        onPressed: onPressed,
-      ),
+    return IconButton(
+      icon: Icon(icon, color: Colors.white),
+      onPressed: onPressed,
     );
   }
 
-  void _updateColorFromPosition(
-    BuildContext context,
-    Offset globalPosition,
-    List<Color> colors,
-  ) {
+  void _updateColorFromPosition(BuildContext context, Offset globalPosition) {
     // Convert global position to local position relative to the slider
-    final RenderBox box = context.findRenderObject() as RenderBox;
-    final Offset localPosition = box.globalToLocal(globalPosition);
+    final RenderBox? sliderBox =
+        _sliderKey.currentContext?.findRenderObject() as RenderBox?;
+    if (sliderBox == null) return;
+    final Offset localPosition = sliderBox.globalToLocal(globalPosition);
 
     // Calculate position ratio (0.0 to 1.0) within the slider height
-    final double yRatio = (localPosition.dy / 300).clamp(0.0, 1.0);
+    // Use sliderBox.size.height for accuracy if the height might change
+    double yRatio = (localPosition.dy / sliderBox.size.height);
 
-    // Map to color index and update controller
-    final int colorIndex = (yRatio * (colors.length - 1)).round();
-    // Create a new Color object using the RGBA values from the selected color
-    final Color selectedColor = colors[colorIndex];
-    controller.currentColor.value = Color.fromRGBO(
-      selectedColor.red,
-      selectedColor.green,
-      selectedColor.blue,
-      selectedColor.opacity,
-    );
+    // Strictly clamp the yRatio to prevent wrapping
+    yRatio = yRatio.clamp(0.0, 1.0);
+
+    // Store the last position to prevent jumping back to top
+    controller.lastSliderPosition.value = yRatio;
+
+    // Calculate color based on yRatio using HSL/HSV
+    // yRatio 0.0 (top) = hue 0 (red), yRatio 1.0 (bottom) = hue 359.999 (purple)
+    // We use 359.999 as the max to avoid wrapping back to red (0/360)
+    final double hue = yRatio * 359.999;
+
+    // Create the color and update the controller
+    final Color newColor = HSVColor.fromAHSV(1.0, hue, 1.0, 1.0).toColor();
+    controller.currentColor.value = newColor;
   }
 }

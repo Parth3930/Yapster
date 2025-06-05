@@ -86,7 +86,7 @@ class CreateStoryView extends GetView<StoriesController> {
 
               // Doodle widget when in doodle mode
               if (controller.drawingMode.value == DrawingMode.doodle)
-                const DoodleWidget(),
+                DoodleWidget(),
 
               // Text elements with drag and drop support
               Obx(

@@ -6,9 +6,16 @@ class DoodleController extends GetxController {
   // Drawing points list
   final RxList<DrawingPoint> drawingPoints = <DrawingPoint>[].obs;
 
+  // History for redo functionality
+  final RxList<DrawingPoint> redoHistory = <DrawingPoint>[].obs;
+
   // Current color and stroke width
-  final Rx<Color> currentColor = Colors.red.obs;
+  final Rx<Color> currentColor =
+      const Color(0xFFF44336).obs; // Default red (primary shade of Colors.red)
   final RxDouble currentWidth = 5.0.obs;
+
+  // Store the last slider position to prevent jumping
+  final RxDouble lastSliderPosition = 0.0.obs;
 
   // RGB values for color slider
   final RxDouble red = 255.0.obs;
@@ -23,6 +30,10 @@ class DoodleController extends GetxController {
     super.onInit();
     // Listen for color changes
     ever(currentColor, updateRgbFromColor);
+
+    // Initialize the slider position based on the default color
+    final HSVColor hsvColor = HSVColor.fromColor(currentColor.value);
+    lastSliderPosition.value = hsvColor.hue / 359.999;
   }
 
   void updateRgbFromColor(Color color) {
@@ -72,12 +83,29 @@ class DoodleController extends GetxController {
   }
 
   void clear() {
+    // Clear both drawing points and redo history
     drawingPoints.clear();
+    redoHistory.clear();
   }
 
   void undo() {
     if (drawingPoints.isNotEmpty) {
+      // Move the last drawing point to redo history
+      redoHistory.add(drawingPoints.last);
       drawingPoints.removeLast();
     }
+  }
+
+  void redo() {
+    if (redoHistory.isNotEmpty) {
+      // Move the last item from redo history back to drawing points
+      drawingPoints.add(redoHistory.last);
+      redoHistory.removeLast();
+    }
+  }
+
+  void erase() {
+    // Set color to transparent for eraser functionality
+    currentColor.value = Colors.transparent;
   }
 }
