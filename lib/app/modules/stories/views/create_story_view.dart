@@ -1,223 +1,65 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/modules/stories/controllers/stories_controller.dart';
+import 'package:yapster/app/modules/stories/controllers/doodle_controller.dart';
+import 'package:yapster/app/modules/stories/controllers/text_editor_controller.dart';
 import 'package:yapster/app/modules/stories/models/text_element.dart';
 import 'package:yapster/app/modules/stories/widgets/doodle_widget.dart';
+import 'package:yapster/app/modules/stories/widgets/text_editor_toolbar.dart';
 
 enum DrawingMode { none, text, doodle }
 
-class CreateStoryView extends StatefulWidget {
-  const CreateStoryView({super.key});
+class CreateStoryView extends GetView<StoriesController> {
+  const CreateStoryView({Key? key}) : super(key: key);
 
   @override
-  State<CreateStoryView> createState() => _CreateStoryViewState();
-}
+  Widget build(BuildContext context) {
+    // Initialize the controllers if not already registered
+    if (!Get.isRegistered<DoodleController>()) {
+      Get.put(DoodleController());
+    }
+    if (!Get.isRegistered<TextEditorController>()) {
+      Get.put(TextEditorController());
+    }
 
-class _CreateStoryViewState extends State<CreateStoryView> {
-  final StoriesController controller = Get.put(StoriesController());
-  final TextEditingController _textController = TextEditingController();
-  final FocusNode _textFocusNode = FocusNode();
-
-  Widget _buildBottomAction({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool isActive = false,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: isActive ? Colors.blue : Colors.white, size: 24),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: isActive ? Colors.blue : Colors.white,
-              fontSize: 12,
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Get.back(),
+        ),
+        title: const Text(
+          'Create Story',
+          style: TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Get.snackbar('Success', 'Story posted successfully!');
+            },
+            child: const Text(
+              'Post',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
 
-  // Handle doodle clear
-  void _clearDoodle() {
-    controller.drawingPoints.clear();
-  }
+      body: Obx(() {
+        if (controller.isLoading.value) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
 
-  // Handle undo last doodle stroke
-  void _undoLastDoodle() {
-    if (controller.drawingPoints.isNotEmpty) {
-      controller.drawingPoints.removeLast();
-    }
-  }
-
-  // Text elements on canvas
-  final RxList<TextElement> _textElements = <TextElement>[].obs;
-
-  // Current text element being edited
-  final Rxn<TextElement> _editingTextElement = Rxn<TextElement>();
-
-  void _addNewTextElement() {
-    final newElement = TextElement(
-      text: 'Tap to edit',
-      position: const Offset(100, 100), // Center position
-      color: controller.textColor.value,
-      backgroundColor: controller.textBackgroundColor.value,
-      size: controller.textSize.value,
-      fontWeight: controller.textFontWeight.value,
-      isEditing: true,
-    );
-
-    _editingTextElement.value = newElement;
-    _textElements.add(newElement);
-    _textController.text = newElement.text;
-    _textFocusNode.requestFocus();
-  }
-
-  @override
-  void dispose() {
-    _textController.dispose();
-    _textFocusNode.dispose();
-    super.dispose();
-  }
-
-  void _updateTextElement() {
-    if (_editingTextElement.value != null) {
-      final updatedElement = _editingTextElement.value!.copyWith(
-        text: _textController.text,
-        color: controller.textColor.value,
-        backgroundColor: controller.textBackgroundColor.value,
-        size: controller.textSize.value,
-        fontWeight: controller.textFontWeight.value,
-      );
-
-      final index = _textElements.indexWhere(
-        (element) => element == _editingTextElement.value,
-      );
-      if (index != -1) {
-        _textElements[index] = updatedElement;
-        _editingTextElement.value = updatedElement;
-      }
-    }
-  }
-
-  void _handleTextEditingComplete() {
-    if (_textController.text.trim().isEmpty &&
-        _editingTextElement.value != null) {
-      // Remove if empty when done editing
-      _removeTextElement(_editingTextElement.value!);
-    } else if (_editingTextElement.value != null) {
-      final updatedElement = _editingTextElement.value!.copyWith(
-        isEditing: false,
-      );
-
-      final index = _textElements.indexWhere(
-        (element) => element == _editingTextElement.value,
-      );
-      if (index != -1) {
-        _textElements[index] = updatedElement;
-      }
-
-      _editingTextElement.value = null;
-      controller.drawingMode.value = DrawingMode.none;
-    }
-
-    _textFocusNode.unfocus();
-  }
-
-  // Handle tap on a text element
-  void _handleTextElementTap(TextElement element) {
-    // If already editing this element, just focus the text field
-    if (_editingTextElement.value == element) {
-      _textFocusNode.requestFocus();
-      return;
-    }
-
-    // Clear previous editing state
-    if (_editingTextElement.value != null) {
-      final prevIndex = _textElements.indexWhere(
-        (e) => e == _editingTextElement.value,
-      );
-      if (prevIndex != -1) {
-        _textElements[prevIndex] = _editingTextElement.value!.copyWith(
-          isEditing: false,
-        );
-      }
-    }
-
-    // Set up editing state
-    _editingTextElement.value = element;
-    _textController.text = element.text;
-    controller.textPosition.value = element.position;
-    controller.textColor.value = element.color;
-    controller.textSize.value = element.size;
-    controller.textFontWeight.value = element.fontWeight;
-    controller.textBackgroundColor.value = element.backgroundColor;
-
-    // Move to top of stack when selected
-    _textElements.remove(element);
-    _textElements.add(element.copyWith(isEditing: true));
-
-    // Switch to text mode and focus the text field
-    controller.drawingMode.value = DrawingMode.text;
-    _textFocusNode.requestFocus();
-  }
-
-  void _removeTextElement(TextElement element) {
-    _textElements.remove(element);
-    if (_editingTextElement.value == element) {
-      _editingTextElement.value = null;
-      _textController.clear();
-      controller.drawingMode.value = DrawingMode.none;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() {
-      // Use the controller to manage state
-      final controller = Get.find<StoriesController>();
-      if (controller.isLoading.value) {
-        return const Scaffold(
-          backgroundColor: Colors.black,
-          body: Center(child: SizedBox.shrink()),
-        );
-      }
-
-      return Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Get.back(),
-          ),
-          title: const Text(
-            'Create Story',
-            style: TextStyle(color: Colors.white),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Get.snackbar('Success', 'Story posted successfully!');
-              },
-              child: const Text(
-                'Post',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-          ],
-        ),
-        body: Container(
+        return Container(
           width: MediaQuery.of(context).size.width,
           height: MediaQuery.of(context).size.height,
           alignment: Alignment.center,
@@ -242,112 +84,120 @@ class _CreateStoryViewState extends State<CreateStoryView> {
                   ),
                 ),
 
-              // Doodle layer when in doodle mode
+              // Doodle widget when in doodle mode
               if (controller.drawingMode.value == DrawingMode.doodle)
-                Positioned.fill(
-                  child: DoodleWidget(
-                    drawingPoints: controller.drawingPoints,
-                    onColorChanged:
-                        (color) => controller.doodleColor.value = color,
-                    onWidthChanged:
-                        (width) => controller.doodleStrokeWidth.value = width,
-                    onClear: _clearDoodle,
-                    onUndo: _undoLastDoodle,
-                    currentColor: controller.doodleColor.value,
-                    currentWidth: controller.doodleStrokeWidth.value,
-                  ),
-                ),
+                const DoodleWidget(),
 
               // Text elements with drag and drop support
-              ...(_textElements.map((element) {
-                return Positioned(
-                  left: element.position.dx,
-                  top: element.position.dy,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanStart: (details) {
-                      if (controller.drawingMode.value == DrawingMode.none) {
-                        // Move to top of stack
-                        final updatedElement = element.copyWith(
-                          isDragging: true,
-                        );
-                        updatedElement.dragStartPosition = element.position;
-                        updatedElement.dragStartOffset = details.localPosition;
+              Obx(
+                () => Stack(
+                  children:
+                      controller.textElements.map((element) {
+                        return Positioned(
+                          left: element.position.dx,
+                          top: element.position.dy,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onPanStart: (details) {
+                              if (controller.drawingMode.value ==
+                                  DrawingMode.none) {
+                                // Move to top of stack
+                                final updatedElement = element.copyWith(
+                                  isDragging: true,
+                                );
+                                updatedElement.dragStartPosition =
+                                    element.position;
+                                updatedElement.dragStartOffset =
+                                    details.localPosition;
 
-                        _textElements.remove(element);
-                        _textElements.add(updatedElement);
-                      }
-                    },
-                    onPanUpdate: (details) {
-                      if (controller.drawingMode.value == DrawingMode.none &&
-                          element.isDragging) {
-                        final index = _textElements.indexWhere(
-                          (e) => e == element,
-                        );
-                        if (index != -1) {
-                          final updatedElement = element.copyWith(
-                            position: Offset(
-                              element.position.dx + details.delta.dx,
-                              element.position.dy + details.delta.dy,
+                                controller.textElements.remove(element);
+                                controller.textElements.add(updatedElement);
+                              }
+                            },
+                            onPanUpdate: (details) {
+                              if (controller.drawingMode.value ==
+                                      DrawingMode.none &&
+                                  element.isDragging) {
+                                final index = controller.textElements
+                                    .indexWhere((e) => e == element);
+                                if (index != -1) {
+                                  final updatedElement = element.copyWith(
+                                    position: Offset(
+                                      element.position.dx + details.delta.dx,
+                                      element.position.dy + details.delta.dy,
+                                    ),
+                                  );
+                                  controller.textElements[index] =
+                                      updatedElement;
+                                }
+                              }
+                            },
+                            onPanEnd: (_) {
+                              if (element.isDragging) {
+                                final index = controller.textElements
+                                    .indexWhere((e) => e == element);
+                                if (index != -1) {
+                                  controller.textElements[index] = element
+                                      .copyWith(isDragging: false);
+                                }
+                              }
+                            },
+                            onTap: () {
+                              if (controller.drawingMode.value ==
+                                  DrawingMode.none) {
+                                controller.editTextElement(element);
+                              }
+                            },
+                            onLongPress: () {
+                              controller.textElements.remove(element);
+                              if (controller.editingTextElement.value ==
+                                  element) {
+                                controller.editingTextElement.value = null;
+                                controller.isEditingText.value = false;
+                                controller.drawingMode.value = DrawingMode.none;
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    element.backgroundColor !=
+                                            Colors.transparent
+                                        ? element.backgroundColor
+                                        : null,
+                                borderRadius: BorderRadius.circular(8),
+                                border:
+                                    element.isEditing
+                                        ? Border.all(
+                                          color: Colors.blue,
+                                          width: 2,
+                                        )
+                                        : null,
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Colors.black,
+                                    blurRadius: 4,
+                                    offset: Offset(1, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                element.text,
+                                style: TextStyle(
+                                  color: element.color,
+                                  fontSize: element.size,
+                                  fontWeight: element.fontWeight,
+                                ),
+                              ),
                             ),
-                          );
-                          _textElements[index] = updatedElement;
-                        }
-                      }
-                    },
-                    onPanEnd: (_) {
-                      if (element.isDragging) {
-                        final index = _textElements.indexWhere(
-                          (e) => e == element,
-                        );
-                        if (index != -1) {
-                          _textElements[index] = element.copyWith(
-                            isDragging: false,
-                          );
-                        }
-                      }
-                    },
-                    onTap: () {
-                      if (controller.drawingMode.value == DrawingMode.none) {
-                        _handleTextElementTap(element);
-                      }
-                    },
-                    onLongPress: () => _removeTextElement(element),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            element.backgroundColor != Colors.transparent
-                                ? element.backgroundColor
-                                : null,
-                        borderRadius: BorderRadius.circular(8),
-                        border:
-                            element.isEditing
-                                ? Border.all(color: Colors.blue, width: 2)
-                                : null,
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black,
-                            blurRadius: 4,
-                            offset: Offset(1, 1),
                           ),
-                        ],
-                      ),
-                      child: Text(
-                        element.text,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: element.size,
-                          fontWeight: element.fontWeight,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList()),
+                        );
+                      }).toList(),
+                ),
+              ),
 
               // Recent gallery images preview
               Positioned(
@@ -436,8 +286,9 @@ class _CreateStoryViewState extends State<CreateStoryView> {
                 ),
               ),
 
-              // Text editor toolbar
-              if (controller.drawingMode.value == DrawingMode.text)
+              // Text editor toolbar when in text mode and editing
+              if (controller.drawingMode.value == DrawingMode.text &&
+                  controller.isEditingText.value)
                 Positioned(
                   left: 0,
                   right: 0,
@@ -458,10 +309,20 @@ class _CreateStoryViewState extends State<CreateStoryView> {
                           child: Stack(
                             children: [
                               // Preview of the text
-                              if (_editingTextElement.value != null)
+                              if (controller.editingTextElement.value != null)
                                 Positioned(
-                                  left: _editingTextElement.value!.position.dx,
-                                  top: _editingTextElement.value!.position.dy,
+                                  left:
+                                      controller
+                                          .editingTextElement
+                                          .value!
+                                          .position
+                                          .dx,
+                                  top:
+                                      controller
+                                          .editingTextElement
+                                          .value!
+                                          .position
+                                          .dy,
                                   child: Opacity(
                                     opacity: 0.5,
                                     child: Container(
@@ -471,27 +332,32 @@ class _CreateStoryViewState extends State<CreateStoryView> {
                                       ),
                                       decoration: BoxDecoration(
                                         color:
-                                            _editingTextElement
-                                                        .value!
-                                                        .backgroundColor !=
-                                                    Colors.transparent
-                                                ? _editingTextElement
-                                                    .value!
-                                                    .backgroundColor
-                                                : null,
+                                            controller
+                                                .editingTextElement
+                                                .value!
+                                                .backgroundColor,
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
-                                        _textController.text,
+                                        controller.textEditingController.text,
                                         style: TextStyle(
                                           color:
-                                              _editingTextElement.value!.color,
-                                          fontSize:
-                                              _editingTextElement.value!.size,
-                                          fontWeight:
-                                              _editingTextElement
+                                              controller
+                                                  .editingTextElement
                                                   .value!
-                                                  .fontWeight,
+                                                  .color,
+                                          fontSize:
+                                              controller
+                                                  .editingTextElement
+                                                  .value!
+                                                  .size,
+                                          fontWeight:
+                                              controller
+                                                      .textEditorController
+                                                      .isBold
+                                                      .value
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
                                         ),
                                       ),
                                     ),
@@ -505,18 +371,105 @@ class _CreateStoryViewState extends State<CreateStoryView> {
                                 child: Opacity(
                                   opacity: 0,
                                   child: TextField(
-                                    controller: _textController,
-                                    focusNode: _textFocusNode,
+                                    controller:
+                                        controller.textEditingController,
                                     style: TextStyle(
-                                      color: controller.textColor.value,
-                                      fontSize: controller.textSize.value,
+                                      color:
+                                          controller
+                                              .textEditorController
+                                              .textColor
+                                              .value,
+                                      fontSize:
+                                          controller
+                                              .textEditorController
+                                              .textSize
+                                              .value,
                                       fontWeight:
-                                          controller.textFontWeight.value,
+                                          controller
+                                                  .textEditorController
+                                                  .isBold
+                                                  .value
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
                                     ),
                                     maxLines: null,
-                                    onChanged: (_) => _updateTextElement(),
-                                    onEditingComplete:
-                                        _handleTextEditingComplete,
+                                    onEditingComplete: () {
+                                      if (controller.textEditingController.text
+                                              .trim()
+                                              .isEmpty &&
+                                          controller.editingTextElement.value !=
+                                              null) {
+                                        // Remove if empty when done editing
+                                        controller.textElements.remove(
+                                          controller.editingTextElement.value!,
+                                        );
+                                        controller.editingTextElement.value =
+                                            null;
+                                        controller.drawingMode.value =
+                                            DrawingMode.none;
+                                      } else if (controller
+                                              .editingTextElement
+                                              .value !=
+                                          null) {
+                                        // Update the text element with the final text and mark as not editing
+                                        controller.updateTextElement(
+                                          controller.editingTextElement.value!,
+                                          text:
+                                              controller
+                                                  .textEditingController
+                                                  .text,
+                                          isEditing: false,
+                                        );
+
+                                        // Clear editing state
+                                        controller.editingTextElement.value =
+                                            null;
+                                        controller.drawingMode.value =
+                                            DrawingMode.none;
+                                      } else if (controller
+                                          .isEditingText
+                                          .value) {
+                                        // Add new text element
+                                        controller.addTextElement(
+                                          TextElement(
+                                            text:
+                                                controller
+                                                    .textEditingController
+                                                    .text,
+                                            position: Offset(
+                                              MediaQuery.of(
+                                                    context,
+                                                  ).size.width /
+                                                  2,
+                                              MediaQuery.of(
+                                                    context,
+                                                  ).size.height /
+                                                  2,
+                                            ),
+                                            color:
+                                                controller
+                                                    .textEditorController
+                                                    .textColor
+                                                    .value,
+                                            size:
+                                                controller
+                                                    .textEditorController
+                                                    .textSize
+                                                    .value,
+                                            fontWeight:
+                                                controller
+                                                        .textEditorController
+                                                        .isBold
+                                                        .value
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                            backgroundColor: Colors.transparent,
+                                          ),
+                                        );
+                                        controller.drawingMode.value =
+                                            DrawingMode.none;
+                                      }
+                                    },
                                     decoration: const InputDecoration(
                                       border: InputBorder.none,
                                       contentPadding: EdgeInsets.zero,
@@ -528,89 +481,47 @@ class _CreateStoryViewState extends State<CreateStoryView> {
                           ),
                         ),
                         // Text editor toolbar
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 8.0,
-                            horizontal: 8.0,
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Color selection
-                              SizedBox(
-                                height: 50,
-                                child: ListView(
-                                  scrollDirection: Axis.horizontal,
-                                  children: [
-                                    for (var color in const [
-                                      Colors.white,
-                                      Colors.black,
-                                      Colors.red,
-                                      Colors.green,
-                                      Colors.blue,
-                                      Colors.yellow,
-                                      Colors.purple,
-                                    ])
-                                      GestureDetector(
-                                        onTap: () {
-                                          controller.textColor.value = color;
-                                          _updateTextElement();
-                                        },
-                                        child: Container(
-                                          width: 30,
-                                          height: 30,
-                                          margin: const EdgeInsets.symmetric(
-                                            horizontal: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: color,
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: Colors.white,
-                                              width:
-                                                  controller.textColor.value ==
-                                                          color
-                                                      ? 2
-                                                      : 1,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
+                        TextEditorToolbar(
+                          onDone: () {
+                            if (controller.textEditingController.text
+                                    .trim()
+                                    .isEmpty &&
+                                controller.editingTextElement.value != null) {
+                              // Remove if empty when done editing
+                              controller.textElements.remove(
+                                controller.editingTextElement.value!,
+                              );
+                              controller.editingTextElement.value = null;
+                              controller.drawingMode.value = DrawingMode.none;
+                            } else if (controller.editingTextElement.value !=
+                                null) {
+                              // Update the text element with the final text and mark as not editing
+                              controller.updateTextElement(
+                                controller.editingTextElement.value!,
+                                text: controller.textEditingController.text,
+                                isEditing: false,
+                              );
+
+                              // Clear editing state
+                              controller.editingTextElement.value = null;
+                              controller.drawingMode.value = DrawingMode.none;
+                            } else if (controller.isEditingText.value) {
+                              // Add new text element
+                              controller.addTextElement(
+                                TextElement(
+                                  text: controller.textEditingController.text,
+                                  position: Offset.zero,
+                                  color: Colors.white,
+                                  size: 20,
+                                  backgroundColor: Colors.transparent,
+                                  fontWeight: FontWeight.normal,
+                                  isDragging: false,
+                                  isEditing: false,
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              // Font size slider
-                              Row(
-                                children: [
-                                  const Text(
-                                    'A',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                  Expanded(
-                                    child: Slider(
-                                      value: controller.textSize.value,
-                                      min: 12,
-                                      max: 72,
-                                      onChanged: (value) {
-                                        controller.textSize.value = value;
-                                        _updateTextElement();
-                                      },
-                                      activeColor: Colors.white,
-                                      inactiveColor: Colors.grey,
-                                    ),
-                                  ),
-                                  const Text(
-                                    'A',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                              );
+                              controller.drawingMode.value = DrawingMode.none;
+                            }
+                          },
                         ),
                       ],
                     ),
@@ -618,23 +529,31 @@ class _CreateStoryViewState extends State<CreateStoryView> {
                 ),
             ],
           ),
-        ),
-        bottomNavigationBar: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+        );
+      }),
+      bottomNavigationBar: Obx(() {
+        if (controller.isLoading.value) return const SizedBox.shrink();
+
+        return Container(
+          height: 60,
           color: Colors.black,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _buildBottomAction(
                 icon: Icons.text_fields,
                 label: 'Text',
                 isActive: controller.drawingMode.value == DrawingMode.text,
                 onTap: () {
-                  if (controller.drawingMode.value == DrawingMode.text) {
-                    controller.drawingMode.value = DrawingMode.none;
-                  } else {
+                  if (controller.drawingMode.value != DrawingMode.text) {
                     controller.drawingMode.value = DrawingMode.text;
-                    _addNewTextElement();
+                    controller.isEditingText.value = true;
+                    controller.textEditingController.clear();
+                    // Focus the invisible text field
+                    FocusScope.of(context).requestFocus(FocusNode());
+                  } else {
+                    controller.drawingMode.value = DrawingMode.none;
+                    controller.isEditingText.value = false;
                   }
                 },
               ),
@@ -643,16 +562,43 @@ class _CreateStoryViewState extends State<CreateStoryView> {
                 label: 'Doodle',
                 isActive: controller.drawingMode.value == DrawingMode.doodle,
                 onTap: () {
-                  controller.drawingMode.value =
-                      controller.drawingMode.value == DrawingMode.doodle
-                          ? DrawingMode.none
-                          : DrawingMode.doodle;
+                  if (controller.drawingMode.value != DrawingMode.doodle) {
+                    controller.drawingMode.value = DrawingMode.doodle;
+                  } else {
+                    controller.drawingMode.value = DrawingMode.none;
+                  }
                 },
               ),
             ],
           ),
-        ),
-      );
-    });
+        );
+      }),
+    );
+  }
+
+  Widget _buildBottomAction({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: isActive ? Colors.blue : Colors.white, size: 28),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: isActive ? Colors.blue : Colors.white,
+              fontSize: 12,
+              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

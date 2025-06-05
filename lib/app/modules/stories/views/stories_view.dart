@@ -10,14 +10,12 @@ class StoriesView extends GetView<StoriesController> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Stories'),
-      ),
+      appBar: AppBar(title: Text('Stories')),
       body: Stack(
         children: [
           // Main content
           _buildStoriesList(),
-          
+
           // Story creation panel (overlay)
           const CreateStoryView(),
         ],
@@ -66,55 +64,59 @@ class StoriesView extends GetView<StoriesController> {
             onTap: controller.toggleStoryPanel,
           ),
         ),
-        
+
         // User's stories
-        ...sampleStories.map((story) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-          child: Column(
-            children: [
-              // Story ring with gradient border for unseen stories
-              Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: story['hasUnseen']
-                      ? const LinearGradient(
-                          colors: [Colors.purple, Colors.orange],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : null,
-                  border: !story['hasUnseen']
-                      ? Border.all(color: Colors.grey.shade300)
-                      : null,
-                ),
-                child: Container(
+        ...sampleStories.map(
+          (story) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+            child: Column(
+              children: [
+                // Story ring with gradient border for unseen stories
+                Container(
                   padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
+                    gradient:
+                        story['hasUnseen']
+                            ? const LinearGradient(
+                              colors: [Colors.purple, Colors.orange],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            )
+                            : null,
+                    border:
+                        !story['hasUnseen']
+                            ? Border.all(color: Colors.grey.shade300)
+                            : null,
                   ),
-                  child: CircleAvatar(
-                    radius: 30,
-                    backgroundImage: NetworkImage(story['avatar']),
-                    child: null,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: CircleAvatar(
+                      radius: 30,
+                      backgroundImage: NetworkImage(story['avatar']),
+                      child: null,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              SizedBox(
-                width: 60,
-                child: Text(
-                  story['username'],
-                  style: const TextStyle(fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
+                SizedBox(height: 4),
+                SizedBox(
+                  width: 60,
+                  child: Text(
+                    story['username'],
+                    style: const TextStyle(fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        )),
+        ),
       ],
     );
   }

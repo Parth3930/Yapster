@@ -1,21 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../controllers/doodle_controller.dart';
 
-class DoodleToolbar extends StatelessWidget {
-  final Rx<Color> doodleColor;
-  final RxDouble doodleStrokeWidth;
-  final VoidCallback onClear;
-  final VoidCallback onUndo;
-  final List<Color> quickColors;
-
-  const DoodleToolbar({
-    Key? key,
-    required this.doodleColor,
-    required this.doodleStrokeWidth,
-    required this.onClear,
-    required this.onUndo,
-    required this.quickColors,
-  }) : super(key: key);
+class DoodleToolbar extends GetView<DoodleController> {
+  const DoodleToolbar({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -39,55 +27,151 @@ class DoodleToolbar extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Slider(
-                    value: doodleStrokeWidth.value,
+                    value: controller.currentWidth.value,
                     min: 1,
                     max: 20,
                     onChanged: (value) {
-                      doodleStrokeWidth.value = value;
+                      controller.currentWidth.value = value;
                     },
                     activeColor: Colors.white,
                     inactiveColor: Colors.grey,
                   ),
                 ),
                 Text(
-                  '${doodleStrokeWidth.value.toInt()}',
+                  '${controller.currentWidth.value.toInt()}',
                   style: const TextStyle(color: Colors.white),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            // Color selection
-            SizedBox(
+            // Color preview
+            Container(
+              width: 40,
               height: 40,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: quickColors.length,
-                itemBuilder: (context, index) {
-                  final color = quickColors[index];
-                  return GestureDetector(
-                    onTap: () {
-                      doodleColor.value = color;
-                    },
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: doodleColor.value == color 
-                              ? Colors.white 
-                              : Colors.transparent,
-                          width: 2,
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: controller.currentColor.value,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+            ),
+
+            // RGB Color sliders
+            Obx(
+              () => Column(
+                children: [
+                  // Red slider
+                  Row(
+                    children: [
+                      const SizedBox(width: 8),
+                      const Text(
+                        'R',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      child: color == Colors.transparent
-                          ? const Icon(Icons.not_interested, size: 16, color: Colors.white)
-                          : null,
-                    ),
-                  );
-                },
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Slider(
+                          value: controller.red.value,
+                          min: 0,
+                          max: 255,
+                          activeColor: Colors.red,
+                          inactiveColor: Colors.red.withOpacity(0.3),
+                          onChanged: (value) {
+                            controller.red.value = value;
+                            controller.updateColorFromRgb();
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 30,
+                        child: Text(
+                          '${controller.red.value.toInt()}',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Green slider
+                  Row(
+                    children: [
+                      const SizedBox(width: 8),
+                      const Text(
+                        'G',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Slider(
+                          value: controller.green.value,
+                          min: 0,
+                          max: 255,
+                          activeColor: Colors.green,
+                          inactiveColor: Colors.green.withOpacity(0.3),
+                          onChanged: (value) {
+                            controller.green.value = value;
+                            controller.updateColorFromRgb();
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 30,
+                        child: Text(
+                          '${controller.green.value.toInt()}',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Blue slider
+                  Row(
+                    children: [
+                      const SizedBox(width: 8),
+                      const Text(
+                        'B',
+                        style: TextStyle(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Slider(
+                          value: controller.blue.value,
+                          min: 0,
+                          max: 255,
+                          activeColor: Colors.blue,
+                          inactiveColor: Colors.blue.withOpacity(0.3),
+                          onChanged: (value) {
+                            controller.blue.value = value;
+                            controller.updateColorFromRgb();
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 30,
+                        child: Text(
+                          '${controller.blue.value.toInt()}',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -95,8 +179,8 @@ class DoodleToolbar extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildActionButton(Icons.undo, 'Undo', onUndo),
-                _buildActionButton(Icons.clear, 'Clear', onClear),
+                _buildActionButton(Icons.undo, 'Undo', controller.undo),
+                _buildActionButton(Icons.clear, 'Clear', controller.clear),
               ],
             ),
           ],
@@ -109,15 +193,10 @@ class DoodleToolbar extends StatelessWidget {
     return TextButton.icon(
       onPressed: onTap,
       icon: Icon(icon, color: Colors.white),
-      label: Text(
-        label,
-        style: const TextStyle(color: Colors.white),
-      ),
+      label: Text(label, style: const TextStyle(color: Colors.white)),
       style: TextButton.styleFrom(
         backgroundColor: Colors.black38,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
     );
   }

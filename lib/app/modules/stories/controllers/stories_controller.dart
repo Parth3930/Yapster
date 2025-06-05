@@ -4,7 +4,9 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart';
-import 'package:yapster/app/modules/stories/models/drawing_point.dart';
+import 'package:yapster/app/modules/stories/controllers/doodle_controller.dart';
+import 'package:yapster/app/modules/stories/controllers/text_editor_controller.dart';
+import 'package:yapster/app/modules/stories/models/text_element.dart';
 import 'package:yapster/app/modules/stories/views/create_story_view.dart';
 
 class StoriesController extends GetxController {
@@ -26,21 +28,28 @@ class StoriesController extends GetxController {
   final Rx<DrawingMode> drawingMode = DrawingMode.none.obs;
   final Rx<Offset> textPosition = const Offset(100, 100).obs;
 
-  // Text styling
-  final Rx<Color> textColor = Colors.white.obs;
-  final Rx<Color> textBackgroundColor = Colors.transparent.obs;
-  final RxDouble textSize = 24.0.obs;
-  final Rx<FontWeight> textFontWeight = FontWeight.normal.obs;
+  // Text elements
+  final RxList<TextElement> textElements = <TextElement>[].obs;
+  final Rxn<TextElement> editingTextElement = Rxn<TextElement>();
+  final RxBool isEditingText = false.obs;
+  final RxDouble textPositionX = 0.0.obs;
+  final RxDouble textPositionY = 0.0.obs;
 
-  // Doodle properties
-  final RxList<DrawingPoint> drawingPoints = <DrawingPoint>[].obs;
-  final Rx<Color> doodleColor = Colors.red.obs;
-  final RxDouble doodleStrokeWidth = 5.0.obs;
+  // Text controller for editing
+  final TextEditingController textEditingController = TextEditingController();
+
+  // Reference to other controllers
+  late TextEditorController textEditorController;
+  late DoodleController doodleController;
 
   @override
   void onInit() {
     super.onInit();
     requestPhotoPermission();
+
+    // Get references to other controllers
+    textEditorController = Get.find<TextEditorController>();
+    doodleController = Get.find<DoodleController>();
   }
 
   // Request photo library permission
@@ -200,5 +209,105 @@ class StoriesController extends GetxController {
       Get.snackbar('Error', 'Failed to take photo: $e');
     }
     return null;
+  }
+
+  // Start text editing mode
+  void startTextEditing() {
+    try {
+      isEditingText.value = true;
+      textEditingController.clear();
+
+      final newElement = TextElement(
+        text: 'Tap to edit',
+        position: const Offset(100, 100),
+        color: textEditorController.textColor.value,
+        backgroundColor:
+            textEditorController.backgroundColor.value ?? Colors.transparent,
+        size: textEditorController.textSize.value,
+        fontWeight:
+            textEditorController.isBold.value
+                ? FontWeight.bold
+                : FontWeight.normal,
+        isEditing: true,
+      );
+
+      editingTextElement.value = newElement;
+      textElements.add(newElement);
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to start text editing: $e');
+    }
+  }
+
+  // Add a new text element
+  void addTextElement(TextElement element) {
+    try {
+      if (element.text.trim().isEmpty) return;
+
+      textElements.add(element);
+      isEditingText.value = false;
+      textEditingController.clear();
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to add text element: $e');
+    }
+  }
+
+  // Update an existing text element
+  void updateTextElement(
+    TextElement element, {
+    String? text,
+    Color? color,
+    Color? backgroundColor,
+    double? size,
+    bool? isBold,
+    bool? isEditing,
+  }) {
+    try {
+      final index = textElements.indexWhere((e) => e == element);
+      if (index != -1) {
+        final updatedElement = element.copyWith(
+          text: text ?? element.text,
+          color: color ?? element.color,
+          backgroundColor: backgroundColor ?? element.backgroundColor,
+          size: size ?? element.size,
+          fontWeight:
+              isBold != null
+                  ? (isBold ? FontWeight.bold : FontWeight.normal)
+                  : element.fontWeight,
+          isEditing: isEditing ?? element.isEditing,
+        );
+
+        textElements[index] = updatedElement;
+
+        if (editingTextElement.value == element) {
+          editingTextElement.value = updatedElement;
+        }
+      }
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to update text element: $e');
+    }
+  }
+
+  // Edit an existing text element
+  void editTextElement(TextElement element) {
+    try {
+      textEditingController.text = element.text;
+
+      // Update text editor controller state with element properties
+      textEditorController.textColor.value = element.color;
+      textEditorController.backgroundColor.value = element.backgroundColor;
+      textEditorController.textSize.value = element.size;
+      textEditorController.isBold.value = element.fontWeight == FontWeight.bold;
+      textPosition.value = element.position;
+
+      // Set as current editing element
+      editingTextElement.value = element;
+      isEditingText.value = true;
+
+      // Move to top of stack when selected
+      textElements.remove(element);
+      textElements.add(element.copyWith(isEditing: true));
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to edit text element: $e');
+    }
   }
 }

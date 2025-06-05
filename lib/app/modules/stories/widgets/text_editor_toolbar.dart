@@ -1,26 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:get/get.dart';
+import '../controllers/text_editor_controller.dart';
 
-class TextEditorToolbar extends StatelessWidget {
-  final TextEditingController textController;
-  final Rx<Color> textColor;
-  final Rx<Color> textBackgroundColor;
-  final RxDouble textSize;
-  final Rx<FontWeight> textFontWeight;
-  final VoidCallback onAddText;
-  final List<Color> quickColors;
+class TextEditorToolbar extends GetView<TextEditorController> {
+  final VoidCallback onDone;
 
-  const TextEditorToolbar({
-    Key? key,
-    required this.textController,
-    required this.textColor,
-    required this.textBackgroundColor,
-    required this.textSize,
-    required this.textFontWeight,
-    required this.onAddText,
-    required this.quickColors,
-  }) : super(key: key);
+  const TextEditorToolbar({super.key, required this.onDone});
 
   @override
   Widget build(BuildContext context) {
@@ -39,42 +24,43 @@ class TextEditorToolbar extends StatelessWidget {
             _buildToolbarButton(
               icon: Icons.format_color_text,
               isSelected: false,
-              onTap: _showColorPicker,
-              color: textColor.value,
+              onTap: () => _showColorPicker(context),
+              color: controller.textColor.value,
             ),
             const SizedBox(height: 12),
             _buildToolbarButton(
               icon: Icons.format_color_fill,
               isSelected: false,
-              onTap: _toggleBackgroundColor,
-              color: textBackgroundColor.value == Colors.transparent 
-                  ? Colors.white 
-                  : textBackgroundColor.value,
+              onTap: () => _showColorPicker(context, isBackground: true),
+              color:
+                  controller.backgroundColor.value == Colors.transparent
+                      ? Colors.white
+                      : controller.backgroundColor.value ?? Colors.transparent,
               isBackground: true,
             ),
             const SizedBox(height: 12),
             _buildToolbarButton(
               icon: Icons.add,
               isSelected: false,
-              onTap: _increaseTextSize,
+              onTap: controller.increaseTextSize,
             ),
             const SizedBox(height: 12),
             _buildToolbarButton(
               icon: Icons.remove,
               isSelected: false,
-              onTap: _decreaseTextSize,
+              onTap: controller.decreaseTextSize,
             ),
             const SizedBox(height: 12),
             _buildToolbarButton(
               icon: Icons.format_bold,
-              isSelected: textFontWeight.value == FontWeight.bold,
-              onTap: _toggleFontWeight,
+              isSelected: controller.isBold.value,
+              onTap: controller.toggleFontWeight,
             ),
             const SizedBox(height: 12),
             _buildToolbarButton(
               icon: Icons.check,
               isSelected: false,
-              onTap: onAddText,
+              onTap: onDone,
             ),
           ],
         ),
@@ -97,143 +83,259 @@ class TextEditorToolbar extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
           shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white,
-            width: isSelected ? 2 : 1,
-          ),
+          border: Border.all(color: Colors.white, width: isSelected ? 2 : 1),
         ),
         child: Center(
-          child: isBackground && color != null
-              ? Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white,
-                      width: 1,
+          child:
+              isBackground && color != null
+                  ? Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1),
                     ),
+                    child:
+                        color == Colors.transparent
+                            ? const Icon(
+                              Icons.not_interested,
+                              size: 16,
+                              color: Colors.white,
+                            )
+                            : null,
+                  )
+                  : Icon(
+                    icon,
+                    color: isSelected ? Colors.black : Colors.white,
+                    size: 20,
                   ),
-                  child: color == Colors.transparent
-                      ? const Icon(Icons.not_interested, size: 16, color: Colors.white)
-                      : null,
-                )
-              : Icon(
-                  icon,
-                  color: isSelected ? Colors.black : Colors.white,
-                  size: 20,
-                ),
         ),
       ),
     );
   }
 
-  void _showColorPicker() {
+  void _showColorPicker(BuildContext context, {bool isBackground = false}) {
+    controller.editingBackground.value = isBackground;
+
     showModalBottomSheet(
-      context: Get.context!,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext context) {
-        return Container(
-          height: 200,
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.9),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
+      context: context,
+      backgroundColor: Colors.black.withOpacity(0.8),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: RotatedBox(
-                  quarterTurns: -1,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 30),
-                    child: ColorPicker(
-                      pickerColor: textColor.value,
-                      onColorChanged: (color) {
-                        textColor.value = color;
-                      },
-                      enableAlpha: true,
-                      displayThumbColor: true,
-                      pickerAreaBorderRadius: BorderRadius.circular(16),
-                      portraitOnly: true,
-                      labelTypes: const [],
-                    ),
-                  ),
-                ),
+              Text(
+                isBackground ? 'Select Background Color' : 'Select Text Color',
+                style: const TextStyle(color: Colors.white, fontSize: 18),
               ),
-              SizedBox(
-                height: 40,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: quickColors.length,
-                  itemBuilder: (context, index) {
-                    final color = quickColors[index];
-                    return GestureDetector(
-                      onTap: () {
-                        textColor.value = color;
-                        Navigator.of(context).pop();
-                      },
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: textColor.value == color 
-                                ? Colors.white 
-                                : Colors.transparent,
-                            width: 2,
+              const SizedBox(height: 16),
+
+              // Color preview
+              Obx(() {
+                final previewColor =
+                    isBackground
+                        ? (controller.backgroundColor.value ??
+                            Colors.transparent)
+                        : controller.textColor.value;
+                return Container(
+                  width: 60,
+                  height: 60,
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: previewColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child:
+                      previewColor == Colors.transparent
+                          ? const Icon(
+                            Icons.not_interested,
+                            size: 30,
+                            color: Colors.white,
+                          )
+                          : null,
+                );
+              }),
+
+              const SizedBox(height: 16),
+
+              // RGB Color sliders
+              Obx(() {
+                final redValue =
+                    isBackground
+                        ? controller.bgRed.value
+                        : controller.textRed.value;
+                final greenValue =
+                    isBackground
+                        ? controller.bgGreen.value
+                        : controller.textGreen.value;
+                final blueValue =
+                    isBackground
+                        ? controller.bgBlue.value
+                        : controller.textBlue.value;
+
+                return Column(
+                  children: [
+                    // Red slider
+                    Row(
+                      children: [
+                        const SizedBox(width: 8),
+                        const Text(
+                          'R',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        child: color == Colors.transparent
-                            ? const Icon(Icons.not_interested, size: 16, color: Colors.white)
-                            : null,
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Slider(
+                            value: redValue,
+                            min: 0,
+                            max: 255,
+                            activeColor: Colors.red,
+                            inactiveColor: Colors.red.withOpacity(0.3),
+                            onChanged: (value) {
+                              if (isBackground) {
+                                controller.bgRed.value = value;
+                                controller.updateBgColorFromRgb();
+                              } else {
+                                controller.textRed.value = value;
+                                controller.updateTextColorFromRgb();
+                              }
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 30,
+                          child: Text(
+                            '${redValue.toInt()}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ],
                     ),
+
+                    // Green slider
+                    Row(
+                      children: [
+                        const SizedBox(width: 8),
+                        const Text(
+                          'G',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Slider(
+                            value: greenValue,
+                            min: 0,
+                            max: 255,
+                            activeColor: Colors.green,
+                            inactiveColor: Colors.green.withOpacity(0.3),
+                            onChanged: (value) {
+                              if (isBackground) {
+                                controller.bgGreen.value = value;
+                                controller.updateBgColorFromRgb();
+                              } else {
+                                controller.textGreen.value = value;
+                                controller.updateTextColorFromRgb();
+                              }
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 30,
+                          child: Text(
+                            '${greenValue.toInt()}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Blue slider
+                    Row(
+                      children: [
+                        const SizedBox(width: 8),
+                        const Text(
+                          'B',
+                          style: TextStyle(
+                            color: Colors.blue,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Slider(
+                            value: blueValue,
+                            min: 0,
+                            max: 255,
+                            activeColor: Colors.blue,
+                            inactiveColor: Colors.blue.withOpacity(0.3),
+                            onChanged: (value) {
+                              if (isBackground) {
+                                controller.bgBlue.value = value;
+                                controller.updateBgColorFromRgb();
+                              } else {
+                                controller.textBlue.value = value;
+                                controller.updateTextColorFromRgb();
+                              }
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 30,
+                          child: Text(
+                            '${blueValue.toInt()}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }),
+
+              // Transparent option for background
+              if (isBackground)
+                (TextButton.icon(
+                  icon: const Icon(Icons.not_interested, color: Colors.white),
+                  label: const Text(
+                    'Transparent',
+                    style: TextStyle(color: Colors.white),
                   ),
-                  child: const Text('Done', style: TextStyle(color: Colors.black)),
+                  onPressed: () {
+                    controller.backgroundColor.value = null;
+                    Navigator.pop(context);
+                  },
+                )),
+
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
                 ),
+                child: const Text('Done'),
               ),
             ],
           ),
         );
       },
     );
-  }
-
-  void _toggleBackgroundColor() {
-    textBackgroundColor.value = textBackgroundColor.value == Colors.transparent
-        ? Colors.black.withOpacity(0.7)
-        : Colors.transparent;
-  }
-
-  void _increaseTextSize() {
-    textSize.value = (textSize.value + 2).clamp(16.0, 72.0);
-  }
-
-  void _decreaseTextSize() {
-    textSize.value = (textSize.value - 2).clamp(16.0, 72.0);
-  }
-
-  void _toggleFontWeight() {
-    textFontWeight.value = textFontWeight.value == FontWeight.bold
-        ? FontWeight.normal
-        : FontWeight.bold;
   }
 }
