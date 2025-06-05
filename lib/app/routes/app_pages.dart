@@ -23,6 +23,7 @@ import 'package:yapster/app/modules/profile/views/profile_view.dart';
 import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/stories/views/create_story_view.dart';
+import 'package:yapster/app/modules/stories/views/story_viewer_view.dart';
 import 'package:yapster/app/modules/stories/bindings/stories_binding.dart';
 import '../modules/home/bindings/home_binding.dart';
 import '../modules/home/views/home_view.dart';
@@ -41,19 +42,8 @@ class AppPages {
 
   static final routes = [
     GetPage(
-      name: _Paths.CREATE_STORY,
-      page: () => const CreateStoryView(),
-      binding: StoriesBinding(),
-      transition: Transition.fadeIn,
-      transitionDuration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      fullscreenDialog: true,
-      opaque: true,
-      popGesture: true,
-    ),
-    GetPage(
       name: _Paths.SPLASH,
-      page: () => const SplashView(),
+      page: () => SplashView(),
       binding: SplashBinding(),
     ),
     GetPage(
@@ -240,18 +230,31 @@ class AppPages {
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     ),
-    // make the effect to move from left to right
+    // Create story page
     GetPage(
       name: _Paths.CREATE_STORY,
-      page: () => const CreateStoryView(),
-      binding: CreateBinding(),
+      page: () => CreateStoryView(),
+      binding: StoriesBinding(),
       transition: Transition.leftToRight,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-      fullscreenDialog: false,
+      fullscreenDialog: true,
       opaque: true,
       preventDuplicates: true,
-      popGesture: false,
+      popGesture: true,
+    ),
+    // View stories page
+    GetPage(
+      name: _Paths.VIEW_STORIES,
+      page: () => const StoryViewerView(),
+      binding: StoriesBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      fullscreenDialog: true,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: true,
     ),
   ];
 }

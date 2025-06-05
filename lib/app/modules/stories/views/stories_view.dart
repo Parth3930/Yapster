@@ -11,15 +11,7 @@ class StoriesView extends GetView<StoriesController> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Stories')),
-      body: Stack(
-        children: [
-          // Main content
-          _buildStoriesList(),
-
-          // Story creation panel (overlay)
-          const CreateStoryView(),
-        ],
-      ),
+      body: _buildStoriesList(),
     );
   }
 

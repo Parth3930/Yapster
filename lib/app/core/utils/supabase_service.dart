@@ -349,7 +349,8 @@ class SupabaseService extends GetxService {
           )
           .subscribe((status, [_]) {
             debugPrint('Follow subscription status: $status');
-            isRealtimeConnected.value = status == 'SUBSCRIBED';
+            isRealtimeConnected.value =
+                status == RealtimeSubscribeStatus.subscribed;
           });
     } catch (e) {
       debugPrint('Error setting up follow subscriptions: $e');

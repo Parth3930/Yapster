@@ -20,6 +20,7 @@ abstract class Routes {
   static const FOLLOWERS = _Paths.FOLLOWERS;
   static const FOLLOWING = _Paths.FOLLOWING;
   static const CREATE_STORY = _Paths.CREATE_STORY;
+  static const VIEW_STORIES = _Paths.VIEW_STORIES;
 }
 
 abstract class _Paths {
@@ -40,4 +41,5 @@ abstract class _Paths {
   static const FOLLOWERS = '/followers';
   static const FOLLOWING = '/following';
   static const CREATE_STORY = '/create-story';
+  static const VIEW_STORIES = '/view-stories';
 }
