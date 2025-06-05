@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/data/models/story_model.dart';
+import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
-import 'package:yapster/app/data/repositories/story_repository.dart';
+import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 import '../controllers/profile_controller.dart';
@@ -14,6 +14,8 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_widget_factory.dart';
+import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 
 class ProfileView extends GetView<ProfileController> {
   final String? userId;
@@ -205,102 +207,20 @@ class ProfileView extends GetView<ProfileController> {
                                   .selectedUserProfile['google_avatar'] ??
                               '';
 
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.topCenter,
-                    children: [
-                      FutureBuilder<List<StoryModel>>(
-                        future: Get.find<StoryRepository>().getUserStories(
-                          isCurrentUser
-                              ? Get.find<SupabaseService>()
-                                      .currentUser
-                                      .value
-                                      ?.id ??
-                                  ''
-                              : userId ?? '',
-                        ),
-                        builder: (context, storySnapshot) {
-                          final hasStories =
-                              storySnapshot.hasData &&
-                              storySnapshot.data!.isNotEmpty;
-
-                          return ProfileAvatarWidget(
-                            selectedImage: null,
-                            imageUrl: avatarUrl,
-                            googleAvatarUrl: googleAvatarUrl,
-                            onTap: () {
-                              if (hasStories) {
-                                // Navigate to story viewer
-                                Get.toNamed(
-                                  Routes.VIEW_STORIES,
-                                  parameters: {
-                                    'userId':
-                                        isCurrentUser
-                                            ? Get.find<SupabaseService>()
-                                                    .currentUser
-                                                    .value
-                                                    ?.id ??
-                                                ''
-                                            : userId ?? '',
-                                  },
-                                );
-                              } else {
-                                debugPrint('Profile image tapped - no stories');
-                              }
-                            },
-                            radius: 45,
-                            isLoaded: true,
-                            hasStory: hasStories,
-                            hasUnseenStory:
-                                hasStories &&
-                                !isCurrentUser, // Other users' stories are unseen
-                            showAddButton:
-                                false, // Don't show add button on profile page
-                          );
-                        },
-                      ),
-                      if (isCurrentUser)
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                debugPrint(
-                                  '+ button tapped - navigating to create story',
-                                );
-                                Get.toNamed(Routes.CREATE_STORY);
-                              },
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                width: 30,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  color: Colors.blue,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.black,
-                                    width: 2,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black,
-                                      blurRadius: 4,
-                                      offset: Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Icon(
-                                  Icons.add,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
+                  return ProfileAvatarWidget(
+                    selectedImage: null,
+                    imageUrl: avatarUrl,
+                    googleAvatarUrl: googleAvatarUrl,
+                    onTap: () {
+                      debugPrint('Profile image tapped');
+                      // You can add profile image tap functionality here if needed
+                    },
+                    radius: 45,
+                    isLoaded: true,
+                    hasStory: false, // No stories functionality
+                    hasUnseenStory: false, // No stories functionality
+                    showAddButton:
+                        false, // Don't show add button on profile page
                   );
                 }),
               ),
@@ -569,27 +489,6 @@ class ProfileView extends GetView<ProfileController> {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            'Stories',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => selectedTabIndex.value = 2,
-                        child: Container(
-                          color: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                            horizontal: 24,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
                             'Videos',
                             style: TextStyle(
                               color: Colors.white,
@@ -602,7 +501,7 @@ class ProfileView extends GetView<ProfileController> {
                     ),
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => selectedTabIndex.value = 3,
+                        onTap: () => selectedTabIndex.value = 2,
                         child: Container(
                           color: Colors.transparent,
                           padding: const EdgeInsets.symmetric(
@@ -625,7 +524,7 @@ class ProfileView extends GetView<ProfileController> {
                 ),
               ),
               Obx(() {
-                final tabWidth = MediaQuery.of(context).size.width / 4;
+                final tabWidth = MediaQuery.of(context).size.width / 3;
                 final center =
                     tabWidth * selectedTabIndex.value + (tabWidth / 2);
                 return TweenAnimationBuilder<double>(
@@ -658,10 +557,8 @@ class ProfileView extends GetView<ProfileController> {
                 case 0:
                   return _buildPostsTab();
                 case 1:
-                  return _buildStoriesTab();
-                case 2:
                   return _buildVideosTab();
-                case 3:
+                case 2:
                   return _buildThreadsTab();
                 default:
                   return _buildPostsTab();
@@ -911,19 +808,10 @@ class ProfileView extends GetView<ProfileController> {
 
   // Tab content builders
   Widget _buildPostsTab() {
-    return Center(
-      child: Text(
-        'Posts content coming soon',
-        style: TextStyle(color: Colors.grey[400], fontSize: 16),
-      ),
-    );
-  }
+    final postRepository = Get.find<PostRepository>();
 
-  Widget _buildStoriesTab() {
-    final storyRepository = Get.find<StoryRepository>();
-
-    return FutureBuilder<List<StoryModel>>(
-      future: storyRepository.getUserStories(
+    return FutureBuilder<List<PostModel>>(
+      future: postRepository.getUserPosts(
         isCurrentUser
             ? Get.find<SupabaseService>().currentUser.value?.id ?? ''
             : userId ?? '',
@@ -936,33 +824,33 @@ class ProfileView extends GetView<ProfileController> {
         if (snapshot.hasError) {
           return Center(
             child: Text(
-              'Error loading stories',
+              'Error loading posts',
               style: TextStyle(color: Colors.grey[400], fontSize: 16),
             ),
           );
         }
 
-        final stories = snapshot.data ?? [];
+        final posts = snapshot.data ?? [];
 
-        if (stories.isEmpty) {
+        if (posts.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  Icons.photo_library_outlined,
+                  Icons.post_add_outlined,
                   size: 64,
                   color: Colors.grey[600],
                 ),
                 SizedBox(height: 16),
                 Text(
-                  isCurrentUser ? 'No stories yet' : 'No stories to show',
+                  isCurrentUser ? 'No posts yet' : 'No posts to show',
                   style: TextStyle(color: Colors.grey[400], fontSize: 16),
                 ),
                 if (isCurrentUser) ...[
                   SizedBox(height: 8),
                   Text(
-                    'Create your first story!',
+                    'Create your first post!',
                     style: TextStyle(color: Colors.grey[500], fontSize: 14),
                   ),
                 ],
@@ -971,102 +859,17 @@ class ProfileView extends GetView<ProfileController> {
           );
         }
 
-        return GridView.builder(
+        // Use the actual PostsFeedController
+        final postsFeedController = Get.put(PostsFeedController());
+
+        return ListView.builder(
           padding: EdgeInsets.all(16),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            childAspectRatio: 0.75,
-          ),
-          itemCount: stories.length,
+          itemCount: posts.length,
           itemBuilder: (context, index) {
-            final story = stories[index];
-            return GestureDetector(
-              onTap: () {
-                // Navigate to story viewer
-                Get.toNamed(
-                  Routes.VIEW_STORIES,
-                  parameters: {
-                    'userId': story.userId,
-                    'storyIndex': index.toString(),
-                  },
-                );
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[800]!, width: 1),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child:
-                      story.imageUrl != null
-                          ? Image.network(
-                            story.imageUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                color: Colors.grey[900],
-                                child: Icon(
-                                  Icons.broken_image,
-                                  color: Colors.grey[600],
-                                  size: 32,
-                                ),
-                              );
-                            },
-                          )
-                          : Container(
-                            color: Colors.grey[900],
-                            child: Stack(
-                              children: [
-                                // Show text items if no image
-                                ...story.textItems.asMap().entries.map((entry) {
-                                  final textItem = entry.value;
-                                  return Positioned(
-                                    left:
-                                        textItem.position.dx *
-                                        0.3, // Scale down for preview
-                                    top: textItem.position.dy * 0.3,
-                                    child: Container(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: textItem.backgroundColor,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        textItem.text.length > 20
-                                            ? '${textItem.text.substring(0, 20)}...'
-                                            : textItem.text,
-                                        style: TextStyle(
-                                          color: textItem.color,
-                                          fontSize:
-                                              textItem.fontSize *
-                                              0.3, // Scale down
-                                          fontWeight: textItem.fontWeight,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  );
-                                }),
-                                if (story.textItems.isEmpty)
-                                  Center(
-                                    child: Icon(
-                                      Icons.text_fields,
-                                      color: Colors.grey[600],
-                                      size: 32,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                ),
-              ),
+            final post = posts[index];
+            return PostWidgetFactory.createPostWidget(
+              post: post,
+              controller: postsFeedController,
             );
           },
         );
@@ -1084,11 +887,73 @@ class ProfileView extends GetView<ProfileController> {
   }
 
   Widget _buildThreadsTab() {
-    return Center(
-      child: Text(
-        'Threads content coming soon',
-        style: TextStyle(color: Colors.grey[400], fontSize: 16),
+    final postRepository = Get.find<PostRepository>();
+
+    return FutureBuilder<List<PostModel>>(
+      future: postRepository.getUserPosts(
+        isCurrentUser
+            ? Get.find<SupabaseService>().currentUser.value?.id ?? ''
+            : userId ?? '',
       ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator(color: Colors.white));
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error loading posts',
+              style: TextStyle(color: Colors.grey[400], fontSize: 16),
+            ),
+          );
+        }
+
+        final allPosts = snapshot.data ?? [];
+        // Filter for text posts only
+        final textPosts =
+            allPosts
+                .where((post) => post.postType.toLowerCase() == 'text')
+                .toList();
+
+        if (textPosts.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.text_fields, size: 64, color: Colors.grey[600]),
+                SizedBox(height: 16),
+                Text(
+                  isCurrentUser ? 'No text posts yet' : 'No text posts to show',
+                  style: TextStyle(color: Colors.grey[400], fontSize: 16),
+                ),
+                if (isCurrentUser) ...[
+                  SizedBox(height: 8),
+                  Text(
+                    'Create your first text post!',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }
+
+        // Use the actual PostsFeedController
+        final postsFeedController = Get.put(PostsFeedController());
+
+        return ListView.builder(
+          padding: EdgeInsets.all(16),
+          itemCount: textPosts.length,
+          itemBuilder: (context, index) {
+            final post = textPosts[index];
+            return PostWidgetFactory.createPostWidget(
+              post: post,
+              controller: postsFeedController,
+            );
+          },
+        );
+      },
     );
   }
 

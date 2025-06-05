@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 import 'package:yapster/app/startup/app_initializer.dart';
+import 'package:yapster/app/startup/feed_loader/feed_loader_service.dart';
 
 /// Main application widget
 class MyApp extends StatefulWidget {
@@ -48,6 +49,9 @@ Future<void> startApp() async {
   try {
     // Pre-initialize app components
     await AppInitializer.preInitialize();
+
+    // Initialize FeedLoaderService and preload the feed
+    await FeedLoaderService.preloadFeed();
 
     // Run the app
     runApp(const MyApp());

@@ -3,7 +3,6 @@ import 'package:get/get.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:yapster/app/modules/home/controllers/stories_home_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
-import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 
@@ -18,10 +17,6 @@ class StoriesListWidget extends StatelessWidget {
           height: 95, // Increased height to accommodate plus button
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: () {
-            if (controller.isLoading.value && !controller.hasLoadedOnce.value) {
-              return _buildShimmerEffect();
-            }
-
             // Filter users to only show those with active stories
             final usersWithActiveStories =
                 controller.usersWithStories
@@ -33,7 +28,7 @@ class StoriesListWidget extends StatelessWidget {
 
             return ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(left: 16, right: 16),
+              padding: const EdgeInsets.only(left: 10, right: 16),
               itemCount: itemCount,
               separatorBuilder: (context, index) => const SizedBox(width: 12),
               itemBuilder: (context, index) {

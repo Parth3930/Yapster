@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/startup/feed_loader/feed_loader_service.dart';
 
 class PostsFeedController extends GetxController {
   final SupabaseService _supabase = Get.find<SupabaseService>();
@@ -29,7 +30,14 @@ class PostsFeedController extends GetxController {
   void onInit() {
     super.onInit();
     currentUserId.value = _supabase.client.auth.currentUser?.id ?? '';
-    loadPosts();
+    // Use preloaded feed if available
+    if (FeedLoaderService.preloadedPosts.isNotEmpty) {
+      posts.assignAll(FeedLoaderService.preloadedPosts);
+      hasLoadedOnce.value = true;
+      isLoading.value = false;
+    } else {
+      loadPosts();
+    }
     _setupRealtimeSubscription();
   }
 

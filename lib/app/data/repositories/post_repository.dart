@@ -163,20 +163,38 @@ class PostRepository extends GetxService {
   /// Get user's own posts
   Future<List<PostModel>> getUserPosts(String userId) async {
     try {
+      // First get the posts
       final response = await _supabase.client
           .from('posts')
-          .select('''
-            *,
-            profiles(
-              username,
-              nickname,
-              avatar
-            )
-          ''')
+          .select('*')
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 
-      return (response as List).map((post) => PostModel.fromMap(post)).toList();
+      final posts = response as List;
+
+      if (posts.isEmpty) {
+        return [];
+      }
+
+      // Then get the user profile data
+      final profileResponse =
+          await _supabase.client
+              .from('profiles')
+              .select('username, nickname, avatar')
+              .eq('user_id', userId)
+              .single();
+
+      // Combine the data
+      final List<PostModel> postModels =
+          posts.map((post) {
+            final postMap = Map<String, dynamic>.from(post);
+            postMap['username'] = profileResponse['username'];
+            postMap['nickname'] = profileResponse['nickname'];
+            postMap['avatar'] = profileResponse['avatar'];
+            return PostModel.fromMap(postMap);
+          }).toList();
+
+      return postModels;
     } catch (e) {
       print('Error getting user posts: $e');
       return [];
