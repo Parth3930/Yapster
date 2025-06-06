@@ -20,9 +20,12 @@ class PostsFeedController extends GetxController {
 
   // Cache management
   DateTime? _lastPostsLoad;
-  static const Duration _postsCacheDuration = Duration(minutes: 3);
+  static const Duration _postsCacheDuration = Duration(
+    minutes: 5,
+  ); // Increased cache duration
   int _currentOffset = 0;
-  static const int _postsPerPage = 10;
+  static const int _postsPerPage =
+      15; // Increased page size for better performance
 
   // Realtime subscription
   RealtimeChannel? _postsSubscription;
@@ -31,15 +34,33 @@ class PostsFeedController extends GetxController {
   void onInit() {
     super.onInit();
     currentUserId.value = _supabase.client.auth.currentUser?.id ?? '';
-    // Use preloaded feed if available
-    if (FeedLoaderService.preloadedPosts.isNotEmpty) {
-      posts.assignAll(FeedLoaderService.preloadedPosts);
-      hasLoadedOnce.value = true;
-      isLoading.value = false;
-    } else {
-      loadPosts();
-    }
+
+    // Always try to load posts, even if preloaded data exists
+    // This ensures consistency on hot reload
+    _initializeFeed();
     _setupRealtimeSubscription();
+  }
+
+  /// Initialize feed with proper fallback handling
+  Future<void> _initializeFeed() async {
+    try {
+      // Check if we have preloaded posts and they're recent
+      if (FeedLoaderService.preloadedPosts.isNotEmpty &&
+          _lastPostsLoad == null) {
+        posts.assignAll(FeedLoaderService.preloadedPosts);
+        hasLoadedOnce.value = true;
+        isLoading.value = false;
+        _lastPostsLoad = DateTime.now();
+        debugPrint('Using preloaded posts: ${posts.length}');
+      } else {
+        // Load fresh posts
+        await loadPosts(forceRefresh: true);
+      }
+    } catch (e) {
+      debugPrint('Error initializing feed: $e');
+      // Fallback to loading posts normally
+      await loadPosts();
+    }
   }
 
   @override

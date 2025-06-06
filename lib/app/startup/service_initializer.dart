@@ -10,6 +10,7 @@ import 'package:yapster/app/core/utils/chat_cache_service.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/startup/preloader/preloader_service.dart';
 import 'package:yapster/app/startup/preloader/cache_manager.dart';
+import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Handles initialization of all application services
@@ -152,13 +153,10 @@ class ServiceInitializer {
         Get.put(ApiService());
       }
 
-      // Check if AccountDataProvider is available
+      // Check if AccountDataProvider is available, initialize if not
       if (!Get.isRegistered<AccountDataProvider>()) {
-        debugPrint(
-          'AccountDataProvider not found on hot reload. This should have been initialized by initializeEssentialServices.',
-        );
-        // Consider if re-initialization or a different strategy is needed here if this state is possible.
-        // For now, we assume initializeEssentialServices handles it.
+        debugPrint('AccountDataProvider not found on hot reload, initializing');
+        Get.put(AccountDataProvider());
       }
 
       // Check if DbCacheService is available, initialize if not
@@ -196,6 +194,22 @@ class ServiceInitializer {
         Get.put(chatCacheService);
         await chatCacheService.init();
         debugPrint('ChatCacheService initialized on hot reload');
+      }
+
+      // CRITICAL: Force refresh data after hot reload to ensure consistency
+      final supabaseService = Get.find<SupabaseService>();
+      if (supabaseService.isAuthenticated.value) {
+        debugPrint('User authenticated after hot reload, refreshing data');
+
+        // Force refresh account data
+        final accountDataProvider = Get.find<AccountDataProvider>();
+        await accountDataProvider.preloadUserData();
+
+        // Force refresh posts feed if controller exists
+        if (Get.isRegistered<PostsFeedController>()) {
+          final postsFeedController = Get.find<PostsFeedController>();
+          await postsFeedController.loadPosts(forceRefresh: true);
+        }
       }
     } catch (e) {
       debugPrint('Error ensuring services on hot reload: $e');

@@ -1,7 +1,7 @@
 import 'package:get/get.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 
 class FeedLoaderService {
   // This will hold the preloaded posts
@@ -20,8 +20,8 @@ class FeedLoaderService {
         return;
       }
 
-      final supabase = Get.find<SupabaseClient>();
-      final user = supabase.auth.currentUser;
+      final supabaseService = Get.find<SupabaseService>();
+      final user = supabaseService.currentUser.value;
       if (user == null) {
         preloadedPosts = [];
         return;

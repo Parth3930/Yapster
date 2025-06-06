@@ -20,6 +20,7 @@ class PostModel {
   final String? username;
   final String? nickname;
   final String? avatar;
+  final String? googleAvatar;
 
   PostModel({
     required this.id,
@@ -40,6 +41,7 @@ class PostModel {
     this.username,
     this.nickname,
     this.avatar,
+    this.googleAvatar,
   });
 
   factory PostModel.fromMap(Map<String, dynamic> map) {
@@ -66,6 +68,7 @@ class PostModel {
       username: map['username'] ?? map['profiles']?['username'],
       nickname: map['nickname'] ?? map['profiles']?['nickname'],
       avatar: map['avatar'] ?? map['profiles']?['avatar'],
+      googleAvatar: map['google_avatar'] ?? map['profiles']?['google_avatar'],
     );
   }
 
@@ -108,6 +111,7 @@ class PostModel {
     String? username,
     String? nickname,
     String? avatar,
+    String? googleAvatar,
   }) {
     return PostModel(
       id: id ?? this.id,
@@ -128,6 +132,7 @@ class PostModel {
       username: username ?? this.username,
       nickname: nickname ?? this.nickname,
       avatar: avatar ?? this.avatar,
+      googleAvatar: googleAvatar ?? this.googleAvatar,
     );
   }
 }

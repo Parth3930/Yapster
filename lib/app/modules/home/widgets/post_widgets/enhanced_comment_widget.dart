@@ -7,65 +7,139 @@ class EnhancedCommentWidget extends StatelessWidget {
   final CommentModel comment;
   final CommentController controller;
   final VoidCallback? onReplyTap;
-  final bool showReplies;
+  final bool isReply;
 
   const EnhancedCommentWidget({
     super.key,
     required this.comment,
     required this.controller,
     this.onReplyTap,
-    this.showReplies = true,
+    this.isReply = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final replies =
-        showReplies ? controller.getReplies(comment.id) : <CommentModel>[];
+    if (isReply) {
+      // Render reply with connecting line
+      return _buildReplyComment();
+    } else {
+      // Render parent comment with replies section
+      return _buildParentComment();
+    }
+  }
 
+  Widget _buildParentComment() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Main comment
+        _buildCommentRow(),
+
+        // Replies section
+        Obx(() {
+          final replies = controller.getReplies(comment.id);
+          final isExpanded = controller.areRepliesExpanded(comment.id);
+
+          if (replies.isEmpty) return SizedBox.shrink();
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // "X Replies" button
+              if (!isExpanded) ...[
+                SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () => controller.toggleRepliesExpanded(comment.id),
+                  child: Padding(
+                    padding: EdgeInsets.only(left: 44),
+                    child: Text(
+                      '${replies.length} ${replies.length == 1 ? 'Reply' : 'Replies'}',
+                      style: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              // Expanded replies
+              if (isExpanded) ...[
+                SizedBox(height: 8),
+                ...replies.map(
+                  (reply) => EnhancedCommentWidget(
+                    comment: reply,
+                    controller: controller,
+                    isReply: true,
+                  ),
+                ),
+              ],
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildReplyComment() {
     return Container(
-      margin: EdgeInsets.only(bottom: 16),
-      child: Column(
+      margin: EdgeInsets.only(left: 44, bottom: 12),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Main comment
-          _buildCommentItem(comment, isReply: false),
-
-          // Replies
-          if (replies.isNotEmpty) ...[
-            SizedBox(height: 8),
-            ...replies.map(
-              (reply) => Padding(
-                padding: EdgeInsets.only(left: 40),
-                child: _buildCommentItem(reply, isReply: true),
-              ),
+          // Connecting line
+          Container(
+            width: 2,
+            height: 40,
+            margin: EdgeInsets.only(right: 12, top: 4),
+            decoration: BoxDecoration(
+              color: Colors.grey[600],
+              borderRadius: BorderRadius.circular(1),
             ),
-          ],
+          ),
+
+          // Reply content
+          Expanded(child: _buildCommentRow()),
         ],
       ),
     );
   }
 
-  Widget _buildCommentItem(CommentModel comment, {required bool isReply}) {
+  Widget _buildCommentRow() {
     return Container(
-      margin: EdgeInsets.only(bottom: isReply ? 8 : 0),
+      margin: EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Avatar
-          CircleAvatar(
-            radius: isReply ? 14 : 18,
-            backgroundColor: Colors.grey[800],
-            backgroundImage:
-                comment.avatar != null ? NetworkImage(comment.avatar!) : null,
+          // Profile picture
+          Container(
+            width: isReply ? 28 : 32,
+            height: isReply ? 28 : 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              image:
+                  comment.avatar != null && comment.avatar!.isNotEmpty
+                      ? DecorationImage(
+                        image: NetworkImage(comment.avatar!),
+                        fit: BoxFit.cover,
+                      )
+                      : null,
+              color:
+                  comment.avatar == null || comment.avatar!.isEmpty
+                      ? Colors.grey[300]
+                      : null,
+            ),
             child:
-                comment.avatar == null
+                comment.avatar == null || comment.avatar!.isEmpty
                     ? Icon(
                       Icons.person,
                       color: Colors.grey[600],
-                      size: isReply ? 16 : 20,
+                      size: isReply ? 16 : 18,
                     )
                     : null,
           ),
+
           SizedBox(width: 12),
 
           // Comment content
@@ -73,31 +147,19 @@ class EnhancedCommentWidget extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header with username and time
-                Row(
-                  children: [
-                    Text(
-                      comment.username ?? 'Unknown User',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: isReply ? 13 : 14,
-                      ),
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      _formatTimeAgo(comment.createdAt),
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: isReply ? 11 : 12,
-                      ),
-                    ),
-                  ],
+                // Username on first line
+                Text(
+                  comment.username ?? 'Unknown User',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: isReply ? 13 : 14,
+                  ),
                 ),
 
                 SizedBox(height: 4),
 
-                // Comment text
+                // Comment content on next line
                 Text(
                   comment.content,
                   style: TextStyle(
@@ -108,25 +170,43 @@ class EnhancedCommentWidget extends StatelessWidget {
 
                 SizedBox(height: 8),
 
-                // Interaction row (likes and replies)
+                // Interaction row
                 Row(
                   children: [
+                    // Time ago
+                    Text(
+                      _formatTimeAgo(comment.createdAt),
+                      style: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: isReply ? 11 : 12,
+                      ),
+                    ),
+
+                    SizedBox(width: 16),
+
                     // Like button and count
                     Obx(() {
-                      final isLiked = comment.isLiked;
+                      final currentComment =
+                          controller.comments.firstWhereOrNull(
+                            (c) => c.id == comment.id,
+                          ) ??
+                          comment;
+                      final isLiked = currentComment.isLiked;
+
                       return GestureDetector(
                         onTap: () => controller.toggleCommentLike(comment.id),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               isLiked ? Icons.favorite : Icons.favorite_border,
                               color: isLiked ? Colors.red : Colors.grey[500],
                               size: isReply ? 14 : 16,
                             ),
-                            if (comment.likesCount > 0) ...[
+                            if (currentComment.likesCount > 0) ...[
                               SizedBox(width: 4),
                               Text(
-                                _formatCount(comment.likesCount),
+                                _formatCount(currentComment.likesCount),
                                 style: TextStyle(
                                   color: Colors.grey[400],
                                   fontSize: isReply ? 11 : 12,
@@ -141,50 +221,21 @@ class EnhancedCommentWidget extends StatelessWidget {
 
                     SizedBox(width: 16),
 
-                    // Reply button (only for top-level comments)
-                    if (!isReply)
+                    // Reply button (only for parent comments)
+                    if (!isReply && onReplyTap != null)
                       GestureDetector(
                         onTap: onReplyTap,
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.comment_outlined,
-                              color: Colors.grey[500],
-                              size: 16,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'Reply',
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          'Reply',
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                   ],
                 ),
-
-                // Replies count (only for top-level comments with replies)
-                if (!isReply && showReplies) ...[
-                  SizedBox(height: 8),
-                  Obx(() {
-                    final repliesCount =
-                        controller.getReplies(comment.id).length;
-                    if (repliesCount > 0) {
-                      return Text(
-                        '$repliesCount ${repliesCount == 1 ? 'Reply' : 'Replies'}',
-                        style: TextStyle(
-                          color: Colors.grey[500],
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      );
-                    }
-                    return SizedBox.shrink();
-                  }),
-                ],
               ],
             ),
           ),

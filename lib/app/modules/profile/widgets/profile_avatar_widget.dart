@@ -132,19 +132,18 @@ class ProfileAvatarWidget extends StatelessWidget {
           imageUrl: imageUrl!,
           width: radius * 2,
           height: radius * 2,
-          fit: BoxFit.cover,
-          placeholder:
-              (context, url) => CircleAvatar(
-                radius: radius,
-                backgroundColor: ProfileConstants.darkBackground,
-                child: Icon(Icons.person, size: radius, color: Colors.white),
-              ),
+          fit: BoxFit.contain,
+          fadeInDuration: Duration.zero, // Remove fade animation
+          fadeOutDuration: Duration.zero, // Remove fade animation
+          placeholder: null, // Remove placeholder for instant display
           errorWidget:
               (context, url, error) => CircleAvatar(
                 radius: radius,
                 backgroundColor: ProfileConstants.darkBackground,
                 child: Icon(Icons.person, size: radius, color: Colors.white),
               ),
+          memCacheWidth: (radius * 2 * 2).toInt(), // 2x for high DPI
+          memCacheHeight: (radius * 2 * 2).toInt(),
         ),
       );
     }
@@ -159,19 +158,18 @@ class ProfileAvatarWidget extends StatelessWidget {
           imageUrl: googleAvatarUrl!,
           width: radius * 2,
           height: radius * 2,
-          fit: BoxFit.cover,
-          placeholder:
-              (context, url) => CircleAvatar(
-                radius: radius,
-                backgroundColor: ProfileConstants.darkBackground,
-                child: Icon(Icons.person, size: radius, color: Colors.white),
-              ),
+          fit: BoxFit.contain,
+          fadeInDuration: Duration.zero, // Remove fade animation
+          fadeOutDuration: Duration.zero, // Remove fade animation
+          placeholder: null, // Remove placeholder for instant display
           errorWidget:
               (context, url, error) => CircleAvatar(
                 radius: radius,
                 backgroundColor: ProfileConstants.darkBackground,
                 child: Icon(Icons.person, size: radius, color: Colors.white),
               ),
+          memCacheWidth: (radius * 2 * 2).toInt(), // 2x for high DPI
+          memCacheHeight: (radius * 2 * 2).toInt(),
         ),
       );
     }

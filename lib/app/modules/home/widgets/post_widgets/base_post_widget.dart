@@ -5,6 +5,8 @@ import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_avatar_widget.dart';
+import 'package:yapster/app/routes/app_pages.dart';
 
 /// Base widget that contains common post elements like header, footer, and engagement buttons
 abstract class BasePostWidget extends StatelessWidget {
@@ -51,18 +53,10 @@ abstract class BasePostWidget extends StatelessWidget {
   Widget _buildPostHeader() {
     return Row(
       children: [
-        GestureDetector(
+        PostAvatarWidget(
+          post: post,
+          radius: 20,
           onTap: () => _navigateToProfile(),
-          child: CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.grey[800],
-            backgroundImage:
-                post.avatar != null ? NetworkImage(post.avatar!) : null,
-            child:
-                post.avatar == null
-                    ? Icon(Icons.person, color: Colors.grey[600])
-                    : null,
-          ),
         ),
         SizedBox(width: 12),
         Expanded(

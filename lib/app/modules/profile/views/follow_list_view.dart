@@ -448,7 +448,7 @@ class _FollowListViewState extends State<FollowListView> {
                         shape: BoxShape.circle,
                         image: DecorationImage(
                           image: imageProvider,
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                         ),
                       ),
                     ),

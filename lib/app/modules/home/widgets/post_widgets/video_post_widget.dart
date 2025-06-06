@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_avatar_widget.dart';
 import 'base_post_widget.dart';
 
 /// Widget for displaying video posts
@@ -284,18 +285,10 @@ class VideoPostWidget extends BasePostWidget {
   Widget _buildPostHeader() {
     return Row(
       children: [
-        GestureDetector(
+        PostAvatarWidget(
+          post: post,
+          radius: 20,
           onTap: () => _navigateToProfile(),
-          child: CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.grey[800],
-            backgroundImage:
-                post.avatar != null ? NetworkImage(post.avatar!) : null,
-            child:
-                post.avatar == null
-                    ? Icon(Icons.person, color: Colors.grey[600])
-                    : null,
-          ),
         ),
         SizedBox(width: 12),
         Expanded(

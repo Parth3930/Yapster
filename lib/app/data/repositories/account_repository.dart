@@ -12,7 +12,7 @@ class AccountRepository {
   RealtimeChannel? _profilesSubscription;
   RealtimeChannel? _followsSubscription;
 
-  /// Sets up realtime data subscriptions for the current user
+  /// Sets up realtime data subscriptions for the current user and fetches initial profile data
   Future<Map<String, dynamic>> userRealtimeData() async {
     try {
       final userId = _supabase.client.auth.currentUser?.id;
@@ -20,12 +20,27 @@ class AccountRepository {
         return {'isAuthenticated': false, 'error': 'User not authenticated'};
       }
 
+      // First, fetch the current profile data from the database
+      final profileResponse =
+          await _supabase.client
+              .from('profiles')
+              .select()
+              .eq('user_id', userId)
+              .maybeSingle();
+
+      // If profile data exists, update the provider
+      if (profileResponse != null) {
+        _updateProfileData(profileResponse);
+      }
+
+      // Then set up realtime subscriptions for future changes
       await Future.wait([
         subscribeToProfileChanges(userId),
         subscribeToFollowsChanges(userId),
       ]);
 
-      return {'isAuthenticated': true, 'userId': userId};
+      // Return the profile data along with authentication status
+      return profileResponse ?? {'isAuthenticated': true, 'userId': userId};
     } catch (e) {
       return {'isAuthenticated': false, 'error': e.toString()};
     }
@@ -259,19 +274,15 @@ class AccountRepository {
       await _supabase.client.storage
           .from('profiles')
           .uploadBinary(
-            storagePath, 
+            storagePath,
             fileBytes,
-            fileOptions: FileOptions(
-              cacheControl: 'no-cache',
-              upsert: true,
-            ),
+            fileOptions: FileOptions(cacheControl: 'no-cache', upsert: true),
           );
 
       // Get public URL with a timestamp to prevent caching
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final publicUrl = '${_supabase.client.storage
-          .from('profiles')
-          .getPublicUrl(storagePath)}?t=$timestamp';
+      final publicUrl =
+          '${_supabase.client.storage.from('profiles').getPublicUrl(storagePath)}?t=$timestamp';
 
       // Update profile with banner URL
       await _supabase.client
@@ -281,7 +292,7 @@ class AccountRepository {
 
       // Update local state
       _provider.banner.value = publicUrl;
-      
+
       return publicUrl;
     } catch (e) {
       throw Exception('Failed to upload banner: $e');
@@ -303,5 +314,4 @@ class AccountRepository {
   }
 
   void onClose() => cleanupSubscriptions();
-
 }

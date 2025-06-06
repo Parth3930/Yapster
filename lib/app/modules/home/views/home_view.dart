@@ -126,10 +126,12 @@ class _HomeViewState extends State<HomeView> {
                       bottom: false,
                       child: Container(
                         child: Padding(
-                          padding: EdgeInsets.only(left: 20),
+                          padding: EdgeInsets.symmetric(horizontal: 30),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
+                              // Empty container to balance the layout
+                              Container(width: 48), // Same width as IconButton
                               Text(
                                 "Yapster",
                                 style: TextStyle(
@@ -184,10 +186,13 @@ class _HomeViewState extends State<HomeView> {
                             }
                           }
                           final post = controller.posts[index];
-                          return Center(
-                            child: PostWidgetFactory.createPostWidget(
-                              post: post,
-                              controller: controller,
+                          return Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            child: Center(
+                              child: PostWidgetFactory.createPostWidget(
+                                post: post,
+                                controller: controller,
+                              ),
                             ),
                           );
                         },

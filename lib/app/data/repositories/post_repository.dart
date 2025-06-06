@@ -168,7 +168,7 @@ class PostRepository extends GetxService {
             .from('posts')
             .select('''
               *,
-              profiles!posts_user_id_fkey(username, nickname, avatar)
+              profiles!posts_user_id_fkey(username, nickname, avatar, google_avatar)
             ''')
             .eq('is_active', true)
             .eq('is_deleted', false)
@@ -188,6 +188,7 @@ class PostRepository extends GetxService {
                 postMap['username'] = profile['username'];
                 postMap['nickname'] = profile['nickname'];
                 postMap['avatar'] = profile['avatar'];
+                postMap['google_avatar'] = profile['google_avatar'];
               }
 
               // Remove the profiles key as it's not part of PostModel
@@ -229,7 +230,7 @@ class PostRepository extends GetxService {
       final profileResponse =
           await _supabase.client
               .from('profiles')
-              .select('username, nickname, avatar')
+              .select('username, nickname, avatar, google_avatar')
               .eq('user_id', userId)
               .single();
 
@@ -240,6 +241,7 @@ class PostRepository extends GetxService {
             postMap['username'] = profileResponse['username'];
             postMap['nickname'] = profileResponse['nickname'];
             postMap['avatar'] = profileResponse['avatar'];
+            postMap['google_avatar'] = profileResponse['google_avatar'];
             return PostModel.fromMap(postMap);
           }).toList();
 

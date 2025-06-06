@@ -180,7 +180,6 @@ class _CommentDialogState extends State<CommentDialog> {
                         comment: comment,
                         controller: _commentController,
                         onReplyTap: () => _startReply(comment),
-                        showReplies: true,
                       );
                     },
                   );
