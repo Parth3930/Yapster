@@ -5,6 +5,7 @@ import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart'
 import 'package:yapster/app/modules/home/widgets/post_widgets/comment_dialog.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_action_button.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/enhanced_share_dialog.dart';
 import 'dart:ui';
 
 /// A reusable widget for post interaction buttons (like, comment, share, favorite)
@@ -129,8 +130,7 @@ class PostInteractionButtons extends StatelessWidget {
 
   // Handle share button tap
   Future<void> _handleShareTap() async {
-    // Increment share count
-    await controller.updatePostEngagement(post.id, 'shares', 1);
+    // Don't increment share count here - only when actually shared to someone
 
     // Try to get chat controller or create it if not found
     ChatController chatController;
@@ -138,7 +138,7 @@ class PostInteractionButtons extends StatelessWidget {
       chatController = Get.find<ChatController>();
     } catch (e) {
       // If not found, register it
-      print('ChatController not found, registering it now');
+      debugPrint('ChatController not found, registering it now');
       chatController = ChatController();
       Get.put(chatController);
     }
@@ -149,7 +149,7 @@ class PostInteractionButtons extends StatelessWidget {
         await chatController.preloadRecentChats();
       }
     } catch (e) {
-      print('Error loading recent chats: $e');
+      debugPrint('Error loading recent chats: $e');
       // Show a simple share dialog if we can't load chats
       Get.snackbar(
         'Shared',
@@ -162,164 +162,17 @@ class PostInteractionButtons extends StatelessWidget {
       return;
     }
 
-    // Show share dialog with recent chat users
+    // Show enhanced share dialog
     Get.bottomSheet(
-      Container(
-        padding: EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-        decoration: BoxDecoration(
-          color: Color(0xFF101010),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Share with',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 16),
-            Container(
-              height: 100,
-              child: Obx(() {
-                if (chatController.isLoadingChats.value) {
-                  return Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.red[300]!,
-                      ),
-                    ),
-                  );
-                }
-
-                if (chatController.recentChats.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No recent chats',
-                      style: TextStyle(color: Colors.grey[400]),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: chatController.recentChats.length,
-                  itemBuilder: (context, index) {
-                    final chat = chatController.recentChats[index];
-                    final username = chat['other_username'] ?? 'User';
-                    final avatar = chat['other_avatar'] ?? '';
-                    final userId = chat['other_id'] ?? '';
-
-                    return GestureDetector(
-                      onTap: () => _shareWithUser(userId, username),
-                      child: Container(
-                        width: 70,
-                        margin: EdgeInsets.only(right: 12),
-                        child: Column(
-                          children: [
-                            CircleAvatar(
-                              radius: 30,
-                              backgroundColor: Colors.grey[800],
-                              backgroundImage:
-                                  avatar.isNotEmpty
-                                      ? NetworkImage(avatar)
-                                      : null,
-                              child:
-                                  avatar.isEmpty
-                                      ? Icon(
-                                        Icons.person,
-                                        color: Colors.grey[600],
-                                      )
-                                      : null,
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              username,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                );
-              }),
-            ),
-            SizedBox(height: 20),
-            Container(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Get.back(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red[800],
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
-                ),
-              ),
-            ),
-          ],
-        ),
+      EnhancedShareDialog(
+        post: post,
+        onShareComplete: () {
+          // Optional callback when share is complete
+          debugPrint('Post shared successfully');
+        },
       ),
-    );
-  }
-
-  // Share post with specific user
-  void _shareWithUser(String userId, String username) {
-    // Close the share dialog
-    Get.back();
-
-    // Get the post content to share
-    final postContent =
-        post.content.isNotEmpty ? post.content : 'Check out this post';
-
-    // Get video URL if it's a video post
-    final videoUrl = post.metadata['video_url'] as String?;
-    final imageUrl = post.imageUrl;
-
-    // Create share message
-    String shareMessage = 'Shared post: $postContent';
-    if (videoUrl != null && videoUrl.isNotEmpty) {
-      shareMessage += '\nVideo: $videoUrl';
-    } else if (imageUrl != null && imageUrl.isNotEmpty) {
-      shareMessage += '\nImage: $imageUrl';
-    }
-
-    // Try to get chat controller or create it if not found
-    try {
-      // Just check if it exists, we don't need to use it here
-      Get.find<ChatController>();
-    } catch (e) {
-      // If not found, register it
-      print('ChatController not found, registering it now');
-      Get.put(ChatController());
-    }
-
-    // Navigate to chat and send message
-    Get.toNamed('/chat/${userId}');
-
-    // Show success toast
-    Get.snackbar(
-      'Post Shared',
-      'Post shared with $username',
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.green[800],
-      colorText: Colors.white,
-      duration: Duration(seconds: 2),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
     );
   }
 

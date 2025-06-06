@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -6,6 +7,9 @@ import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/animations/message_animations.dart';
 import 'package:yapster/app/modules/chat/views/components/audio_message.dart';
+import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 import '../../controllers/chat_controller.dart';
 import '../message_options.dart';
 
@@ -56,6 +60,8 @@ class _MessageBubbleState extends State<MessageBubble>
   late final bool _isRead;
   late final bool _shouldShowStatus;
   late final bool _isAudioMessage;
+  late final bool _isSharedPost;
+  late final Map<String, dynamic>? _sharedPostData;
   late final ImageProvider? _avatarImage;
   late final bool _hasAnyAvatar;
   late final String _messageId;
@@ -88,7 +94,22 @@ class _MessageBubbleState extends State<MessageBubble>
                 _messageContent.contains('.png') ||
                 _messageContent.contains('.gif')));
 
-    _isAudioMessage = widget.message['message_type'] == 'audio'; // New property initialization
+    _isAudioMessage =
+        widget.message['message_type'] ==
+        'audio'; // New property initialization
+
+    // Check if this is a shared post
+    _isSharedPost = _isSharedPostMessage(_messageContent);
+    if (_isSharedPost) {
+      try {
+        _sharedPostData = jsonDecode(_messageContent);
+      } catch (e) {
+        _isSharedPost = false;
+        _sharedPostData = null;
+      }
+    } else {
+      _sharedPostData = null;
+    }
 
     if (_isImageMessage && !_isPlaceholder) {
       if (_messageContent.startsWith('image:')) {
@@ -391,6 +412,19 @@ class _MessageBubbleState extends State<MessageBubble>
       );
     }
 
+    // For shared posts, render directly without bubble wrapper
+    if (_isSharedPost) {
+      return Container(
+        margin: EdgeInsets.only(
+          top: 15,
+          bottom: 8,
+          left: widget.isMe ? 8 : 24,
+          right: widget.isMe ? 24 : 8,
+        ),
+        child: _buildSharedPostContent(),
+      );
+    }
+
     // For all other message types, use the bubble container
     return Stack(
       children: [
@@ -471,9 +505,10 @@ class _MessageBubbleState extends State<MessageBubble>
     final audioUrl = _messageContent;
     final messageId = _messageId;
     final isMe = widget.isMe;
-    final duration = widget.message['duration_seconds'] != null
-        ? Duration(seconds: widget.message['duration_seconds'] as int)
-        : null;
+    final duration =
+        widget.message['duration_seconds'] != null
+            ? Duration(seconds: widget.message['duration_seconds'] as int)
+            : null;
 
     return AudioMessage(
       url: audioUrl,
@@ -525,12 +560,15 @@ class _MessageBubbleState extends State<MessageBubble>
           child: CachedNetworkImage(
             imageUrl: imageUrl ?? '',
             fit: BoxFit.cover,
-            placeholder: (context, url) => Shimmer.fromColors(
-              baseColor: Colors.grey[900]!,
-              highlightColor: Colors.grey[800]!,
-              child: Container(color: Colors.grey[900]),
-            ),
-            errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.red),
+            placeholder:
+                (context, url) => Shimmer.fromColors(
+                  baseColor: Colors.grey[900]!,
+                  highlightColor: Colors.grey[800]!,
+                  child: Container(color: Colors.grey[900]),
+                ),
+            errorWidget:
+                (context, url, error) =>
+                    const Icon(Icons.error, color: Colors.red),
           ),
         ),
       ),
@@ -611,5 +649,284 @@ class _MessageBubbleState extends State<MessageBubble>
         ],
       );
     });
+  }
+
+  // Helper method to check if a message is a shared post
+  bool _isSharedPostMessage(String content) {
+    try {
+      final decoded = jsonDecode(content);
+      return decoded is Map<String, dynamic> &&
+          decoded['type'] == 'shared_post';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Build shared post content widget
+  Widget _buildSharedPostContent() {
+    if (_sharedPostData == null) {
+      return Text(
+        'Shared post (error loading)',
+        style: TextStyle(color: Colors.white, fontSize: 16),
+      );
+    }
+
+    final postData = _sharedPostData;
+    final content = postData['content']?.toString() ?? '';
+    final imageUrl = postData['image_url']?.toString();
+    final authorNickname =
+        postData['author_nickname']?.toString() ??
+        postData['author_username']?.toString() ??
+        'Yapper';
+    final authorAvatar = postData['author_avatar']?.toString();
+
+    final hasImage = imageUrl != null && imageUrl.isNotEmpty;
+
+    return GestureDetector(
+      onTap: () => _navigateToPost(postData['post_id']?.toString()),
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.75,
+        height:
+            hasImage
+                ? 500
+                : null, // Fixed height for image posts, dynamic for text posts
+        decoration: BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey[800]!, width: 0.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: hasImage ? MainAxisSize.max : MainAxisSize.min,
+          children: [
+            // Post image with profile overlay (if image exists)
+            if (hasImage)
+              Expanded(
+                flex: 3,
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                      ),
+                      child: CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        height: double.infinity,
+                        width: double.infinity,
+                        placeholder:
+                            (context, url) => Container(
+                              color: Colors.grey[800],
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.grey[600]!,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        errorWidget:
+                            (context, url, error) => Container(
+                              color: Colors.grey[800],
+                              child: Icon(Icons.error, color: Colors.grey[600]),
+                            ),
+                      ),
+                    ),
+                    // Profile overlay on top of image
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                image:
+                                    authorAvatar != null &&
+                                            authorAvatar.isNotEmpty
+                                        ? DecorationImage(
+                                          image: NetworkImage(authorAvatar),
+                                          fit: BoxFit.cover,
+                                        )
+                                        : null,
+                              ),
+                              child:
+                                  authorAvatar == null || authorAvatar.isEmpty
+                                      ? Icon(
+                                        Icons.person,
+                                        size: 12,
+                                        color: Colors.white,
+                                      )
+                                      : null,
+                            ),
+                            SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                authorNickname,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              // Post header for non-image posts
+              Padding(
+                padding: EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: Colors.grey[800],
+                      backgroundImage:
+                          authorAvatar != null && authorAvatar.isNotEmpty
+                              ? NetworkImage(authorAvatar)
+                              : null,
+                      child:
+                          authorAvatar == null || authorAvatar.isEmpty
+                              ? Icon(
+                                Icons.person,
+                                size: 16,
+                                color: Colors.grey[600],
+                              )
+                              : null,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        authorNickname,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Post content
+            if (content.isNotEmpty)
+              hasImage
+                  ? Expanded(
+                    flex: 1,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      child: Text(
+                        content,
+                        style: TextStyle(color: Colors.white, fontSize: 14),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  : Padding(
+                    padding: EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Text(
+                      content,
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+
+            // Post interaction buttons
+            _buildPostInteractionButtons(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build post interaction buttons
+  Widget _buildPostInteractionButtons() {
+    if (_sharedPostData == null) return SizedBox.shrink();
+
+    try {
+      // Create a PostModel from the shared post data
+      final postData = _sharedPostData;
+      final postModel = PostModel(
+        id: postData['post_id']?.toString() ?? '',
+        userId: postData['author_id']?.toString() ?? '',
+        content: postData['content']?.toString() ?? '',
+        postType: 'text', // Default to text, could be enhanced
+        imageUrl: postData['image_url']?.toString(),
+        username: postData['author_username']?.toString(),
+        nickname: postData['author_nickname']?.toString(),
+        avatar: postData['author_avatar']?.toString(),
+        createdAt:
+            DateTime.tryParse(postData['created_at']?.toString() ?? '') ??
+            DateTime.now(),
+        updatedAt: DateTime.now(),
+        metadata:
+            postData['video_url'] != null
+                ? {'video_url': postData['video_url']}
+                : {},
+      );
+
+      // Get or create PostsFeedController
+      PostsFeedController controller;
+      try {
+        controller = Get.find<PostsFeedController>();
+      } catch (e) {
+        controller = PostsFeedController();
+        Get.put(controller);
+      }
+
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: PostInteractionButtons(
+          post: postModel,
+          controller: controller,
+          glassy: false, // Use solid buttons for better visibility in chat
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error building post interaction buttons: $e');
+      return SizedBox.shrink();
+    }
+  }
+
+  // Navigate to the original post
+  void _navigateToPost(String? postId) {
+    if (postId != null && postId.isNotEmpty) {
+      try {
+        // Navigate to home with post ID as argument to scroll to specific post
+        Get.toNamed('/home', arguments: {'scrollToPostId': postId});
+      } catch (e) {
+        debugPrint('Error navigating to post: $e');
+        // Fallback to just going to home
+        Get.toNamed('/home');
+      }
+    }
   }
 }

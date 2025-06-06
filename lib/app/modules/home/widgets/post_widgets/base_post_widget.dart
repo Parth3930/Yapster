@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 
@@ -48,15 +50,18 @@ abstract class BasePostWidget extends StatelessWidget {
   Widget _buildPostHeader() {
     return Row(
       children: [
-        CircleAvatar(
-          radius: 20,
-          backgroundColor: Colors.grey[800],
-          backgroundImage:
-              post.avatar != null ? NetworkImage(post.avatar!) : null,
-          child:
-              post.avatar == null
-                  ? Icon(Icons.person, color: Colors.grey[600])
-                  : null,
+        GestureDetector(
+          onTap: () => _navigateToProfile(),
+          child: CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.grey[800],
+            backgroundImage:
+                post.avatar != null ? NetworkImage(post.avatar!) : null,
+            child:
+                post.avatar == null
+                    ? Icon(Icons.person, color: Colors.grey[600])
+                    : null,
+          ),
         ),
         SizedBox(width: 12),
         Expanded(
@@ -68,12 +73,15 @@ abstract class BasePostWidget extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        post.username ?? 'Unknown User',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
+                      GestureDetector(
+                        onTap: () => _navigateToProfile(),
+                        child: Text(
+                          _getDisplayName(),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
                         ),
                       ),
                       SizedBox(width: 4),
@@ -115,6 +123,41 @@ abstract class BasePostWidget extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _getDisplayName() {
+    // Show nickname if available, otherwise show username, fallback to 'Yapper'
+    if (post.nickname != null && post.nickname!.isNotEmpty) {
+      return post.nickname!;
+    } else if (post.username != null && post.username!.isNotEmpty) {
+      return post.username!;
+    } else {
+      return 'Yapper';
+    }
+  }
+
+  void _navigateToProfile() {
+    // Navigate to profile page with user data
+    // Ensure ExploreController is available
+    ExploreController exploreController;
+    try {
+      exploreController = Get.find<ExploreController>();
+    } catch (e) {
+      debugPrint('ExploreController not found, registering it now');
+      exploreController = ExploreController();
+      Get.put(exploreController);
+    }
+
+    // Set the user profile data in the explore controller
+    exploreController.selectedUserProfile.value = {
+      'user_id': post.userId,
+      'username': post.username ?? '',
+      'nickname': post.nickname ?? '',
+      'avatar': post.avatar ?? '',
+    };
+
+    // Navigate using the correct route format
+    Get.toNamed('/profile/${post.userId}');
   }
 
   String _formatTimeAgo(DateTime dateTime) {

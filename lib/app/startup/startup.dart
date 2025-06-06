@@ -50,14 +50,21 @@ Future<void> startApp() async {
     // Pre-initialize app components
     await AppInitializer.preInitialize();
 
-    // Initialize FeedLoaderService and preload the feed
-    await FeedLoaderService.preloadFeed();
-
     // Run the app
     runApp(const MyApp());
 
     // Post-initialize remaining services after UI is shown
     AppInitializer.postInitialize();
+
+    // Initialize FeedLoaderService and preload the feed after services are ready
+    // This is done in the background and won't block app startup
+    Future.delayed(Duration(milliseconds: 500), () async {
+      try {
+        await FeedLoaderService.preloadFeed();
+      } catch (e) {
+        debugPrint('Error preloading feed (non-critical): $e');
+      }
+    });
   } catch (e) {
     debugPrint('Failed to initialize essential services: $e');
     // Run the app in error state

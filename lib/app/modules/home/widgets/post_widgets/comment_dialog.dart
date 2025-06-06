@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/data/models/comment_model.dart';
+import 'package:yapster/app/modules/home/controllers/comment_controller.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/enhanced_comment_widget.dart';
 
 /// Enhanced comment dialog that shows existing comments and allows adding new ones
 class CommentDialog extends StatefulWidget {
@@ -40,117 +42,64 @@ class CommentDialog extends StatefulWidget {
 
 class _CommentDialogState extends State<CommentDialog> {
   final commentController = TextEditingController();
-  final RxBool isLoading = false.obs;
-  final RxList<Map<String, dynamic>> comments = <Map<String, dynamic>>[].obs;
-  final SupabaseService _supabase = Get.find<SupabaseService>();
   final FocusNode commentFocusNode = FocusNode();
+  late final CommentController _commentController;
+  final RxString replyingToCommentId = ''.obs;
+  final RxString replyingToUsername = ''.obs;
 
   @override
   void initState() {
     super.initState();
+    _commentController = Get.put(
+      CommentController(),
+      tag: 'comment_${widget.postId}',
+    );
     _loadComments();
   }
 
   Future<void> _loadComments() async {
-    isLoading.value = true;
-    try {
-      final response = await _supabase.client
-          .from('post_comments')
-          .select('*, profiles:profiles!user_id(username, avatar)')
-          .eq('post_id', widget.postId)
-          .order('created_at', ascending: false)
-          .limit(20);
-
-      if (response.isNotEmpty) {
-        comments.value = List<Map<String, dynamic>>.from(response);
-      }
-    } catch (e) {
-      debugPrint('Error loading comments: $e');
-    } finally {
-      isLoading.value = false;
-    }
+    await _commentController.loadComments(widget.postId);
   }
 
   Future<void> _addComment(String text, {String? parentId}) async {
     if (text.trim().isEmpty) return;
 
-    final userId = _supabase.client.auth.currentUser?.id;
-    if (userId == null) {
-      Get.snackbar(
-        'Error',
-        'You need to be logged in to comment',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
-      return;
-    }
+    final newComment = await _commentController.addComment(
+      widget.postId,
+      text.trim(),
+      parentId: parentId,
+    );
 
-    try {
-      Map<String, dynamic> commentData = {
-        'post_id': widget.postId,
-        'user_id': userId,
-        'content': text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
-        'parent_id': parentId, // Set to null for top-level comments
-        'likes': 0, // Initialize likes to 0
-      };
-
-      final response =
-          await _supabase.client
-              .from('post_comments')
-              .insert(commentData)
-              .select('id, *, profiles:profiles!user_id(username, avatar)')
-              .single();
-
-      if (response.isNotEmpty) {
-        comments.insert(0, Map<String, dynamic>.from(response));
-
-        // Fetch the current comments count
-        final postResponse =
-            await _supabase.client
-                .from('posts')
-                .select('id, comments_count')
-                .eq('id', widget.postId)
-                .single();
-
-        if (postResponse.isNotEmpty) {
-          final currentCount = postResponse['comments_count'] as int;
-          debugPrint('Current comments count: $currentCount');
-          debugPrint('Post ID from response: ${postResponse['id']}');
-
-          // Update the comments count
-          final updateResponse =
-              await _supabase.client
-                  .from('posts')
-                  .update({'comments_count': currentCount + 1})
-                  .eq('id', widget.postId)
-                  .select(); // Use select() to get the updated row
-
-          if (updateResponse.isEmpty) {
-            debugPrint('Error updating comments count: No rows affected');
-            debugPrint('Post ID used for update: ${widget.postId}');
-          } else {
-            debugPrint('Comments count updated successfully');
-          }
-        } else {
-          debugPrint('Post not found or comments_count is null');
-          debugPrint('Post ID used for fetching: ${widget.postId}');
-        }
-      }
-
+    if (newComment != null) {
       commentController.clear();
+      commentFocusNode.unfocus();
+
+      // Clear reply state
+      replyingToCommentId.value = '';
+      replyingToUsername.value = '';
+
+      // Update post comments count in the parent widget
       widget.onCommentSubmit(widget.postId, text.trim());
-    } catch (e) {
-      debugPrint('Error adding comment: $e');
+    } else {
       Get.snackbar(
         'Error',
-        'Failed to add comment',
-        snackPosition: SnackPosition.BOTTOM,
+        'Failed to add comment. Please try again.',
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
     }
+  }
+
+  void _startReply(CommentModel comment) {
+    replyingToCommentId.value = comment.id;
+    replyingToUsername.value = comment.username ?? 'Unknown User';
+    commentFocusNode.requestFocus();
+  }
+
+  void _cancelReply() {
+    replyingToCommentId.value = '';
+    replyingToUsername.value = '';
+    commentFocusNode.unfocus();
   }
 
   @override
@@ -162,7 +111,7 @@ class _CommentDialogState extends State<CommentDialog> {
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.7),
+            color: Colors.black.withValues(alpha: 0.7),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -198,7 +147,8 @@ class _CommentDialogState extends State<CommentDialog> {
               // Comments list
               Expanded(
                 child: Obx(() {
-                  if (isLoading.value && comments.isEmpty) {
+                  if (_commentController.isLoading.value &&
+                      _commentController.comments.isEmpty) {
                     return Center(
                       child: CircularProgressIndicator(
                         valueColor: AlwaysStoppedAnimation<Color>(
@@ -208,7 +158,7 @@ class _CommentDialogState extends State<CommentDialog> {
                     );
                   }
 
-                  if (comments.isEmpty) {
+                  if (_commentController.comments.isEmpty) {
                     return Center(
                       child: Text(
                         'No comments yet. Be the first to comment!',
@@ -217,110 +167,20 @@ class _CommentDialogState extends State<CommentDialog> {
                     );
                   }
 
+                  final topLevelComments =
+                      _commentController.getTopLevelComments();
+
                   return ListView.builder(
                     controller: scrollController,
                     padding: EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: comments.length,
+                    itemCount: topLevelComments.length,
                     itemBuilder: (context, index) {
-                      final comment = comments[index];
-                      final profile =
-                          comment['profiles'] as Map<String, dynamic>?;
-                      final username = profile?['username'] ?? 'Unknown User';
-                      final avatar = profile?['avatar'] as String?;
-                      final content = comment['content'] as String;
-                      final createdAt = DateTime.parse(
-                        comment['created_at'] as String,
-                      );
-
-                      return Container(
-                        margin: EdgeInsets.only(bottom: 16),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            CircleAvatar(
-                              radius: 18,
-                              backgroundColor: Colors.grey[800],
-                              backgroundImage:
-                                  avatar != null ? NetworkImage(avatar) : null,
-                              child:
-                                  avatar == null
-                                      ? Icon(
-                                        Icons.person,
-                                        color: Colors.grey[600],
-                                        size: 20,
-                                      )
-                                      : null,
-                            ),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        username,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        _formatTimeAgo(createdAt),
-                                        style: TextStyle(
-                                          color: Colors.grey[500],
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    content,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.favorite_border,
-                                        color: Colors.grey[500],
-                                        size: 16,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Like',
-                                        style: TextStyle(
-                                          color: Colors.grey[500],
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      SizedBox(width: 16),
-                                      Icon(
-                                        Icons.reply,
-                                        color: Colors.grey[500],
-                                        size: 16,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Reply',
-                                        style: TextStyle(
-                                          color: Colors.grey[500],
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                      final comment = topLevelComments[index];
+                      return EnhancedCommentWidget(
+                        comment: comment,
+                        controller: _commentController,
+                        onReplyTap: () => _startReply(comment),
+                        showReplies: true,
                       );
                     },
                   );
@@ -329,36 +189,95 @@ class _CommentDialogState extends State<CommentDialog> {
               // Comment input
               Container(
                 padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.black.withOpacity(0.7)),
-                child: Row(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                ),
+                child: Column(
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: commentController,
-                        focusNode: commentFocusNode,
-                        style: TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: 'Add a comment...',
-                          hintStyle: TextStyle(color: Colors.grey),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide.none,
+                    // Reply indicator
+                    Obx(() {
+                      if (replyingToCommentId.value.isNotEmpty) {
+                        return Container(
+                          padding: EdgeInsets.all(8),
+                          margin: EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[800],
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          filled: true,
-                          fillColor: Colors.grey[800],
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.reply,
+                                color: Colors.grey[400],
+                                size: 16,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Replying to ${replyingToUsername.value}',
+                                style: TextStyle(
+                                  color: Colors.grey[400],
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Spacer(),
+                              GestureDetector(
+                                onTap: _cancelReply,
+                                child: Icon(
+                                  Icons.close,
+                                  color: Colors.grey[400],
+                                  size: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return SizedBox.shrink();
+                    }),
+                    // Input row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Obx(
+                            () => TextField(
+                              controller: commentController,
+                              focusNode: commentFocusNode,
+                              style: TextStyle(color: Colors.white),
+                              decoration: InputDecoration(
+                                hintText:
+                                    replyingToCommentId.value.isNotEmpty
+                                        ? 'Reply to ${replyingToUsername.value}...'
+                                        : 'Add a comment...',
+                                hintStyle: TextStyle(color: Colors.grey),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                  borderSide: BorderSide.none,
+                                ),
+                                filled: true,
+                                fillColor: Colors.grey[800],
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    SizedBox(width: 12),
-                    IconButton(
-                      icon: Icon(Icons.send, color: Colors.red[300]),
-                      onPressed: () {
-                        _addComment(commentController.text);
-                      },
+                        SizedBox(width: 12),
+                        IconButton(
+                          icon: Icon(Icons.send, color: Colors.red[300]),
+                          onPressed: () {
+                            final parentId =
+                                replyingToCommentId.value.isNotEmpty
+                                    ? replyingToCommentId.value
+                                    : null;
+                            _addComment(
+                              commentController.text,
+                              parentId: parentId,
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -368,20 +287,5 @@ class _CommentDialogState extends State<CommentDialog> {
         );
       },
     );
-  }
-
-  String _formatTimeAgo(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'now';
-    }
   }
 }

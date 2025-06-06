@@ -20,6 +20,53 @@ class _HomeViewState extends State<HomeView> {
   bool showBottomNav = true;
   Timer? _showNavTimer;
   double _lastOffset = 0;
+  ScrollController? _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+
+    // Check if we need to scroll to a specific post
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleScrollToPost();
+    });
+  }
+
+  void _handleScrollToPost() {
+    final arguments = Get.arguments;
+    if (arguments != null && arguments is Map<String, dynamic>) {
+      final scrollToPostId = arguments['scrollToPostId'] as String?;
+      if (scrollToPostId != null && scrollToPostId.isNotEmpty) {
+        // Wait for posts to load, then scroll to the specific post
+        Timer(Duration(milliseconds: 1000), () {
+          _scrollToPost(scrollToPostId);
+        });
+      }
+    }
+  }
+
+  void _scrollToPost(String postId) {
+    try {
+      final controller = Get.find<PostsFeedController>();
+      final postIndex = controller.posts.indexWhere(
+        (post) => post.id == postId,
+      );
+
+      if (postIndex != -1 && _scrollController != null) {
+        // Calculate approximate position (each post is roughly 400px)
+        final position = (postIndex * 400.0) + 200; // Add offset for header
+
+        _scrollController!.animateTo(
+          position,
+          duration: Duration(milliseconds: 800),
+          curve: Curves.easeInOut,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error scrolling to post: $e');
+    }
+  }
 
   void _onScroll(ScrollNotification notification) {
     if (notification is UserScrollNotification ||
@@ -48,6 +95,7 @@ class _HomeViewState extends State<HomeView> {
   @override
   void dispose() {
     _showNavTimer?.cancel();
+    _scrollController?.dispose();
     super.dispose();
   }
 
@@ -69,6 +117,7 @@ class _HomeViewState extends State<HomeView> {
               onRefresh: controller.refreshPosts,
               // Fix 2: Remove conditional padding, let the feed take full height
               child: CustomScrollView(
+                controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
                   // App bar

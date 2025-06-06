@@ -10,7 +10,16 @@ class FeedLoaderService {
   /// Preload the feed and apply the algorithm (placeholder)
   static Future<void> preloadFeed() async {
     try {
-      final postRepository = Get.find<PostRepository>();
+      // Ensure PostRepository is available
+      PostRepository postRepository;
+      try {
+        postRepository = Get.find<PostRepository>();
+      } catch (e) {
+        print('PostRepository not available yet, skipping feed preload');
+        preloadedPosts = [];
+        return;
+      }
+
       final supabase = Get.find<SupabaseClient>();
       final user = supabase.auth.currentUser;
       if (user == null) {

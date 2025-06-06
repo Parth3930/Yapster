@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
-import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 import '../controllers/profile_controller.dart';
@@ -14,8 +12,9 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
-import 'package:yapster/app/modules/home/widgets/post_widgets/post_widget_factory.dart';
-import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
+
+import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
+import 'package:yapster/app/modules/profile/widgets/profile_post_widget_factory.dart';
 
 class ProfileView extends GetView<ProfileController> {
   final String? userId;
@@ -119,453 +118,458 @@ class ProfileView extends GetView<ProfileController> {
     });
 
     return Scaffold(
-      body: Column(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.topCenter,
-            children: [
-              Container(
-                width: double.infinity,
-                height: 150,
-                decoration: BoxDecoration(
-                  color: Colors.grey[800],
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
-                  ),
-                ),
-                child: Obx(() {
-                  debugPrint(
-                    'Banner widget rebuilt at ${DateTime.now().toIso8601String()}',
-                  );
-
-                  String bannerUrl =
-                      isCurrentUser
-                          ? accountDataProvider.banner.value
-                          : exploreController.selectedUserProfile['banner'] ??
-                              '';
-
-                  debugPrint('Banner URL: $bannerUrl');
-
-                  if (bannerUrl.isEmpty) {
-                    debugPrint('No banner URL available');
-                  }
-
-                  if (bannerUrl.isEmpty) {
-                    return const SizedBox.shrink();
-                  }
-
-                  return ClipRRect(
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.topCenter,
+              children: [
+                Container(
+                  width: double.infinity,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
                     borderRadius: const BorderRadius.only(
                       bottomLeft: Radius.circular(20),
                       bottomRight: Radius.circular(20),
                     ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 150, // Fixed height to match parent container
-                      child: CachedNetworkImage(
-                        imageUrl: bannerUrl,
-                        fit: BoxFit.cover,
-                        placeholder:
-                            (context, url) =>
-                                Container(color: Colors.grey[800]),
-                        errorWidget:
-                            (context, url, error) => Container(
-                              color: Colors.grey[800],
-                              child: Icon(Icons.error, color: Colors.white),
-                            ),
-                        imageBuilder: (context, imageProvider) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              image: DecorationImage(
-                                image: imageProvider,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  );
-                }),
-              ),
-              // Avatar section positioned 100px from top
-              Container(
-                margin: EdgeInsets.only(top: 100), // Position 100px from top
-                child: Obx(() {
-                  // Get avatar and Google avatar URLs based on whether it's current user or another user
-                  final avatarUrl =
-                      isCurrentUser
-                          ? accountDataProvider.avatar.value
-                          : exploreController.selectedUserProfile['avatar'] ??
-                              '';
-                  final googleAvatarUrl =
-                      isCurrentUser
-                          ? accountDataProvider.googleAvatar.value
-                          : exploreController
-                                  .selectedUserProfile['google_avatar'] ??
-                              '';
+                  ),
+                  child: Obx(() {
+                    debugPrint(
+                      'Banner widget rebuilt at ${DateTime.now().toIso8601String()}',
+                    );
 
-                  return ProfileAvatarWidget(
-                    selectedImage: null,
-                    imageUrl: avatarUrl,
-                    googleAvatarUrl: googleAvatarUrl,
-                    onTap: () {
-                      debugPrint('Profile image tapped');
-                      // You can add profile image tap functionality here if needed
-                    },
-                    radius: 45,
-                    isLoaded: true,
-                    hasStory: false, // No stories functionality
-                    hasUnseenStory: false, // No stories functionality
-                    showAddButton:
-                        false, // Don't show add button on profile page
-                  );
-                }),
-              ),
-            ],
-          ),
-          // Content below avatar with reduced top margin
-          Container(
-            margin: EdgeInsets.only(top: 20),
-            child: GetX<AccountDataProvider>(
-              builder:
-                  (provider) => Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Nickname with edit icon
-                      Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // Nickname text centered
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 40),
-                            child: Text(
-                              isCurrentUser
-                                  ? (provider.nickname.value.isNotEmpty
-                                      ? provider.nickname.value
-                                      : 'No Nickname')
-                                  : (exploreController
-                                          .selectedUserProfile['nickname']
-                                          ?.toString() ??
-                                      'No Nickname'),
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
+                    String bannerUrl =
+                        isCurrentUser
+                            ? accountDataProvider.banner.value
+                            : exploreController.selectedUserProfile['banner'] ??
+                                '';
+
+                    debugPrint('Banner URL: $bannerUrl');
+
+                    if (bannerUrl.isEmpty) {
+                      debugPrint('No banner URL available');
+                    }
+
+                    if (bannerUrl.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 150, // Fixed height to match parent container
+                        child: CachedNetworkImage(
+                          imageUrl: bannerUrl,
+                          fit: BoxFit.cover,
+                          placeholder:
+                              (context, url) =>
+                                  Container(color: Colors.grey[800]),
+                          errorWidget:
+                              (context, url, error) => Container(
+                                color: Colors.grey[800],
+                                child: Icon(Icons.error, color: Colors.white),
                               ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ), // Edit icon positioned to the right
-                          if (isCurrentUser)
-                            Positioned(
-                              right: 0,
-                              child: GestureDetector(
-                                onTapDown:
-                                    (_) =>
-                                        controller.isEditPressed.value = true,
-                                onTapUp: (_) {
-                                  controller.isEditPressed.value = false;
-                                  Get.toNamed(Routes.EDIT_PROFILE);
-                                },
-                                onTapCancel:
-                                    () =>
-                                        controller.isEditPressed.value = false,
-                                child: Container(
-                                  width: 40,
-                                  height: 40,
-                                  alignment: Alignment.center,
-                                  child: Obx(
-                                    () => AnimatedScale(
-                                      scale:
-                                          controller.isEditPressed.value
-                                              ? 0.8
-                                              : 1.0,
-                                      duration: Duration(milliseconds: 100),
-                                      curve: Curves.easeInOut,
-                                      child: Icon(
-                                        Icons.edit,
-                                        color: Colors.white,
-                                        size: 20,
+                          imageBuilder: (context, imageProvider) {
+                            return Container(
+                              decoration: BoxDecoration(
+                                image: DecorationImage(
+                                  image: imageProvider,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+                // Avatar section positioned 100px from top
+                Container(
+                  margin: EdgeInsets.only(top: 100), // Position 100px from top
+                  child: Obx(() {
+                    // Get avatar and Google avatar URLs based on whether it's current user or another user
+                    final avatarUrl =
+                        isCurrentUser
+                            ? accountDataProvider.avatar.value
+                            : exploreController.selectedUserProfile['avatar'] ??
+                                '';
+                    final googleAvatarUrl =
+                        isCurrentUser
+                            ? accountDataProvider.googleAvatar.value
+                            : exploreController
+                                    .selectedUserProfile['google_avatar'] ??
+                                '';
+
+                    return ProfileAvatarWidget(
+                      selectedImage: null,
+                      imageUrl: avatarUrl,
+                      googleAvatarUrl: googleAvatarUrl,
+                      onTap: () {
+                        debugPrint('Profile image tapped');
+                        // You can add profile image tap functionality here if needed
+                      },
+                      radius: 45,
+                      isLoaded: true,
+                      hasStory: false, // No stories functionality
+                      hasUnseenStory: false, // No stories functionality
+                      showAddButton:
+                          false, // Don't show add button on profile page
+                    );
+                  }),
+                ),
+              ],
+            ),
+            // Content below avatar with reduced top margin
+            Container(
+              margin: EdgeInsets.only(top: 20),
+              child: GetX<AccountDataProvider>(
+                builder:
+                    (provider) => Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Nickname with edit icon
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Nickname text centered
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 40,
+                              ),
+                              child: Text(
+                                isCurrentUser
+                                    ? (provider.nickname.value.isNotEmpty
+                                        ? provider.nickname.value
+                                        : 'No Nickname')
+                                    : _getDisplayNickname(exploreController),
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ), // Edit icon positioned to the right
+                            if (isCurrentUser)
+                              Positioned(
+                                right: 0,
+                                child: GestureDetector(
+                                  onTapDown:
+                                      (_) =>
+                                          controller.isEditPressed.value = true,
+                                  onTapUp: (_) {
+                                    controller.isEditPressed.value = false;
+                                    Get.toNamed(Routes.EDIT_PROFILE);
+                                  },
+                                  onTapCancel:
+                                      () =>
+                                          controller.isEditPressed.value =
+                                              false,
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    alignment: Alignment.center,
+                                    child: Obx(
+                                      () => AnimatedScale(
+                                        scale:
+                                            controller.isEditPressed.value
+                                                ? 0.8
+                                                : 1.0,
+                                        duration: Duration(milliseconds: 100),
+                                        curve: Curves.easeInOut,
+                                        child: Icon(
+                                          Icons.edit,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                      // Username text
-                      Text(
-                        isCurrentUser
-                            ? (provider.username.value.isNotEmpty
-                                ? '@${provider.username.value}'
-                                : '@username')
-                            : (exploreController
-                                        .selectedUserProfile['username'] !=
-                                    null
-                                ? '@${exploreController.selectedUserProfile['username']}'
-                                : '@username'),
-                        style: TextStyle(fontSize: 15, color: Colors.white),
-                        textAlign: TextAlign.center,
-                      ),
-                      // Bio text
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Text(
+                          ],
+                        ),
+                        // Username text
+                        Text(
                           isCurrentUser
-                              ? (provider.bio.value.isNotEmpty
-                                  ? provider.bio.value
-                                  : 'No bio yet')
-                              : (exploreController.selectedUserProfile['bio']
-                                      ?.toString() ??
-                                  'No bio yet'),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[400],
-                          ),
+                              ? (provider.username.value.isNotEmpty
+                                  ? '@${provider.username.value}'
+                                  : '@username')
+                              : (exploreController
+                                          .selectedUserProfile['username'] !=
+                                      null
+                                  ? '@${exploreController.selectedUserProfile['username']}'
+                                  : '@username'),
+                          style: TextStyle(fontSize: 15, color: Colors.white),
                           textAlign: TextAlign.center,
+                        ),
+                        // Bio text
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            isCurrentUser
+                                ? (provider.bio.value.isNotEmpty
+                                    ? provider.bio.value
+                                    : 'No bio yet')
+                                : (exploreController.selectedUserProfile['bio']
+                                        ?.toString() ??
+                                    'No bio yet'),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[400],
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+              ),
+            ),
+            SizedBox(height: 20),
+            // Stats row for Posts, Followers, Following
+            Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: Obx(() {
+                        // Get the post count from the appropriate source
+                        final postCount =
+                            isCurrentUser
+                                ? accountDataProvider.posts.length
+                                : (exploreController
+                                            .selectedUserProfile['post_count']
+                                        as int?) ??
+                                    0;
+
+                        return _buildStatColumn(
+                          postCount.toString(),
+                          'Posts',
+                          onTap: () {
+                            // Handle posts tap if needed
+                          },
+                        );
+                      }),
+                    ),
+                  ),
+                  Container(
+                    height: 50,
+                    width: 1,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.black, Color(0xFFCCCCCC), Colors.black],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Obx(() {
+                        // Get the followers count from the appropriate source
+                        final followersCount =
+                            isCurrentUser
+                                ? accountDataProvider.followers.length
+                                : (exploreController
+                                            .selectedUserProfile['follower_count']
+                                        as int?) ??
+                                    0;
+
+                        return _buildStatColumn(
+                          followersCount.toString(),
+                          'Followers',
+                          onTap: () {
+                            Get.toNamed(
+                              Routes.FOLLOWERS,
+                              arguments: {
+                                'userId': isCurrentUser ? null : userId,
+                              },
+                            );
+                          },
+                        );
+                      }),
+                    ),
+                  ),
+                  Container(
+                    height: 50,
+                    width: 1,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.black, Color(0xFFCCCCCC), Colors.black],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Obx(() {
+                        // Get the following count from the appropriate source
+                        final followingCount =
+                            isCurrentUser
+                                ? accountDataProvider.following.length
+                                : (exploreController
+                                            .selectedUserProfile['following_count']
+                                        as int?) ??
+                                    0;
+
+                        return _buildStatColumn(
+                          followingCount.toString(),
+                          'Following',
+                          onTap: () {
+                            Get.toNamed(
+                              Routes.FOLLOWING,
+                              arguments: {
+                                'userId': isCurrentUser ? null : userId,
+                              },
+                            );
+                          },
+                        );
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Tab buttons
+            // Add follow and message buttons if this is not the current user's profile
+            _buildActionButtons(context),
+            Stack(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFF242424), width: 1),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => selectedTabIndex.value = 0,
+                          child: Container(
+                            color: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 16,
+                              horizontal: 24,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Posts',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => selectedTabIndex.value = 1,
+                          child: Container(
+                            color: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 16,
+                              horizontal: 24,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Videos',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => selectedTabIndex.value = 2,
+                          child: Container(
+                            color: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 16,
+                              horizontal: 24,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Threads',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
-            ),
-          ),
-          SizedBox(height: 20),
-          // Stats row for Posts, Followers, Following
-          Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Center(
-                    child: Obx(() {
-                      // Get the post count from the appropriate source
-                      final postCount =
-                          isCurrentUser
-                              ? accountDataProvider.posts.length
-                              : (exploreController
-                                          .selectedUserProfile['post_count']
-                                      as int?) ??
-                                  0;
-
-                      return _buildStatColumn(
-                        postCount.toString(),
-                        'Posts',
-                        onTap: () {
-                          // Handle posts tap if needed
-                        },
+                ),
+                Obx(() {
+                  final tabWidth = MediaQuery.of(context).size.width / 3;
+                  final center =
+                      tabWidth * selectedTabIndex.value + (tabWidth / 2);
+                  return TweenAnimationBuilder<double>(
+                    key: ValueKey(selectedTabIndex.value),
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.elasticOut,
+                    tween: Tween<double>(begin: 0.0, end: 1.0),
+                    builder: (context, value, _) {
+                      return Positioned(
+                        bottom: 0,
+                        left: center - (18 * value),
+                        child: Container(
+                          width: 36 * value,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(1.5),
+                          ),
+                        ),
                       );
-                    }),
-                  ),
-                ),
-                Container(
-                  height: 50,
-                  width: 1,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.black, Color(0xFFCCCCCC), Colors.black],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Center(
-                    child: Obx(() {
-                      // Get the followers count from the appropriate source
-                      final followersCount =
-                          isCurrentUser
-                              ? accountDataProvider.followers.length
-                              : (exploreController
-                                          .selectedUserProfile['follower_count']
-                                      as int?) ??
-                                  0;
-
-                      return _buildStatColumn(
-                        followersCount.toString(),
-                        'Followers',
-                        onTap: () {
-                          Get.toNamed(
-                            Routes.FOLLOWERS,
-                            arguments: {
-                              'userId': isCurrentUser ? null : userId,
-                            },
-                          );
-                        },
-                      );
-                    }),
-                  ),
-                ),
-                Container(
-                  height: 50,
-                  width: 1,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.black, Color(0xFFCCCCCC), Colors.black],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Center(
-                    child: Obx(() {
-                      // Get the following count from the appropriate source
-                      final followingCount =
-                          isCurrentUser
-                              ? accountDataProvider.following.length
-                              : (exploreController
-                                          .selectedUserProfile['following_count']
-                                      as int?) ??
-                                  0;
-
-                      return _buildStatColumn(
-                        followingCount.toString(),
-                        'Following',
-                        onTap: () {
-                          Get.toNamed(
-                            Routes.FOLLOWING,
-                            arguments: {
-                              'userId': isCurrentUser ? null : userId,
-                            },
-                          );
-                        },
-                      );
-                    }),
-                  ),
-                ),
+                    },
+                  );
+                }),
               ],
             ),
-          ),
-          const SizedBox(height: 10),
-          // Tab buttons
-          // Add follow and message buttons if this is not the current user's profile
-          _buildActionButtons(context),
-          Stack(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: Color(0xFF242424), width: 1),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => selectedTabIndex.value = 0,
-                        child: Container(
-                          color: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                            horizontal: 24,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'Posts',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => selectedTabIndex.value = 1,
-                        child: Container(
-                          color: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                            horizontal: 24,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'Videos',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => selectedTabIndex.value = 2,
-                        child: Container(
-                          color: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                            horizontal: 24,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'Threads',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Obx(() {
-                final tabWidth = MediaQuery.of(context).size.width / 3;
-                final center =
-                    tabWidth * selectedTabIndex.value + (tabWidth / 2);
-                return TweenAnimationBuilder<double>(
-                  key: ValueKey(selectedTabIndex.value),
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.elasticOut,
-                  tween: Tween<double>(begin: 0.0, end: 1.0),
-                  builder: (context, value, _) {
-                    return Positioned(
-                      bottom: 0,
-                      left: center - (18 * value),
-                      child: Container(
-                        width: 36 * value,
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(1.5),
-                        ),
-                      ),
-                    );
-                  },
-                );
+            // Tab content
+            SizedBox(
+              height:
+                  MediaQuery.of(context).size.height *
+                  0.6, // Give it a fixed height
+              child: Obx(() {
+                switch (selectedTabIndex.value) {
+                  case 0:
+                    return _buildPostsTab();
+                  case 1:
+                    return _buildVideosTab();
+                  case 2:
+                    return _buildThreadsTab();
+                  default:
+                    return _buildPostsTab();
+                }
               }),
-            ],
-          ),
-          // Tab content
-          Expanded(
-            child: Obx(() {
-              switch (selectedTabIndex.value) {
-                case 0:
-                  return _buildPostsTab();
-                case 1:
-                  return _buildVideosTab();
-                case 2:
-                  return _buildThreadsTab();
-                default:
-                  return _buildPostsTab();
-              }
-            }),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: BottomNavigation(),
     );
@@ -808,71 +812,68 @@ class ProfileView extends GetView<ProfileController> {
 
   // Tab content builders
   Widget _buildPostsTab() {
-    final postRepository = Get.find<PostRepository>();
+    // Create or get the ProfilePostsController
+    final profilePostsController = Get.put(
+      ProfilePostsController(),
+      tag: 'profile_posts_${userId ?? 'current'}',
+    );
 
-    return FutureBuilder<List<PostModel>>(
-      future: postRepository.getUserPosts(
+    final targetUserId =
         isCurrentUser
             ? Get.find<SupabaseService>().currentUser.value?.id ?? ''
-            : userId ?? '',
-      ),
+            : userId ?? '';
+
+    return FutureBuilder<void>(
+      future: profilePostsController.loadUserPosts(targetUserId),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator(color: Colors.white));
-        }
-
-        if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              'Error loading posts',
-              style: TextStyle(color: Colors.grey[400], fontSize: 16),
-            ),
-          );
-        }
-
-        final posts = snapshot.data ?? [];
-
-        if (posts.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.post_add_outlined,
-                  size: 64,
-                  color: Colors.grey[600],
-                ),
-                SizedBox(height: 16),
-                Text(
-                  isCurrentUser ? 'No posts yet' : 'No posts to show',
-                  style: TextStyle(color: Colors.grey[400], fontSize: 16),
-                ),
-                if (isCurrentUser) ...[
-                  SizedBox(height: 8),
-                  Text(
-                    'Create your first post!',
-                    style: TextStyle(color: Colors.grey[500], fontSize: 14),
-                  ),
-                ],
-              ],
-            ),
-          );
-        }
-
-        // Use the actual PostsFeedController
-        final postsFeedController = Get.put(PostsFeedController());
-
-        return ListView.builder(
-          padding: EdgeInsets.all(16),
-          itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return PostWidgetFactory.createPostWidget(
-              post: post,
-              controller: postsFeedController,
+        return Obx(() {
+          if (profilePostsController.isLoading.value) {
+            return Center(
+              child: CircularProgressIndicator(color: Colors.white),
             );
-          },
-        );
+          }
+
+          final posts = profilePostsController.profilePosts;
+
+          if (posts.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.post_add_outlined,
+                    size: 64,
+                    color: Colors.grey[600],
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    isCurrentUser ? 'No posts yet' : 'No posts to show',
+                    style: TextStyle(color: Colors.grey[400], fontSize: 16),
+                  ),
+                  if (isCurrentUser) ...[
+                    SizedBox(height: 8),
+                    Text(
+                      'Create your first post!',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: EdgeInsets.all(16),
+            itemCount: posts.length,
+            itemBuilder: (context, index) {
+              final post = posts[index];
+              return ProfilePostWidgetFactory.createPostWidget(
+                post: post,
+                controller: profilePostsController,
+              );
+            },
+          );
+        });
       },
     );
   }
@@ -887,74 +888,87 @@ class ProfileView extends GetView<ProfileController> {
   }
 
   Widget _buildThreadsTab() {
-    final postRepository = Get.find<PostRepository>();
+    // Create or get the ProfilePostsController
+    final profilePostsController = Get.put(
+      ProfilePostsController(),
+      tag: 'profile_threads_${userId ?? 'current'}',
+    );
 
-    return FutureBuilder<List<PostModel>>(
-      future: postRepository.getUserPosts(
+    final targetUserId =
         isCurrentUser
             ? Get.find<SupabaseService>().currentUser.value?.id ?? ''
-            : userId ?? '',
-      ),
+            : userId ?? '';
+
+    return FutureBuilder<void>(
+      future: profilePostsController.loadUserPosts(targetUserId),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator(color: Colors.white));
-        }
-
-        if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              'Error loading posts',
-              style: TextStyle(color: Colors.grey[400], fontSize: 16),
-            ),
-          );
-        }
-
-        final allPosts = snapshot.data ?? [];
-        // Filter for text posts only
-        final textPosts =
-            allPosts
-                .where((post) => post.postType.toLowerCase() == 'text')
-                .toList();
-
-        if (textPosts.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.text_fields, size: 64, color: Colors.grey[600]),
-                SizedBox(height: 16),
-                Text(
-                  isCurrentUser ? 'No text posts yet' : 'No text posts to show',
-                  style: TextStyle(color: Colors.grey[400], fontSize: 16),
-                ),
-                if (isCurrentUser) ...[
-                  SizedBox(height: 8),
-                  Text(
-                    'Create your first text post!',
-                    style: TextStyle(color: Colors.grey[500], fontSize: 14),
-                  ),
-                ],
-              ],
-            ),
-          );
-        }
-
-        // Use the actual PostsFeedController
-        final postsFeedController = Get.put(PostsFeedController());
-
-        return ListView.builder(
-          padding: EdgeInsets.all(16),
-          itemCount: textPosts.length,
-          itemBuilder: (context, index) {
-            final post = textPosts[index];
-            return PostWidgetFactory.createPostWidget(
-              post: post,
-              controller: postsFeedController,
+        return Obx(() {
+          if (profilePostsController.isLoading.value) {
+            return Center(
+              child: CircularProgressIndicator(color: Colors.white),
             );
-          },
-        );
+          }
+
+          final allPosts = profilePostsController.profilePosts;
+          // Filter for text posts only
+          final textPosts =
+              allPosts
+                  .where((post) => post.postType.toLowerCase() == 'text')
+                  .toList();
+
+          if (textPosts.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.text_fields, size: 64, color: Colors.grey[600]),
+                  SizedBox(height: 16),
+                  Text(
+                    isCurrentUser
+                        ? 'No text posts yet'
+                        : 'No text posts to show',
+                    style: TextStyle(color: Colors.grey[400], fontSize: 16),
+                  ),
+                  if (isCurrentUser) ...[
+                    SizedBox(height: 8),
+                    Text(
+                      'Create your first text post!',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: EdgeInsets.all(16),
+            itemCount: textPosts.length,
+            itemBuilder: (context, index) {
+              final post = textPosts[index];
+              return ProfilePostWidgetFactory.createPostWidget(
+                post: post,
+                controller: profilePostsController,
+              );
+            },
+          );
+        });
       },
     );
+  }
+
+  // Helper method to get display nickname for other users
+  String _getDisplayNickname(ExploreController exploreController) {
+    final nickname =
+        exploreController.selectedUserProfile['nickname']?.toString();
+
+    // If nickname exists and is not empty, use it
+    if (nickname != null && nickname.isNotEmpty) {
+      return nickname;
+    }
+
+    // Otherwise, return 'Yapper' as fallback
+    return 'Yapper';
   }
 
   // Add a getter for isCurrentUser to be used within the build method and _buildActionButtons

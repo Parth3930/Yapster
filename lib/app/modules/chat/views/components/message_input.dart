@@ -47,7 +47,7 @@ class _MessageInputState extends State<MessageInput> {
       AudioMessageController(),
       tag: 'recording_${widget.chatId}',
     );
-    textController = controller.messageController;
+    textController = TextEditingController();
     inputFocusNode = FocusNode();
 
     // Listen for text changes with debounce
@@ -66,6 +66,7 @@ class _MessageInputState extends State<MessageInput> {
   @override
   void dispose() {
     debounceTimer?.cancel();
+    textController.dispose();
     inputFocusNode.dispose();
     // Clean up audio controller
     Get.delete<AudioMessageController>(tag: 'recording_${widget.chatId}');
@@ -96,7 +97,7 @@ class _MessageInputState extends State<MessageInput> {
     try {
       // Clear text immediately before sending to prevent double sends
       textController.clear();
-      
+
       // Send the message without any animation here
       // The real-time subscription will handle adding it with animation
       await controller.sendChatMessage(widget.chatId, text);
