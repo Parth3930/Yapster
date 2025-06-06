@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:get/get.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/home/widgets/stories_list_widget.dart';
@@ -124,38 +125,41 @@ class _HomeViewState extends State<HomeView> {
                   SliverToBoxAdapter(
                     child: SafeArea(
                       bottom: false,
-                      child: Container(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 30),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Empty container to balance the layout
-                              Container(width: 48), // Same width as IconButton
-                              Text(
-                                "Yapster",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Empty container to balance the layout
+                            Container(width: 48), // Same width as IconButton
+                            Text(
+                              "Yapster",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 40,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: GoogleFonts.dongle().fontFamily,
                               ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.notifications_outlined,
-                                  color: Colors.white,
-                                ),
-                                onPressed:
-                                    () => Get.toNamed(Routes.NOTIFICATIONS),
+                            ),
+                            IconButton(
+                              icon: Image.asset(
+                                'assets/icons/bell.png',
+                                width: 24,
+                                height: 24,
+                                color: Colors.white,
                               ),
-                            ],
-                          ),
+                              onPressed:
+                                  () => Get.toNamed(Routes.NOTIFICATIONS),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
                   // Stories section
                   const SliverToBoxAdapter(child: StoriesListWidget()),
+                  // Add spacing below stories
+                  const SliverToBoxAdapter(child: SizedBox(height: 20)),
                   // Posts Feed - Handle different states
                   if (controller.isLoading.value &&
                       !controller.hasLoadedOnce.value)
@@ -317,14 +321,18 @@ Widget _buildEmptyState() {
       children: [
         Icon(Icons.post_add, size: 64, color: Colors.grey[600]),
         SizedBox(height: 16),
-        Text(
-          'No posts yet',
-          style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+        SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.grey[400]!),
+          ),
         ),
         SizedBox(height: 8),
         Text(
-          'Be the first to share something!',
-          style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+          'Looking for new posts...',
+          style: TextStyle(fontSize: 12, color: Colors.grey[400]),
         ),
       ],
     ),

@@ -854,59 +854,53 @@ class ProfileView extends GetView<ProfileController> {
             ? Get.find<SupabaseService>().currentUser.value?.id ?? ''
             : userId ?? '';
 
-    return FutureBuilder<void>(
-      future: profilePostsController.loadUserPosts(targetUserId),
-      builder: (context, snapshot) {
-        return Obx(() {
-          if (profilePostsController.isLoading.value) {
-            return Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            );
-          }
+    // Load posts immediately without FutureBuilder to avoid loading state
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      profilePostsController.loadUserPosts(targetUserId);
+    });
 
-          final posts = profilePostsController.profilePosts;
+    return Obx(() {
+      if (profilePostsController.isLoading.value) {
+        return Center(child: CircularProgressIndicator(color: Colors.white));
+      }
 
-          if (posts.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.post_add_outlined,
-                    size: 64,
-                    color: Colors.grey[600],
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    isCurrentUser ? 'No posts yet' : 'No posts to show',
-                    style: TextStyle(color: Colors.grey[400], fontSize: 16),
-                  ),
-                  if (isCurrentUser) ...[
-                    SizedBox(height: 8),
-                    Text(
-                      'Create your first post!',
-                      style: TextStyle(color: Colors.grey[500], fontSize: 14),
-                    ),
-                  ],
-                ],
+      final posts = profilePostsController.profilePosts;
+
+      if (posts.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.post_add_outlined, size: 64, color: Colors.grey[600]),
+              SizedBox(height: 16),
+              Text(
+                isCurrentUser ? 'No posts yet' : 'No posts to show',
+                style: TextStyle(color: Colors.grey[400], fontSize: 16),
               ),
-            );
-          }
+              if (isCurrentUser) ...[
+                SizedBox(height: 8),
+                Text(
+                  'Create your first post!',
+                  style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                ),
+              ],
+            ],
+          ),
+        );
+      }
 
-          return ListView.builder(
-            padding: EdgeInsets.all(16),
-            itemCount: posts.length,
-            itemBuilder: (context, index) {
-              final post = posts[index];
-              return ProfilePostWidgetFactory.createPostWidget(
-                post: post,
-                controller: profilePostsController,
-              );
-            },
+      return ListView.builder(
+        padding: EdgeInsets.all(16),
+        itemCount: posts.length,
+        itemBuilder: (context, index) {
+          final post = posts[index];
+          return ProfilePostWidgetFactory.createPostWidget(
+            post: post,
+            controller: profilePostsController,
           );
-        });
-      },
-    );
+        },
+      );
+    });
   }
 
   Widget _buildVideosTab() {

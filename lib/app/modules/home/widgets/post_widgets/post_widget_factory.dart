@@ -6,6 +6,7 @@ import 'image_post_widget.dart';
 import 'gif_post_widget.dart';
 import 'video_post_widget.dart';
 import 'sticker_post_widget.dart';
+import 'post_view_tracker.dart';
 
 /// Factory class to create appropriate post widgets based on post type
 class PostWidgetFactory {
@@ -14,26 +15,37 @@ class PostWidgetFactory {
     required PostModel post,
     required PostsFeedController controller,
   }) {
+    Widget postWidget;
+
     switch (post.postType.toLowerCase()) {
       case 'text':
-        return TextPostWidget(post: post, controller: controller);
+        postWidget = TextPostWidget(post: post, controller: controller);
+        break;
 
       case 'image':
-        return ImagePostWidget(post: post, controller: controller);
+        postWidget = ImagePostWidget(post: post, controller: controller);
+        break;
 
       case 'gif':
-        return GifPostWidget(post: post, controller: controller);
+        postWidget = GifPostWidget(post: post, controller: controller);
+        break;
 
       case 'video':
-        return VideoPostWidget(post: post, controller: controller);
+        postWidget = VideoPostWidget(post: post, controller: controller);
+        break;
 
       case 'sticker':
-        return StickerPostWidget(post: post, controller: controller);
+        postWidget = StickerPostWidget(post: post, controller: controller);
+        break;
 
       default:
         // Fallback to text post for unknown types
-        return TextPostWidget(post: post, controller: controller);
+        postWidget = TextPostWidget(post: post, controller: controller);
+        break;
     }
+
+    // Wrap with view tracker for intelligent feed learning
+    return PostViewTracker(post: post, child: postWidget);
   }
 
   /// Gets the appropriate icon for a post type

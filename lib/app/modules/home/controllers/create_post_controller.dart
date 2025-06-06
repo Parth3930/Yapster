@@ -5,10 +5,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
+import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
+import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 
 class CreatePostController extends GetxController {
   final SupabaseService _supabase = Get.find<SupabaseService>();
   final PostRepository _postRepository = Get.find<PostRepository>();
+  final UserPostsCacheService _cacheService = Get.find<UserPostsCacheService>();
   final ImagePicker _picker = ImagePicker();
 
   // Text controller for post content
@@ -118,6 +122,30 @@ class CreatePostController extends GetxController {
       );
 
       if (postId != null) {
+        // Create the complete post model with the generated ID
+        final createdPost = post.copyWith(id: postId);
+
+        // Add to cache immediately
+        _cacheService.addPostToCache(currentUser.id, createdPost);
+
+        // Add to profile posts controller if it exists
+        try {
+          final profileController = Get.find<ProfilePostsController>(
+            tag: 'profile_threads_current',
+          );
+          profileController.addNewPost(createdPost);
+        } catch (e) {
+          debugPrint('Profile posts controller not found: $e');
+        }
+
+        // Add to feed controller if it exists
+        try {
+          final feedController = Get.find<PostsFeedController>();
+          feedController.addNewPost(createdPost);
+        } catch (e) {
+          debugPrint('Posts feed controller not found: $e');
+        }
+
         Get.snackbar(
           'Success',
           'Post created successfully!',

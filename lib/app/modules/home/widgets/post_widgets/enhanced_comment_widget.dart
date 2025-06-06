@@ -50,10 +50,10 @@ class EnhancedCommentWidget extends StatelessWidget {
                 left: 16,
                 top: -40,
                 child: Container(
-                  width: 2,
+                  width: 1,
                   height: isExpanded ? (replies.length * 63.0) : 60,
                   decoration: BoxDecoration(
-                    color: Colors.grey[600],
+                    color: Color(0xff474747),
                     borderRadius: BorderRadius.circular(1),
                   ),
                 ),
@@ -71,10 +71,10 @@ class EnhancedCommentWidget extends StatelessWidget {
                         SizedBox(width: 16),
                         Container(
                           width: 12,
-                          height: 2,
+                          height: 1,
                           margin: EdgeInsets.only(right: 8, top: 8),
                           decoration: BoxDecoration(
-                            color: Colors.grey[600],
+                            color: Color(0xff474747),
                             borderRadius: BorderRadius.circular(1),
                           ),
                         ),

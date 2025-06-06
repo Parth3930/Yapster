@@ -3,12 +3,14 @@ import 'package:get/get.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 
 /// Controller specifically for managing posts in profile pages
 /// This allows users to like/unlike their own posts and other users' posts in profile views
 class ProfilePostsController extends GetxController {
   final SupabaseService _supabase = Get.find<SupabaseService>();
   final PostRepository _postRepository = Get.find<PostRepository>();
+  final UserPostsCacheService _cacheService = Get.find<UserPostsCacheService>();
 
   // Observable lists for profile posts
   final RxList<PostModel> profilePosts = <PostModel>[].obs;
@@ -21,40 +23,53 @@ class ProfilePostsController extends GetxController {
     currentUserId.value = _supabase.client.auth.currentUser?.id ?? '';
   }
 
-  /// Load posts for a specific user profile
-  Future<void> loadUserPosts(String userId) async {
+  /// Load posts for a specific user profile using cache
+  Future<void> loadUserPosts(String userId, {bool forceRefresh = false}) async {
     try {
-      isLoading.value = true;
+      // Check if we have cached posts and don't need to show loading
+      final hasCachedPosts = _cacheService.hasCachedPosts(userId);
 
-      // Load posts from repository
-      final posts = await _postRepository.getUserPosts(userId);
+      // Only show loading if we don't have cached posts
+      if (!hasCachedPosts) {
+        isLoading.value = true;
+      }
 
-      // Fetch likes and favorites for the current user
-      final likesResponse = await _supabase.client
-          .from('post_likes')
-          .select('post_id')
-          .eq('user_id', currentUserId.value);
+      // Load posts from cache service (handles database calls internally)
+      final posts = await _cacheService.getUserPosts(
+        userId,
+        forceRefresh: forceRefresh,
+      );
 
-      final favoritesResponse = await _supabase.client
-          .from('user_favorites')
-          .select('post_id')
-          .eq('user_id', currentUserId.value);
+      // Fetch likes and favorites for the current user (only if we have posts)
+      if (posts.isNotEmpty) {
+        final likesResponse = await _supabase.client
+            .from('post_likes')
+            .select('post_id')
+            .eq('user_id', currentUserId.value);
 
-      final likes = likesResponse as List<dynamic>;
-      final favorites = favoritesResponse as List<dynamic>;
+        final favoritesResponse = await _supabase.client
+            .from('user_favorites')
+            .select('post_id')
+            .eq('user_id', currentUserId.value);
 
-      // Update posts with like and favorite status
-      for (var post in posts) {
-        post.metadata['isLiked'] = likes.any(
-          (like) => like['post_id'] == post.id,
-        );
-        post.metadata['isFavorited'] = favorites.any(
-          (favorite) => favorite['post_id'] == post.id,
-        );
+        final likes = likesResponse as List<dynamic>;
+        final favorites = favoritesResponse as List<dynamic>;
+
+        // Update posts with like and favorite status
+        for (var post in posts) {
+          post.metadata['isLiked'] = likes.any(
+            (like) => like['post_id'] == post.id,
+          );
+          post.metadata['isFavorited'] = favorites.any(
+            (favorite) => favorite['post_id'] == post.id,
+          );
+        }
       }
 
       profilePosts.assignAll(posts);
-      debugPrint('Loaded ${posts.length} profile posts for user: $userId');
+      debugPrint(
+        'Loaded ${posts.length} profile posts for user: $userId (cached: $hasCachedPosts)',
+      );
     } catch (e) {
       debugPrint('Error loading profile posts: $e');
     } finally {
@@ -100,6 +115,10 @@ class ProfilePostsController extends GetxController {
                 .eq('user_id', userId)
                 .eq('post_id', postId);
           }
+
+          // Update cache with the new post data
+          _cacheService.updatePostInCache(post.userId, updatedPost);
+
           debugPrint(
             'Successfully ${isCurrentlyLiked ? 'unliked' : 'liked'} post: $postId',
           );
@@ -212,6 +231,9 @@ class ProfilePostsController extends GetxController {
 
         profilePosts[postIndex] = updatedPost;
 
+        // Update cache
+        _cacheService.updatePostInCache(post.userId, updatedPost);
+
         // Force UI update
         profilePosts.refresh();
       }
@@ -232,5 +254,35 @@ class ProfilePostsController extends GetxController {
   /// Clear all posts
   void clearPosts() {
     profilePosts.clear();
+  }
+
+  /// Add a new post to the profile (called when user creates a post)
+  void addNewPost(PostModel post) {
+    // Add to local list
+    profilePosts.insert(0, post);
+
+    // Add to cache
+    _cacheService.addPostToCache(post.userId, post);
+
+    debugPrint('Added new post to profile: ${post.id}');
+  }
+
+  /// Remove a post from profile and cache
+  void removePost(String postId) {
+    final postIndex = profilePosts.indexWhere((post) => post.id == postId);
+    if (postIndex != -1) {
+      final post = profilePosts[postIndex];
+      profilePosts.removeAt(postIndex);
+
+      // Remove from cache
+      _cacheService.removePostFromCache(post.userId, postId);
+
+      debugPrint('Removed post from profile: $postId');
+    }
+  }
+
+  /// Get cached posts count for current user
+  int getCachedPostsCount() {
+    return _cacheService.getCachedPostsCount(currentUserId.value);
   }
 }

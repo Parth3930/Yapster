@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:shimmer/shimmer.dart';
 import 'package:yapster/app/modules/home/controllers/stories_home_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
@@ -43,33 +42,6 @@ class StoriesListWidget extends StatelessWidget {
               },
             );
           }(),
-        );
-      },
-    );
-  }
-
-  Widget _buildShimmerEffect() {
-    return ListView.separated(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: 5,
-      separatorBuilder: (context, index) => const SizedBox(width: 12),
-      itemBuilder: (context, index) {
-        return Shimmer.fromColors(
-          baseColor: Colors.grey[800]!,
-          highlightColor: Colors.grey[600]!,
-          child: Column(
-            children: [
-              Container(
-                width: 70,
-                height: 70,
-                decoration: BoxDecoration(
-                  color: Colors.grey[800],
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ],
-          ),
         );
       },
     );

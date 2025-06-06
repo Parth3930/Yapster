@@ -71,7 +71,7 @@ class ProfileAvatarWidget extends StatelessWidget {
           ),
 
           // Inner avatar content - centered automatically
-          Container(
+          SizedBox(
             width: radius * 2,
             height: radius * 2,
             child:
@@ -91,8 +91,8 @@ class ProfileAvatarWidget extends StatelessWidget {
           // Add button for current user's story
           if (showAddButton)
             Positioned(
-              bottom: borderWidth,
-              right: borderWidth,
+              bottom: borderWidth + 5,
+              right: borderWidth + 10,
               child: GestureDetector(
                 onTap: onTap, // Make the plus button clickable
                 child: Container(

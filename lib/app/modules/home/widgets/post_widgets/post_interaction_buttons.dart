@@ -111,6 +111,9 @@ class PostInteractionButtons extends StatelessWidget {
 
   // Handle comment button tap
   void _handleCommentTap() {
+    // Track comment interaction for learning
+    controller.trackPostComment(post.id);
+
     if (onCommentTap != null) {
       onCommentTap!(post.id);
     } else {
@@ -130,6 +133,9 @@ class PostInteractionButtons extends StatelessWidget {
 
   // Handle share button tap
   Future<void> _handleShareTap() async {
+    // Track share interaction for learning
+    controller.trackPostShare(post.id);
+
     // Don't increment share count here - only when actually shared to someone
 
     // Try to get chat controller or create it if not found

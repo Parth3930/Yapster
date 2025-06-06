@@ -5,10 +5,19 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/startup/feed_loader/feed_loader_service.dart';
+import 'package:yapster/app/core/services/user_interaction_service.dart';
+import 'package:yapster/app/core/services/intelligent_feed_service.dart';
+import 'package:yapster/app/core/services/user_posts_cache_service.dart';
+import 'dart:async';
 
 class PostsFeedController extends GetxController {
   final SupabaseService _supabase = Get.find<SupabaseService>();
   final PostRepository _postRepository = Get.find<PostRepository>();
+  final UserInteractionService _interactionService =
+      Get.find<UserInteractionService>();
+  final IntelligentFeedService _feedService =
+      Get.find<IntelligentFeedService>();
+  final UserPostsCacheService _cacheService = Get.find<UserPostsCacheService>();
 
   // Observable lists
   final RxList<PostModel> posts = <PostModel>[].obs;
@@ -29,6 +38,9 @@ class PostsFeedController extends GetxController {
 
   // Realtime subscription
   RealtimeChannel? _postsSubscription;
+
+  // Periodic refresh for empty feed
+  Timer? _periodicRefreshTimer;
 
   @override
   void onInit() {
@@ -56,6 +68,9 @@ class PostsFeedController extends GetxController {
         // Load fresh posts
         await loadPosts(forceRefresh: true);
       }
+
+      // Start periodic refresh if feed is empty
+      _startPeriodicRefreshIfNeeded();
     } catch (e) {
       debugPrint('Error initializing feed: $e');
       // Fallback to loading posts normally
@@ -66,7 +81,30 @@ class PostsFeedController extends GetxController {
   @override
   void onClose() {
     _postsSubscription?.unsubscribe();
+    _periodicRefreshTimer?.cancel();
     super.onClose();
+  }
+
+  /// Start periodic refresh if feed is empty
+  void _startPeriodicRefreshIfNeeded() {
+    if (posts.isEmpty) {
+      _periodicRefreshTimer?.cancel();
+      _periodicRefreshTimer = Timer.periodic(Duration(seconds: 30), (timer) {
+        if (posts.isEmpty) {
+          debugPrint('Feed still empty, checking for new posts...');
+          loadPosts(forceRefresh: true);
+        } else {
+          // Stop timer once we have posts
+          timer.cancel();
+        }
+      });
+    }
+  }
+
+  /// Stop periodic refresh
+  void _stopPeriodicRefresh() {
+    _periodicRefreshTimer?.cancel();
+    _periodicRefreshTimer = null;
   }
 
   /// Setup realtime subscription for posts
@@ -165,7 +203,7 @@ class PostsFeedController extends GetxController {
     }
   }
 
-  /// Load posts feed
+  /// Load posts feed with intelligent recommendations
   Future<void> loadPosts({bool forceRefresh = false}) async {
     try {
       // Check if we should use cached data
@@ -182,20 +220,43 @@ class PostsFeedController extends GetxController {
         isLoading.value = true;
         _currentOffset = 0;
         hasMorePosts.value = true;
+
+        // Reset intelligent feed on refresh
+        if (forceRefresh) {
+          _feedService.resetFeed();
+        }
       }
 
       if (currentUserId.value.isEmpty) return;
 
-      // Load posts from repository
+      // Load posts from repository using intelligent feed function
       debugPrint(
-        'Loading posts for user: ${currentUserId.value}, offset: ${forceRefresh ? 0 : _currentOffset}',
+        'Loading intelligent posts for user: ${currentUserId.value}, offset: ${forceRefresh ? 0 : _currentOffset}',
       );
-      final newPosts = await _postRepository.getPostsFeed(
-        currentUserId.value,
-        limit: _postsPerPage,
-        offset: forceRefresh ? 0 : _currentOffset,
-      );
-      debugPrint('Loaded ${newPosts.length} posts from repository');
+
+      // Try intelligent feed first, fallback to regular feed
+      List<PostModel> newPosts;
+      try {
+        final response = await _supabase.client.rpc(
+          'get_intelligent_posts_feed',
+          params: {
+            'p_user_id': currentUserId.value,
+            'p_limit': _postsPerPage,
+            'p_offset': forceRefresh ? 0 : _currentOffset,
+          },
+        );
+        newPosts =
+            (response as List).map((post) => PostModel.fromMap(post)).toList();
+        debugPrint('Loaded ${newPosts.length} intelligent posts');
+      } catch (e) {
+        debugPrint('Intelligent feed failed, using fallback: $e');
+        newPosts = await _postRepository.getPostsFeed(
+          currentUserId.value,
+          limit: _postsPerPage,
+          offset: forceRefresh ? 0 : _currentOffset,
+        );
+        debugPrint('Loaded ${newPosts.length} fallback posts');
+      }
 
       // Fetch likes and favorites for the current user
       final likesResponse = await _supabase.client
@@ -221,15 +282,24 @@ class PostsFeedController extends GetxController {
         );
       }
 
+      // Filter out already viewed posts and add to intelligent feed
+      final filteredPosts =
+          newPosts
+              .where((post) => !_interactionService.hasViewedPost(post.id))
+              .toList();
+
+      // Add posts to intelligent feed service for future recommendations
+      await _feedService.addPostsToFeed(filteredPosts, currentUserId.value);
+
       if (forceRefresh) {
-        posts.assignAll(newPosts);
-        _currentOffset = newPosts.length;
-        debugPrint('Refreshed posts list with ${newPosts.length} posts');
+        posts.assignAll(filteredPosts);
+        _currentOffset = filteredPosts.length;
+        debugPrint('Refreshed posts list with ${filteredPosts.length} posts');
       } else {
-        posts.addAll(newPosts);
-        _currentOffset += newPosts.length;
+        posts.addAll(filteredPosts);
+        _currentOffset += filteredPosts.length;
         debugPrint(
-          'Added ${newPosts.length} posts to existing list. Total: ${posts.length}',
+          'Added ${filteredPosts.length} posts to existing list. Total: ${posts.length}',
         );
       }
 
@@ -241,6 +311,13 @@ class PostsFeedController extends GetxController {
       debugPrint(
         'Posts loading completed. hasLoadedOnce: ${hasLoadedOnce.value}, total posts: ${posts.length}',
       );
+
+      // Manage periodic refresh based on posts availability
+      if (posts.isEmpty) {
+        _startPeriodicRefreshIfNeeded();
+      } else {
+        _stopPeriodicRefresh();
+      }
     } catch (e) {
       debugPrint('Error loading posts: $e');
     } finally {
@@ -292,6 +369,9 @@ class PostsFeedController extends GetxController {
   void addNewPost(PostModel post) {
     posts.insert(0, post);
     _currentOffset++;
+
+    // Add to user's posts cache
+    _cacheService.addPostToCache(post.userId, post);
   }
 
   /// Update post engagement
@@ -355,6 +435,14 @@ class PostsFeedController extends GetxController {
     if (postIndex != -1) {
       final post = posts[postIndex];
       final isCurrentlyLiked = post.metadata['isLiked'] == true;
+
+      // Track interaction for learning
+      await _interactionService.trackPostLike(
+        postId,
+        post.postType,
+        post.userId,
+        !isCurrentlyLiked,
+      );
 
       // Update metadata
       final updatedMetadata = Map<String, dynamic>.from(post.metadata);
@@ -442,11 +530,71 @@ class PostsFeedController extends GetxController {
     }
   }
 
+  /// Track post view for learning algorithm
+  Future<void> trackPostView(String postId) async {
+    final postIndex = posts.indexWhere((post) => post.id == postId);
+    if (postIndex != -1) {
+      final post = posts[postIndex];
+
+      // Track view interaction
+      await _interactionService.trackPostView(
+        postId,
+        post.postType,
+        post.userId,
+      );
+
+      // Update view count in database
+      await updatePostEngagement(postId, 'views', 1);
+    }
+  }
+
+  /// Track time spent viewing a post
+  Future<void> trackTimeSpent(String postId, Duration timeSpent) async {
+    await _interactionService.trackTimeSpent(postId, timeSpent);
+  }
+
+  /// Track post comment for learning
+  Future<void> trackPostComment(String postId) async {
+    final postIndex = posts.indexWhere((post) => post.id == postId);
+    if (postIndex != -1) {
+      final post = posts[postIndex];
+      await _interactionService.trackPostComment(
+        postId,
+        post.postType,
+        post.userId,
+      );
+    }
+  }
+
+  /// Track post share for learning
+  Future<void> trackPostShare(String postId) async {
+    final postIndex = posts.indexWhere((post) => post.id == postId);
+    if (postIndex != -1) {
+      final post = posts[postIndex];
+      await _interactionService.trackPostShare(
+        postId,
+        post.postType,
+        post.userId,
+      );
+    }
+  }
+
+  /// Get feed statistics for debugging
+  Map<String, dynamic> getFeedStatistics() {
+    return {
+      'total_posts': posts.length,
+      'viewed_posts': _interactionService.viewedPostsCount,
+      'user_preferences': _interactionService.getUserPreferencesSummary(),
+      'feed_service_stats': _feedService.getFeedStatistics(),
+    };
+  }
+
   /// Clear posts cache and reload
   Future<void> clearCacheAndReload() async {
     _lastPostsLoad = null;
     hasLoadedOnce.value = false;
     _currentOffset = 0;
+    _feedService.resetFeed();
     await loadPosts(forceRefresh: true);
   }
 }

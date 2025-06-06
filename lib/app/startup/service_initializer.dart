@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:yapster/app/core/services/intelligent_feed_service.dart';
+import 'package:yapster/app/core/services/user_interaction_service.dart';
+import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:yapster/app/core/utils/api_service.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -11,6 +14,9 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/startup/preloader/preloader_service.dart';
 import 'package:yapster/app/startup/preloader/cache_manager.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
+import 'package:yapster/app/data/repositories/post_repository.dart';
+import 'package:yapster/app/data/repositories/account_repository.dart';
+import 'package:yapster/app/data/repositories/story_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Handles initialization of all application services
@@ -29,6 +35,15 @@ class ServiceInitializer {
 
     // Initialize app preloader service
     Get.put(PreloaderService(), permanent: true);
+
+    // Initialize repositories
+    Get.put(PostRepository(), permanent: true);
+    Get.put(AccountRepository(), permanent: true);
+    Get.put(StoryRepository(), permanent: true);
+
+    // Initialize intelligent feed services (UserPostsCacheService moved to initializeRemainingServices)
+    Get.put(UserInteractionService(), permanent: true);
+    Get.put(IntelligentFeedService(), permanent: true);
   }
 
   /// Initialize remaining services after app has started
@@ -56,6 +71,12 @@ class ServiceInitializer {
       );
       debugPrint(
         'SupabaseService initialized in ${stopwatch.elapsedMilliseconds}ms',
+      );
+
+      // Initialize UserPostsCacheService after SupabaseService is ready
+      Get.put(UserPostsCacheService(), permanent: true);
+      debugPrint(
+        'UserPostsCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
       );
 
       // Initialize encryption service if user is logged in
@@ -194,6 +215,44 @@ class ServiceInitializer {
         Get.put(chatCacheService);
         await chatCacheService.init();
         debugPrint('ChatCacheService initialized on hot reload');
+      }
+
+      // Check if intelligent feed services are available
+      if (!Get.isRegistered<UserInteractionService>()) {
+        debugPrint(
+          'UserInteractionService not found on hot reload, initializing',
+        );
+        Get.put(UserInteractionService(), permanent: true);
+      }
+
+      if (!Get.isRegistered<IntelligentFeedService>()) {
+        debugPrint(
+          'IntelligentFeedService not found on hot reload, initializing',
+        );
+        Get.put(IntelligentFeedService(), permanent: true);
+      }
+
+      if (!Get.isRegistered<UserPostsCacheService>()) {
+        debugPrint(
+          'UserPostsCacheService not found on hot reload, initializing',
+        );
+        Get.put(UserPostsCacheService(), permanent: true);
+      }
+
+      // Check if repositories are available
+      if (!Get.isRegistered<PostRepository>()) {
+        debugPrint('PostRepository not found on hot reload, initializing');
+        Get.put(PostRepository(), permanent: true);
+      }
+
+      if (!Get.isRegistered<AccountRepository>()) {
+        debugPrint('AccountRepository not found on hot reload, initializing');
+        Get.put(AccountRepository(), permanent: true);
+      }
+
+      if (!Get.isRegistered<StoryRepository>()) {
+        debugPrint('StoryRepository not found on hot reload, initializing');
+        Get.put(StoryRepository(), permanent: true);
       }
 
       // CRITICAL: Force refresh data after hot reload to ensure consistency
