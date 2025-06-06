@@ -7,10 +7,12 @@ import 'package:yapster/app/core/utils/avatar_utils.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import '../../../core/utils/supabase_service.dart';
 import '../controllers/chat_controller.dart';
+import '../controllers/group_controller.dart';
+import 'components/create_group_dialog.dart';
 
 class ChatView extends StatefulWidget {
   const ChatView({super.key});
-  
+
   @override
   State<ChatView> createState() => _ChatViewState();
 }
@@ -18,20 +20,37 @@ class ChatView extends StatefulWidget {
 class _ChatViewState extends State<ChatView> {
   // Get the controller
   final ChatController controller = Get.find<ChatController>();
-  
+  late final GroupController groupController;
+
   @override
   void initState() {
     super.initState();
-    // Load chats in initState to ensure they're loaded once
+
+    // Initialize GroupController
+    try {
+      groupController = Get.find<GroupController>();
+    } catch (e) {
+      groupController = GroupController();
+      Get.put(groupController);
+    }
+
+    // Load chats and groups in initState to ensure they're loaded once
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Always force a refresh of chats when this view appears
       controller.preloadRecentChats();
+
+      // Load user groups
+      groupController.loadUserGroups();
     });
   }
-  
+
+  // Show create group dialog
+  void _showCreateGroupDialog() {
+    CreateGroupDialog.show(context: context);
+  }
+
   @override
   Widget build(BuildContext context) {
-    
     return Scaffold(
       appBar: AppBar(
         leading: null,
@@ -48,26 +67,29 @@ class _ChatViewState extends State<ChatView> {
             ),
             Row(
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: Color(0xFf171717),
-                    borderRadius: BorderRadius.circular(40),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black,
-                        blurRadius: 2,
-                        offset: const Offset(0, 1),
+                GestureDetector(
+                  onTap: () => _showCreateGroupDialog(),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Color(0xFf171717),
+                      borderRadius: BorderRadius.circular(40),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black,
+                          blurRadius: 2,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    width: 36,
+                    height: 36,
+                    child: Center(
+                      child: Image.asset(
+                        "assets/icons/add_friend.png",
+                        width: 20,
+                        height: 20,
                       ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  width: 36,
-                  height: 36,
-                  child: Center(
-                    child: Image.asset(
-                      "assets/icons/add_friend.png",
-                      width: 20,
-                      height: 20,
                     ),
                   ),
                 ),
@@ -145,7 +167,10 @@ class _ChatViewState extends State<ChatView> {
               return RefreshIndicator(
                 onRefresh: () async {
                   debugPrint('Manual refresh triggered');
-                  await controller.fetchUsersRecentChats();
+                  await Future.wait([
+                    controller.fetchUsersRecentChats(),
+                    groupController.loadUserGroups(),
+                  ]);
                 },
                 child: _buildRecentChats(),
               );
@@ -174,12 +199,50 @@ class _ChatViewState extends State<ChatView> {
 
   Widget _buildRecentChats() {
     debugPrint('Building recent chats: ${controller.recentChats.length} items');
+    debugPrint('Building groups: ${groupController.groups.length} items');
 
-    if (controller.isLoadingChats.value && controller.recentChats.isEmpty) {
+    if (controller.isLoadingChats.value &&
+        controller.recentChats.isEmpty &&
+        groupController.isLoading.value &&
+        groupController.groups.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (controller.recentChats.isEmpty) {
+    // Combine chats and groups
+    final combinedList = <Map<String, dynamic>>[];
+
+    // Add groups first
+    for (final group in groupController.groups) {
+      combinedList.add({
+        'type': 'group',
+        'id': group.id,
+        'group_id': group.id, // Add both for compatibility
+        'name': group.name,
+        'description': group.description,
+        'icon_url': group.iconUrl,
+        'member_count': group.members.length,
+        'last_message': '', // TODO: Get last group message
+        'last_message_time': group.updatedAt.toIso8601String(),
+        'unread_count': 0, // TODO: Get unread count
+        'groupData': group.toJson(), // Include full group data
+      });
+    }
+
+    // Add individual chats
+    for (final chat in controller.recentChats) {
+      combinedList.add({'type': 'chat', ...chat});
+    }
+
+    // Sort by last message time
+    combinedList.sort((a, b) {
+      final timeA =
+          DateTime.tryParse(a['last_message_time'] ?? '') ?? DateTime(1970);
+      final timeB =
+          DateTime.tryParse(b['last_message_time'] ?? '') ?? DateTime(1970);
+      return timeB.compareTo(timeA);
+    });
+
+    if (combinedList.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -229,155 +292,247 @@ class _ChatViewState extends State<ChatView> {
     final currentUserId = controller.supabaseService.currentUser.value?.id;
 
     return ListView.builder(
-      itemCount: controller.recentChats.length,
+      itemCount: combinedList.length,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemBuilder: (context, index) {
-        final chat = controller.recentChats[index];
+        final item = combinedList[index];
 
-        final tempProvider = AccountDataProvider();
-       
-        // Directly use the avatar URLs from the chat data
-        final avatarUrl = chat['other_avatar']?.toString();
-        final googleAvatarUrl = chat['other_google_avatar']?.toString() ?? '';
-        
-        // Set the avatar values in the temporary provider
-        tempProvider.avatar.value = avatarUrl ?? '';
-        tempProvider.googleAvatar.value = googleAvatarUrl;
-    
-        // Check if this user sent the last message
-        final bool didUserSendLastMessage =
-            chat['last_sender_id'] == currentUserId;
-
-        // Get the unread count
-        final int unreadCount = chat['unread_count'] ?? 0;
-
-        // Format message preview with sent/received prefix
-        final String messagePreview;
-        if (chat['last_message'] == null ||
-            chat['last_message'].toString().isEmpty) {
-          messagePreview = "No messages yet - tap to start chatting";
-        } else if (chat['last_message'].toString().length > 15) {
-          // For long messages, just show a generic indication instead of the content
-          messagePreview =
-              didUserSendLastMessage
-                  ? "You sent a message"
-                  : "You received a message";
+        if (item['type'] == 'group') {
+          return _buildGroupTile(item);
         } else {
-          // For short messages, show the content with prefix
-          messagePreview =
-              didUserSendLastMessage
-                  ? "Sent: ${chat['last_message']}"
-                  : "Received: ${chat['last_message']}";
+          return _buildChatTile(item, currentUserId);
         }
-
-        return ListTile(
-          leading: GestureDetector(
-            onTap: () {
-              final otherId = chat['other_id']?.toString();
-              final otherUsername = chat['other_username']?.toString() ?? 'User';
-              
-              if (otherId == null || otherId.isEmpty) {
-                debugPrint('Cannot open profile: missing user ID');
-                return;
-              }
-              
-              final exploreController = Get.find<ExploreController>();
-              exploreController.openUserProfile({
-                'user_id': otherId,
-                'username': otherUsername,
-                'avatar': chat['other_avatar']?.toString() ?? '',
-                'google_avatar': chat['other_google_avatar']?.toString() ?? '',
-              });
-            },
-            child: CircleAvatar(
-              radius: 24,
-              backgroundColor: Colors.grey[800],
-              child: ClipOval(
-                child: AvatarUtils.getAvatarWidget(
-                  null,
-                  tempProvider,
-                  radius: 24,
-                ),
-              ),
-            ),
-          ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  chat['other_username'] ?? 'User',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              // Show unread indicator if messages are unread
-              if (unreadCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blue,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    unreadCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          subtitle: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  messagePreview,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color:
-                        didUserSendLastMessage
-                            ? Colors.grey
-                            : Colors.grey.shade700,
-                    fontWeight:
-                        !didUserSendLastMessage && unreadCount > 0
-                            ? FontWeight.w500
-                            : FontWeight.normal,
-                  ),
-                ),
-              ),
-              if (chat['last_message_time'] != null)
-                Text(
-                  _formatTimestamp(chat['last_message_time']),
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-            ],
-          ),
-          onTap:
-              () => controller.openChat(
-                chat['other_user_id'],
-                chat['other_username'] ?? 'User',
-              ),
-        );
       },
     );
   }
 
+  Widget _buildGroupTile(Map<String, dynamic> group) {
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: Colors.black,
+        backgroundImage:
+            group['icon_url'] != null && group['icon_url'].isNotEmpty
+                ? NetworkImage(group['icon_url'])
+                : null,
+        child:
+            group['icon_url'] == null || group['icon_url'].isEmpty
+                ? Text(
+                  'YAP',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
+                : null,
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              group['name'] ?? 'Group',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          // Group indicator
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.green,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              'Group',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+      subtitle: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${group['member_count']} members',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+          if (group['last_message_time'] != null)
+            Text(
+              _formatTimestamp(group['last_message_time']),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+        ],
+      ),
+      onTap: () {
+        final groupId =
+            group['group_id']?.toString() ?? group['id']?.toString();
+        final groupName = group['name']?.toString() ?? 'Group Chat';
+        final groupData = group['groupData'] as Map<String, dynamic>?;
+
+        debugPrint('Navigating to group: $groupId, name: $groupName');
+
+        if (groupId != null && groupId.isNotEmpty && groupData != null) {
+          Get.toNamed(
+            '/group-chat',
+            arguments: {
+              'groupId': groupId,
+              'groupName': groupName,
+              'groupData': groupData,
+            },
+          );
+        } else {
+          debugPrint(
+            'Missing group data: groupId=$groupId, groupData=${groupData != null}',
+          );
+          Get.snackbar(
+            'Error',
+            'Group data unavailable. Please refresh and try again.',
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildChatTile(Map<String, dynamic> chat, String? currentUserId) {
+    final tempProvider = AccountDataProvider();
+
+    // Directly use the avatar URLs from the chat data
+    final avatarUrl = chat['other_avatar']?.toString();
+    final googleAvatarUrl = chat['other_google_avatar']?.toString() ?? '';
+
+    // Set the avatar values in the temporary provider
+    tempProvider.avatar.value = avatarUrl ?? '';
+    tempProvider.googleAvatar.value = googleAvatarUrl;
+
+    // Check if this user sent the last message
+    final bool didUserSendLastMessage = chat['last_sender_id'] == currentUserId;
+
+    // Get the unread count
+    final int unreadCount = chat['unread_count'] ?? 0;
+
+    // Format message preview with sent/received prefix
+    final String messagePreview;
+    if (chat['last_message'] == null ||
+        chat['last_message'].toString().isEmpty) {
+      messagePreview = "No messages yet - tap to start chatting";
+    } else if (chat['last_message'].toString().length > 15) {
+      // For long messages, just show a generic indication instead of the content
+      messagePreview =
+          didUserSendLastMessage
+              ? "You sent a message"
+              : "You received a message";
+    } else {
+      // For short messages, show the content with prefix
+      messagePreview =
+          didUserSendLastMessage
+              ? "Sent: ${chat['last_message']}"
+              : "Received: ${chat['last_message']}";
+    }
+
+    return ListTile(
+      leading: GestureDetector(
+        onTap: () {
+          final otherId = chat['other_id']?.toString();
+          final otherUsername = chat['other_username']?.toString() ?? 'User';
+
+          if (otherId == null || otherId.isEmpty) {
+            debugPrint('Cannot open profile: missing user ID');
+            return;
+          }
+
+          final exploreController = Get.find<ExploreController>();
+          exploreController.openUserProfile({
+            'user_id': otherId,
+            'username': otherUsername,
+            'avatar': chat['other_avatar']?.toString() ?? '',
+            'google_avatar': chat['other_google_avatar']?.toString() ?? '',
+          });
+        },
+        child: CircleAvatar(
+          radius: 24,
+          backgroundColor: Colors.grey[800],
+          child: ClipOval(
+            child: AvatarUtils.getAvatarWidget(null, tempProvider, radius: 24),
+          ),
+        ),
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              chat['other_username'] ?? 'User',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          // Show unread indicator if messages are unread
+          if (unreadCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.blue,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                unreadCount.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+        ],
+      ),
+      subtitle: Row(
+        children: [
+          Expanded(
+            child: Text(
+              messagePreview,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color:
+                    didUserSendLastMessage ? Colors.grey : Colors.grey.shade700,
+                fontWeight:
+                    !didUserSendLastMessage && unreadCount > 0
+                        ? FontWeight.w500
+                        : FontWeight.normal,
+              ),
+            ),
+          ),
+          if (chat['last_message_time'] != null)
+            Text(
+              _formatTimestamp(chat['last_message_time']),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+        ],
+      ),
+      onTap:
+          () => controller.openChat(
+            chat['other_user_id'],
+            chat['other_username'] ?? 'User',
+          ),
+    );
+  }
+
   Widget _buildUserTile(Map<String, dynamic> user) {
-    final String userId = (user['user_id'] ?? 
-                         user['follower_id'] ?? 
-                         user['following_id'] ?? 
-                         user['id'] ?? 
-                         '').toString();
+    final String userId =
+        (user['user_id'] ??
+                user['follower_id'] ??
+                user['following_id'] ??
+                user['id'] ??
+                '')
+            .toString();
     final String username = user['username'] ?? user['name'] ?? 'User';
     final userSource = user['source'];
     final currentUser = Get.find<SupabaseService>().currentUser.value?.id;
     final tempProvider = AccountDataProvider();
-    
+
     // Use the avatar utility to handle avatar retrieval
     final avatars = AvatarUtils.getAvatarUrls(
       isCurrentUser: userId == currentUser,
@@ -396,7 +551,7 @@ class _ChatViewState extends State<ChatView> {
             debugPrint('❌ [ChatView] Cannot open profile: Invalid user ID');
             return;
           }
-          
+
           try {
             final exploreController = Get.find<ExploreController>();
             exploreController.openUserProfile({
@@ -441,12 +596,12 @@ class _ChatViewState extends State<ChatView> {
           debugPrint('Cannot open chat: User not logged in');
           return;
         }
-        
+
         if (userId.isEmpty) {
           debugPrint('Cannot open chat: Invalid user ID');
           return;
         }
-        
+
         // Opens chat window with the other user's ID and username
         controller.openChat(userId, username);
       },

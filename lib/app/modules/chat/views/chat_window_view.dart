@@ -123,20 +123,30 @@ class ChatWindowView extends GetView<ChatController> {
             Get.back();
           },
         ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
+        title: Obx(() {
+          final latestMessage = _getLatestMessagePreview();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
                 username,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
+                  fontSize: 18,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
-        ),
+              if (latestMessage.isNotEmpty)
+                Text(
+                  latestMessage,
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+            ],
+          );
+        }),
         actions: [
           // Lock icon for encryption
           IconButton(
@@ -177,6 +187,32 @@ class ChatWindowView extends GetView<ChatController> {
     );
   }
 
+  // Get latest message preview for the app bar subtitle
+  String _getLatestMessagePreview() {
+    if (controller.messages.isEmpty) {
+      return '';
+    }
+
+    final latestMessage = controller.messages.last;
+    final currentUserId = SupabaseService.to.currentUser.value?.id;
+    final isMe = latestMessage.senderId == currentUserId;
+
+    String content = latestMessage.content;
+
+    // Handle different message types
+    if (content.startsWith('http') &&
+        (content.contains('.jpg') ||
+            content.contains('.jpeg') ||
+            content.contains('.png') ||
+            content.contains('.gif'))) {
+      content = isMe ? 'You sent a photo' : 'Sent a photo';
+    } else if (content.length > 30) {
+      content = '${content.substring(0, 30)}...';
+    }
+
+    return isMe ? 'You: $content' : content;
+  }
+
   // Consolidated initialization method
   void _initializeChat(String chatId, String otherUserId, String username) {
     // Create a final focus node
@@ -207,22 +243,21 @@ class ChatWindowView extends GetView<ChatController> {
 
   // Track if messages have been marked as read for this chat
   static final Set<String> _chatsMarkedAsRead = <String>{};
-  
+
   // Load messages once when chat is opened
   void _loadMessagesOnce(String chatId) async {
     try {
       debugPrint('Initial load of messages for chat: $chatId');
-      
+
       // Load messages first
       await controller.preloadMessages(chatId);
-      
+
       // Mark as read only if we haven't done so for this chat
       if (!_chatsMarkedAsRead.contains(chatId)) {
         debugPrint('Marking messages as read for chat: $chatId');
         await controller.markMessagesAsRead(chatId);
         _chatsMarkedAsRead.add(chatId);
       }
-      
     } catch (e) {
       debugPrint('Error loading messages initially: $e');
       if (!e.toString().contains('cancelled')) {

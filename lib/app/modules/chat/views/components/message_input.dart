@@ -5,6 +5,7 @@ import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:yapster/app/modules/chat/controllers/audio_controller.dart';
 import '../../controllers/chat_controller.dart';
+import '../../controllers/group_controller.dart';
 import 'audio_recorder.dart';
 
 class MessageInput extends StatefulWidget {
@@ -80,10 +81,29 @@ class _MessageInputState extends State<MessageInput> {
     isSending.value = true;
     debounceTimer?.cancel();
 
+    // Check if this is a group chat by looking at the arguments
+    final args = Get.arguments;
+    final bool isGroupChat =
+        args != null &&
+        args is Map<String, dynamic> &&
+        args.containsKey('groupId');
+
     if (MessageInput.isEditingMessage.value &&
         MessageInput.messageBeingEdited.value != null) {
       final messageId = MessageInput.messageBeingEdited.value!['message_id'];
-      await controller.updateMessage(widget.chatId, messageId, text);
+
+      if (isGroupChat) {
+        // For group messages, use the group controller
+        final groupController = Get.find<GroupController>();
+        await groupController.updateGroupMessage(
+          widget.chatId,
+          messageId,
+          text,
+        );
+      } else {
+        // For regular chat messages, use the chat controller
+        await controller.updateMessage(widget.chatId, messageId, text);
+      }
 
       MessageInput.messageBeingEdited.value = null;
       MessageInput.isEditingMessage.value = false;
@@ -98,9 +118,17 @@ class _MessageInputState extends State<MessageInput> {
       // Clear text immediately before sending to prevent double sends
       textController.clear();
 
-      // Send the message without any animation here
-      // The real-time subscription will handle adding it with animation
-      await controller.sendChatMessage(widget.chatId, text);
+      if (isGroupChat) {
+        // For group messages, use the group controller
+        final groupController = Get.find<GroupController>();
+        await groupController.sendGroupMessage(
+          groupId: widget.chatId,
+          content: text,
+        );
+      } else {
+        // For regular chat messages, use the chat controller
+        await controller.sendChatMessage(widget.chatId, text);
+      }
     } catch (e) {
       debugPrint('Error sending message: $e');
       // Optionally show error to user

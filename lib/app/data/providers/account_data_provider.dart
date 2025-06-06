@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/core/utils/db_cache_service.dart';
 import 'package:yapster/app/data/repositories/account_repository.dart';
+import 'package:yapster/app/startup/preloader/cache_manager.dart';
 
 class AccountDataProvider extends GetxController {
   AccountRepository get _accountRepository => Get.find<AccountRepository>();
@@ -35,7 +36,7 @@ class AccountDataProvider extends GetxController {
   // Cache times for follow data
   final Map<String, DateTime> _followersFetchTime = {};
   final Map<String, DateTime> _followingFetchTime = {};
-  
+
   // Cache duration constant - how long to cache follow data
   static const Duration followCacheDuration = Duration(minutes: 15);
 
@@ -296,11 +297,25 @@ class AccountDataProvider extends GetxController {
     initializeDefaultStructures();
   }
 
-  /// Load followers data for the current user
+  /// Load followers data for the current user with enhanced caching
   Future<void> loadFollowers(String userId) async {
     try {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
+      final cacheManager = Get.find<CacheManager>();
+
+      // First try to get from persistent cache
+      final cachedFollowers = await cacheManager.getCachedUserFollowers(userId);
+      if (cachedFollowers != null) {
+        followers.value = cachedFollowers;
+        followerCount.value = cachedFollowers.length;
+        _rebuildFollowersMap();
+        _followersFetchTime[userId] = DateTime.now();
+        debugPrint(
+          'Loaded ${followers.length} followers for user $userId from persistent cache',
+        );
+        return;
+      }
 
       // Check if we have recently fetched this data
       final lastFetch = _followersFetchTime[userId];
@@ -335,6 +350,9 @@ class AccountDataProvider extends GetxController {
       _rebuildFollowersMap();
       _followersFetchTime[userId] = now;
 
+      // Cache the followers for persistent storage
+      await cacheManager.cacheUserFollowers(userId, followersList);
+
       debugPrint('Set follower count to: ${followerCount.value}');
     } catch (e) {
       debugPrint('Error loading followers: $e');
@@ -342,11 +360,25 @@ class AccountDataProvider extends GetxController {
     }
   }
 
-  /// Load following data for the current user
+  /// Load following data for the current user with enhanced caching
   Future<void> loadFollowing(String userId) async {
     try {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
+      final cacheManager = Get.find<CacheManager>();
+
+      // First try to get from persistent cache
+      final cachedFollowing = await cacheManager.getCachedUserFollowing(userId);
+      if (cachedFollowing != null) {
+        following.value = cachedFollowing;
+        followingCount.value = cachedFollowing.length;
+        _rebuildFollowingMap();
+        _followingFetchTime[userId] = DateTime.now();
+        debugPrint(
+          'Loaded ${following.length} following for user $userId from persistent cache',
+        );
+        return;
+      }
 
       // Check if we have recently fetched this data
       final lastFetch = _followingFetchTime[userId];
@@ -380,6 +412,9 @@ class AccountDataProvider extends GetxController {
       followingCount.value = followingList.length;
       _rebuildFollowingMap();
       _followingFetchTime[userId] = now;
+
+      // Cache the following for persistent storage
+      await cacheManager.cacheUserFollowing(userId, followingList);
 
       debugPrint('Set following count to: ${followingCount.value}');
     } catch (e) {
@@ -468,13 +503,26 @@ class AccountDataProvider extends GetxController {
     _followingFetchTime.remove(userId);
   }
 
-  /// Load user posts from the posts table
+  /// Load user posts from the posts table with enhanced caching
   Future<void> loadUserPosts(String userId) async {
     try {
       final supabaseService = Get.find<SupabaseService>();
       final dbCacheService = Get.find<DbCacheService>();
+      final cacheManager = Get.find<CacheManager>();
 
-      // Get posts from cache or fetch from API
+      // First try to get from persistent cache
+      final cachedPosts = await cacheManager.getCachedUserPosts(userId);
+      if (cachedPosts != null) {
+        posts.value = cachedPosts;
+        _rebuildPostsMap();
+        userPostData['post_count'] = cachedPosts.length;
+        debugPrint(
+          'Loaded ${posts.length} posts for user $userId from persistent cache',
+        );
+        return;
+      }
+
+      // Get posts from db cache or fetch from API
       final postsList = await dbCacheService.getUserPosts(userId, () async {
         // Fetch posts from the database
         final response = await supabaseService.client
@@ -491,6 +539,9 @@ class AccountDataProvider extends GetxController {
 
       // Update post count in user_posts data
       userPostData['post_count'] = postsList.length;
+
+      // Cache the posts for persistent storage
+      await cacheManager.cacheUserPosts(userId, postsList);
 
       debugPrint('Loaded ${posts.length} posts for user $userId');
     } catch (e) {
@@ -537,45 +588,98 @@ class AccountDataProvider extends GetxController {
     _accountRepository.processFollowingData(followingData);
   }
 
-
-  
   /// Checks if followers data should be refreshed for a specific user
   bool shouldRefreshFollowers(String userId) {
     final lastFetch = _followersFetchTime[userId];
     final now = DateTime.now();
-    
+
     // Refresh if we haven't fetched before, or if cache is expired, or if followers list is empty
-    return lastFetch == null || 
-           now.difference(lastFetch) > SupabaseService.followCacheDuration || 
-           followers.isEmpty;
+    return lastFetch == null ||
+        now.difference(lastFetch) > SupabaseService.followCacheDuration ||
+        followers.isEmpty;
   }
-  
+
   /// Checks if following data should be refreshed for a specific user
   bool shouldRefreshFollowing(String userId) {
     final lastFetch = _followingFetchTime[userId];
     final now = DateTime.now();
-    
+
     // Refresh if we haven't fetched before, or if cache is expired, or if following list is empty
-    return lastFetch == null || 
-           now.difference(lastFetch) > SupabaseService.followCacheDuration || 
-           following.isEmpty;
+    return lastFetch == null ||
+        now.difference(lastFetch) > SupabaseService.followCacheDuration ||
+        following.isEmpty;
   }
-  
+
   /// Gets the key used for caching followers data
   String getFollowersFetchKey(String userId) {
     return 'followers_$userId';
   }
-  
+
   /// Gets the key used for caching following data
   String getFollowingFetchKey(String userId) {
     return 'following_$userId';
   }
-  
+
+  /// Preload user data for app optimization
+  Future<void> preloadUserData() async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+      final userId = supabaseService.currentUser.value?.id;
+
+      if (userId == null) {
+        debugPrint(
+          'AccountDataProvider: Cannot preload data - user not authenticated',
+        );
+        return;
+      }
+
+      debugPrint('AccountDataProvider: Starting user data preload for $userId');
+
+      // Preload user profile data
+      final userData = await fetchUserData();
+      if (userData.isNotEmpty) {
+        username.value = userData['username'] ?? '';
+        nickname.value = userData['nickname'] ?? '';
+        bio.value = userData['bio'] ?? '';
+        avatar.value = userData['avatar'] ?? '';
+        banner.value = userData['banner'] ?? '';
+        email.value = userData['email'] ?? '';
+        googleAvatar.value = userData['google_avatar'] ?? '';
+
+        // CRITICAL FIX: Force refresh all reactive values to ensure UI updates
+        username.refresh();
+        nickname.refresh();
+        bio.refresh();
+        avatar.refresh();
+        banner.refresh();
+        email.refresh();
+        googleAvatar.refresh();
+
+        debugPrint('AccountDataProvider: Profile data preloaded and refreshed');
+        debugPrint('  Username: ${username.value}');
+        debugPrint('  Nickname: ${nickname.value}');
+        debugPrint('  Avatar: ${avatar.value}');
+        debugPrint('  Google Avatar: ${googleAvatar.value}');
+      }
+
+      // Preload followers and following data in parallel
+      await Future.wait([
+        loadFollowers(userId),
+        loadFollowing(userId),
+        loadUserPosts(userId),
+      ]);
+
+      debugPrint('AccountDataProvider: User data preload completed');
+    } catch (e) {
+      debugPrint('AccountDataProvider: Error preloading user data: $e');
+    }
+  }
+
   /// Updates the followers cache timestamp without fetching new data
   void markFollowersFetched(String userId) {
     _followersFetchTime[userId] = DateTime.now();
   }
-  
+
   /// Updates the following cache timestamp without fetching new data
   void markFollowingFetched(String userId) {
     _followingFetchTime[userId] = DateTime.now();

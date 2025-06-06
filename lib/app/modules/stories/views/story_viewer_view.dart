@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/modules/stories/controllers/story_viewer_controller.dart';
-import 'package:yapster/app/modules/stories/widgets/text_widget.dart';
-import 'package:yapster/app/modules/stories/widgets/doodle_widget.dart';
 
 class StoryViewerView extends GetView<StoryViewerController> {
   const StoryViewerView({super.key});
@@ -125,7 +123,7 @@ class StoryViewerView extends GetView<StoryViewerController> {
                     radius: 16,
                     backgroundImage:
                         controller.userAvatar.value != null
-                            ? NetworkImage(controller.userAvatar.value!)
+                            ? NetworkImage(controller.userAvatar.value)
                             : null,
                     child:
                         controller.userAvatar.value == null
@@ -152,7 +150,7 @@ class StoryViewerView extends GetView<StoryViewerController> {
                         Text(
                           controller.getTimeAgo(currentStory.createdAt),
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white,
                             fontSize: 12,
                           ),
                         ),

@@ -21,7 +21,7 @@ class ExploreController extends GetxController {
       <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> recentSearches =
       <Map<String, dynamic>>[].obs;
-      
+
   // Track loading state for profile to prevent multiple simultaneous loads
   final _isLoadingProfile = false.obs;
   final _currentLoadingUserId = ''.obs;
@@ -47,7 +47,7 @@ class ExploreController extends GetxController {
   // Cache for user profiles
   final _profileCache = <String, Map<String, dynamic>>{}.obs;
   final _profileLastFetch = <String, DateTime>{};
-  
+
   // Cache for follow state to reduce database calls
   final _followStateCache = <String, bool>{}.obs;
   final _followStateFetchTime = <String, DateTime>{};
@@ -55,20 +55,21 @@ class ExploreController extends GetxController {
 
   // Cache for recent searches
   static const Duration searchCacheDuration = Duration(minutes: 30);
-  
+
   // Track if we're on the explore page to prevent unnecessary loading elsewhere
   final RxBool _isOnExplorePage = false.obs;
 
   // account data provider
-  final AccountDataProvider _accountDataProvider = Get.find<AccountDataProvider>();
-  
+  final AccountDataProvider _accountDataProvider =
+      Get.find<AccountDataProvider>();
+
   @override
   void onInit() {
     super.onInit();
     // Add listener to search text field
     searchController.addListener(_onSearchChanged);
   }
-  
+
   // Call this when explore page is opened
   void onExplorePageOpened() {
     _isOnExplorePage.value = true;
@@ -76,13 +77,11 @@ class ExploreController extends GetxController {
     loadCachedSearchResults();
     debugPrint('Loaded cached search results');
   }
-  
+
   // Call this when leaving the explore page
   void onExplorePageClosed() {
     _isOnExplorePage.value = false;
   }
-  
-
 
   @override
   void onClose() {
@@ -176,7 +175,9 @@ class ExploreController extends GetxController {
         recentSearches.clear();
         recentSearches.addAll(List<Map<String, dynamic>>.from(decodedSearches));
 
-        debugPrint('Loaded ${recentSearches.length} recent searches from cache');
+        debugPrint(
+          'Loaded ${recentSearches.length} recent searches from cache',
+        );
 
         // If there's no active search, show recent searches in results
         if (searchController.text.isEmpty) {
@@ -198,15 +199,17 @@ class ExploreController extends GetxController {
       debugPrint('Skipping loadRecentSearches since not on explore page');
       return;
     }
-    
+
     try {
       // Load from local storage
       loadCachedSearchResults();
       debugPrint('Loaded ${recentSearches.length} recent searches from cache');
-      
+
       // Debug info about recent searches
       for (var search in recentSearches) {
-        debugPrint('Recent search: ${search['username']}, ${search['user_id']}');
+        debugPrint(
+          'Recent search: ${search['username']}, ${search['user_id']}',
+        );
       }
     } catch (e) {
       debugPrint('Error loading recent searches from cache: $e');
@@ -253,7 +256,7 @@ class ExploreController extends GetxController {
 
       if (existingIndex != -1) {
         recentSearches.removeAt(existingIndex);
-        
+
         // Save to local storage
         await _storageService.saveString(
           'recent_searches',
@@ -289,9 +292,9 @@ class ExploreController extends GetxController {
     debugPrint('🔍 Checking profile for user: $userId');
     debugPrint('🔹 Current profile user: ${selectedUserProfile['user_id']}');
     debugPrint('🔹 Current banner: ${selectedUserProfile['banner']}');
-    
+
     // If we already have a profile for this user with valid data, return it to prevent flickering
-    if (selectedUserProfile.isNotEmpty && 
+    if (selectedUserProfile.isNotEmpty &&
         selectedUserProfile['user_id'] == userId) {
       debugPrint('✅ Using existing profile for $userId');
       debugPrint('🔹 Existing banner: ${selectedUserProfile['banner']}');
@@ -301,7 +304,7 @@ class ExploreController extends GetxController {
       debugPrint('🔄 Creating new default profile for $userId');
       debugPrint('=== _getDefaultProfile END (new) ===\n');
     }
-    
+
     // Otherwise create a new default profile with existing values if available
     return {
       'user_id': userId,
@@ -310,11 +313,14 @@ class ExploreController extends GetxController {
       'bio': selectedUserProfile['bio'] ?? '',
       'avatar': selectedUserProfile['avatar'],
       'banner': selectedUserProfile['banner'],
+      'google_avatar':
+          selectedUserProfile['google_avatar'], // CRITICAL FIX: Include google_avatar
       'follower_count': selectedUserProfile['follower_count'] ?? 0,
       'following_count': selectedUserProfile['following_count'] ?? 0,
       'post_count': selectedUserProfile['post_count'] ?? 0,
       'is_verified': selectedUserProfile['is_verified'] ?? false,
-      'created_at': selectedUserProfile['created_at'] ?? DateTime.now().toIso8601String(),
+      'created_at':
+          selectedUserProfile['created_at'] ?? DateTime.now().toIso8601String(),
     };
   }
 
@@ -326,25 +332,29 @@ class ExploreController extends GetxController {
     debugPrint('🔹 Current loading user: ${_currentLoadingUserId.value}');
     debugPrint('🔹 Current profile user: ${selectedUserProfile['user_id']}');
     debugPrint('🔹 Current banner: ${selectedUserProfile['banner']}');
-    
+
     if (userId.isEmpty) {
       debugPrint('❌ Error: Empty userId');
       debugPrint('=== loadUserProfile END (error) ===\n');
       return;
     }
-    
+
     if (_isLoadingProfile.value) {
-      debugPrint('⏳ Already loading profile for ${_currentLoadingUserId.value}, requested: $userId');
+      debugPrint(
+        '⏳ Already loading profile for ${_currentLoadingUserId.value}, requested: $userId',
+      );
       debugPrint('=== loadUserProfile END (already loading) ===\n');
       return;
     }
-    
+
     try {
       debugPrint('🟢 loadUserProfile: Starting load for $userId');
       _isLoadingProfile.value = true;
       _currentLoadingUserId.value = userId;
-      
-      debugPrint('ℹ️ Current profile user: ${selectedUserProfile['user_id']}, requested: $userId');
+
+      debugPrint(
+        'ℹ️ Current profile user: ${selectedUserProfile['user_id']}, requested: $userId',
+      );
       if (selectedUserProfile['user_id'] != userId) {
         debugPrint('🔄 loadUserProfile: Setting default profile for $userId');
         final defaultProfile = _getDefaultProfile(userId);
@@ -353,7 +363,7 @@ class ExploreController extends GetxController {
       } else {
         debugPrint('ℹ️ Using existing profile for $userId');
       }
-      
+
       // Load fresh data in the background
       await _loadFreshProfileData(userId, false);
     } catch (e) {
@@ -377,12 +387,12 @@ class ExploreController extends GetxController {
           .from('follows')
           .select()
           .eq('following_id', userId);
-          
+
       final followingResponse = await _supabaseService.client
           .from('follows')
           .select()
           .eq('follower_id', userId);
-          
+
       return {
         'follower_count': followerResponse.length,
         'following_count': followingResponse.length,
@@ -392,41 +402,52 @@ class ExploreController extends GetxController {
       return {'follower_count': 0, 'following_count': 0};
     }
   }
-  
+
   /// Fetches profile data for a user
   Future<Map<String, dynamic>> _fetchProfileData(String userId) async {
     try {
-      final response = await _supabaseService.client
-          .from('profiles')
-          .select()
-          .eq('user_id', userId)
-          .single();
-          
+      final response =
+          await _supabaseService.client
+              .from('profiles')
+              .select()
+              .eq('user_id', userId)
+              .single();
+
       return response;
     } catch (e) {
       debugPrint('Error fetching profile data: $e');
       return {};
     }
   }
-  
+
   /// Compares two profile maps to check if they're effectively equal
   bool _areProfilesEqual(Map<String, dynamic>? a, Map<String, dynamic>? b) {
     if (a == b) return true;
     if (a == null || b == null) return false;
-    
+
     // Compare only the fields that affect the UI
-    final keys = {'user_id', 'username', 'nickname', 'bio', 'avatar', 'banner', 
-                 'follower_count', 'following_count', 'post_count', 'is_verified'};
-    
+    final keys = {
+      'user_id',
+      'username',
+      'nickname',
+      'bio',
+      'avatar',
+      'banner',
+      'follower_count',
+      'following_count',
+      'post_count',
+      'is_verified',
+    };
+
     for (final key in keys) {
       if (a[key] != b[key]) {
         return false;
       }
     }
-    
+
     return true;
   }
-  
+
   /// Loads fresh profile data in the background
   // Add this helper method at the top of the class
   void _logBannerUpdate(String context, Map<String, dynamic> profile) {
@@ -446,113 +467,137 @@ class ExploreController extends GetxController {
     debugPrint('🔹 Current loading user: ${_currentLoadingUserId.value}');
     debugPrint('🔹 Current profile user: ${selectedUserProfile['user_id']}');
     debugPrint('🔹 Current banner: ${selectedUserProfile['banner']}');
-    
+
     if (userId.isEmpty) {
       debugPrint('❌ Error: Empty userId');
       debugPrint('=== _loadFreshProfileData END (error) ===\n');
       return;
     }
-    
+
     if (_currentLoadingUserId.value != userId) {
-      debugPrint('⚠️ Mismatched userId. Current: ${_currentLoadingUserId.value}, Requested: $userId');
+      debugPrint(
+        '⚠️ Mismatched userId. Current: ${_currentLoadingUserId.value}, Requested: $userId',
+      );
       debugPrint('=== _loadFreshProfileData END (mismatch) ===\n');
       return;
     }
-    
+
     try {
       debugPrint('🔄 _loadFreshProfileData: Fetching fresh data for $userId');
-      debugPrint('📊 Current banner before fetch: ${selectedUserProfile['banner']}');
-      
+      debugPrint(
+        '📊 Current banner before fetch: ${selectedUserProfile['banner']}',
+      );
+
       // Fetch fresh data in parallel
       final results = await Future.wait([
         _fetchFollowCounts(userId),
         _fetchProfileData(userId),
       ]);
-      
+
       final followCounts = results[0];
       final profileData = results[1];
-      
+
       debugPrint('✅ _loadFreshProfileData: Fetched data for $userId');
       debugPrint('📥 New banner from API: ${profileData['banner']}');
-      
+      debugPrint('📥 Avatar from API: ${profileData['avatar']}');
+      debugPrint('📥 Google avatar from API: ${profileData['google_avatar']}');
+
       // Only proceed if we're still loading the same user
       if (_currentLoadingUserId.value != userId) {
-        debugPrint('🛑 _loadFreshProfileData: User changed during fetch. Current: ${_currentLoadingUserId.value}, Expected: $userId');
+        debugPrint(
+          '🛑 _loadFreshProfileData: User changed during fetch. Current: ${_currentLoadingUserId.value}, Expected: $userId',
+        );
         return;
       }
-      
+
       // Create a new profile with fresh data, preserving existing values if new ones are null
       // Log current banner state before update
       _logBannerUpdate('BEFORE UPDATE', selectedUserProfile);
       _logBannerUpdate('NEW DATA', profileData);
-      
+
       // Get banner and avatar, preserving existing if new ones are null
       final banner = profileData['banner'] ?? selectedUserProfile['banner'];
       final avatar = profileData['avatar'] ?? selectedUserProfile['avatar'];
-      
+
       // Log the decision
       debugPrint('\n🔄 BANNER SELECTION:');
       debugPrint('🔹 New banner available: ${profileData['banner'] != null}');
-      debugPrint('🔹 Existing banner available: ${selectedUserProfile['banner'] != null}');
+      debugPrint(
+        '🔹 Existing banner available: ${selectedUserProfile['banner'] != null}',
+      );
       debugPrint('🔹 Selected banner: ${banner ?? 'null'}');
-      
+
       debugPrint('\n🔍 Creating updated profile:');
       debugPrint('🔹 New banner from API: ${profileData['banner']}');
-      debugPrint('🔹 Current banner in profile: ${selectedUserProfile['banner']}');
+      debugPrint(
+        '🔹 Current banner in profile: ${selectedUserProfile['banner']}',
+      );
       debugPrint('🔹 Will use banner: $banner');
-      
+
       final updatedProfile = Map<String, dynamic>.from({
         'user_id': userId,
         'avatar': avatar,
         'banner': banner,
         ...profileData, // This will override the above if they exist in profileData
-        'follower_count': followCounts['follower_count'] ?? selectedUserProfile['follower_count'] ?? 0,
-        'following_count': followCounts['following_count'] ?? selectedUserProfile['following_count'] ?? 0,
+        'follower_count':
+            followCounts['follower_count'] ??
+            selectedUserProfile['follower_count'] ??
+            0,
+        'following_count':
+            followCounts['following_count'] ??
+            selectedUserProfile['following_count'] ??
+            0,
       });
-      
+
       debugPrint('🔄 Created updated profile:');
       debugPrint('   Banner: ${updatedProfile['banner']}');
       debugPrint('   Avatar: ${updatedProfile['avatar']}');
       debugPrint('   Follower count: ${updatedProfile['follower_count']}');
       debugPrint('   Following count: ${updatedProfile['following_count']}');
-      
+
       // Check if profiles are different
       debugPrint('\n🔍 Comparing profiles:');
-      final profilesEqual = _areProfilesEqual(selectedUserProfile, updatedProfile);
-      
+      final profilesEqual = _areProfilesEqual(
+        selectedUserProfile,
+        updatedProfile,
+      );
+
       debugPrint('\n🔍 Profile Comparison:');
       debugPrint('🔹 Current banner: ${selectedUserProfile['banner']}');
       debugPrint('🔹 Updated banner: ${updatedProfile['banner']}');
-      debugPrint('🔹 Banners match: ${selectedUserProfile['banner'] == updatedProfile['banner']}');
-      
+      debugPrint(
+        '🔹 Banners match: ${selectedUserProfile['banner'] == updatedProfile['banner']}',
+      );
+
       if (!profilesEqual) {
         debugPrint('\n🔄 Profiles are different, updating...');
         debugPrint('🔹 Old banner: ${selectedUserProfile['banner']}');
         debugPrint('🔹 New banner: ${updatedProfile['banner']}');
-        
+
         debugPrint('\n💾 Updating profile state...');
         // Log the state before update
         _logBannerUpdate('BEFORE STATE UPDATE', selectedUserProfile);
-        
+
         // Update the state
         selectedUserProfile.value = updatedProfile;
-        
+
         // Log the state after update
         _logBannerUpdate('AFTER STATE UPDATE', selectedUserProfile);
-        
+
         // Update cache
         _profileCache[userId] = updatedProfile;
         _profileLastFetch[userId] = DateTime.now();
-        
+
         debugPrint('✅ Profile updated successfully');
         debugPrint('🔹 New banner in state: ${selectedUserProfile['banner']}');
       } else {
         debugPrint('\nℹ️ No changes to profile data');
-        debugPrint('🔹 Keeping existing banner: ${selectedUserProfile['banner']}');
+        debugPrint(
+          '🔹 Keeping existing banner: ${selectedUserProfile['banner']}',
+        );
       }
-      
+
       debugPrint('=== _loadFreshProfileData END ===\n');
-      
     } catch (e) {
       debugPrint('Error in _loadFreshProfileData: $e');
       // Don't throw, just log the error
@@ -631,18 +676,18 @@ class ExploreController extends GetxController {
   bool shouldRefreshFollowState(String userId) {
     final lastFetch = _followStateFetchTime[userId];
     final now = DateTime.now();
-    
+
     // Refresh if we haven't fetched before, or if cache is expired
-    return lastFetch == null || 
-           now.difference(lastFetch) > followStateCacheDuration;
+    return lastFetch == null ||
+        now.difference(lastFetch) > followStateCacheDuration;
   }
-  
+
   /// Updates the follow state cache timestamp for a user
   void markFollowStateRefreshed(String userId) {
     _followStateFetchTime[userId] = DateTime.now();
     debugPrint('Marked follow state as refreshed for user: $userId');
   }
-  
+
   // Refresh the follow state for a specific user - can be called when a view is built to ensure accurate UI
   Future<bool> refreshFollowState(String userId) async {
     try {
@@ -650,7 +695,8 @@ class ExploreController extends GetxController {
       if (currentUserId == null || userId.isEmpty) return false;
 
       // If we have a cached follow state and it's not expired, use that
-      if (!shouldRefreshFollowState(userId) && _followStateCache.containsKey(userId)) {
+      if (!shouldRefreshFollowState(userId) &&
+          _followStateCache.containsKey(userId)) {
         debugPrint('Using cached follow state for user: $userId');
         return _followStateCache[userId] ?? false;
       }

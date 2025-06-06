@@ -123,7 +123,7 @@ class ProfileController extends GetxController {
         _accountDataProvider.nickname.value = userData['nickname'] ?? '';
         _accountDataProvider.username.value = userData['username'] ?? '';
         _accountDataProvider.bio.value = userData['bio'] ?? '';
-        
+
         // Update banner if available
         if (userData['banner'] != null) {
           _accountDataProvider.banner.value = userData['banner'];
@@ -134,14 +134,20 @@ class ProfileController extends GetxController {
           _accountDataProvider.avatar.value = userData['avatar'];
         }
 
-        // Update Google avatar if available
-        if (userData['google_avatar'] != null &&
-            userData['google_avatar'].toString().isNotEmpty) {
-          debugPrint(
-            'Setting Google avatar from DB: ${userData['google_avatar']}',
-          );
-          _accountDataProvider.googleAvatar.value = userData['google_avatar'];
-        }
+        // CRITICAL FIX: Update Google avatar
+        _accountDataProvider.googleAvatar.value =
+            userData['google_avatar'] ?? '';
+
+        // Log avatar data for debugging
+        debugPrint('Profile Controller - Avatar data loaded:');
+        debugPrint('  Regular avatar: ${userData['avatar']}');
+        debugPrint('  Google avatar: ${userData['google_avatar']}');
+        debugPrint(
+          '  AccountDataProvider avatar: ${_accountDataProvider.avatar.value}',
+        );
+        debugPrint(
+          '  AccountDataProvider googleAvatar: ${_accountDataProvider.googleAvatar.value}',
+        );
 
         // CRITICAL FIX: Log avatar status to help diagnose skiped avatar issues
         final bool hasSkippedAvatar =
@@ -237,6 +243,12 @@ class ProfileController extends GetxController {
       usernameController.text = _accountDataProvider.username.value;
       bioController.text = _accountDataProvider.bio.value;
 
+      // CRITICAL FIX: Load user posts to ensure post count is displayed
+      await _accountDataProvider.loadUserPosts(userId);
+      debugPrint(
+        'Loaded ${_accountDataProvider.posts.length} posts for profile display',
+      );
+
       debugPrint('Avatar URL: ${_accountDataProvider.avatar.value}');
     } catch (e) {
       debugPrint('Error fetching user data: $e');
@@ -317,7 +329,9 @@ class ProfileController extends GetxController {
       // Upload any new banner image if selected
       String? newBannerUrl;
       if (selectedBanner.value != null) {
-        newBannerUrl = await BannerUtils.uploadBannerImage(selectedBanner.value!);
+        newBannerUrl = await BannerUtils.uploadBannerImage(
+          selectedBanner.value!,
+        );
         if (newBannerUrl != null) {
           _accountDataProvider.banner.value = newBannerUrl;
         }
@@ -442,7 +456,6 @@ class ProfileController extends GetxController {
       );
     }
   }
-
 
   @override
   void onClose() {

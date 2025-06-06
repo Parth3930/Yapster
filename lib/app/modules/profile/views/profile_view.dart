@@ -44,6 +44,31 @@ class ProfileView extends GetView<ProfileController> {
           final currentUserId =
               Get.find<SupabaseService>().currentUser.value?.id;
           if (currentUserId != null) {
+            // CRITICAL FIX: Debug current data state
+            debugPrint('=== PROFILE VIEW DEBUG ===');
+            debugPrint('Current user data state:');
+            debugPrint('  Username: ${accountDataProvider.username.value}');
+            debugPrint('  Nickname: ${accountDataProvider.nickname.value}');
+            debugPrint('  Bio: ${accountDataProvider.bio.value}');
+            debugPrint('  Avatar: ${accountDataProvider.avatar.value}');
+            debugPrint(
+              '  Google Avatar: ${accountDataProvider.googleAvatar.value}',
+            );
+            debugPrint('  Posts count: ${accountDataProvider.posts.length}');
+            debugPrint(
+              '  Followers count: ${accountDataProvider.followers.length}',
+            );
+            debugPrint(
+              '  Following count: ${accountDataProvider.following.length}',
+            );
+
+            // CRITICAL FIX: Force load user data if empty
+            if (accountDataProvider.username.value.isEmpty ||
+                accountDataProvider.nickname.value.isEmpty) {
+              debugPrint('User data is empty, forcing reload...');
+              await accountDataProvider.preloadUserData();
+            }
+
             // Check cache timestamps in accountDataProvider before loading
             if (accountDataProvider.shouldRefreshFollowers(currentUserId)) {
               await accountDataProvider.loadFollowers(currentUserId);
@@ -59,8 +84,14 @@ class ProfileView extends GetView<ProfileController> {
               debugPrint('Using cached following data');
             }
 
+            // CRITICAL FIX: Ensure posts are loaded
+            if (accountDataProvider.posts.isEmpty) {
+              debugPrint('Posts are empty, loading posts...');
+              await accountDataProvider.loadUserPosts(currentUserId);
+            }
+
             debugPrint(
-              'Profile counts - Followers: ${accountDataProvider.followerCount}, Following: ${accountDataProvider.followingCount}',
+              'Profile counts - Posts: ${accountDataProvider.posts.length}, Followers: ${accountDataProvider.followerCount}, Following: ${accountDataProvider.followingCount}',
             );
           }
         } else if (userId != null) {

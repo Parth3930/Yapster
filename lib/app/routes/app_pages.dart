@@ -7,11 +7,10 @@ import 'package:yapster/app/modules/account_setup/views/account_username_view.da
 import 'package:yapster/app/modules/chat/bindings/chat_binding.dart';
 import 'package:yapster/app/modules/chat/views/chat_view.dart';
 import 'package:yapster/app/modules/chat/views/chat_window_view.dart';
-import 'package:yapster/app/modules/create/bindings/create_binding.dart';
+import 'package:yapster/app/modules/chat/views/group_chat_window_view.dart';
 import 'package:yapster/app/modules/create/views/create_view.dart';
 import 'package:yapster/app/modules/error/bindings/error_binding.dart';
 import 'package:yapster/app/modules/error/views/error_view.dart';
-import 'package:yapster/app/modules/explore/bindings/explore_binding.dart';
 import 'package:yapster/app/modules/explore/views/explore_view.dart';
 import 'package:yapster/app/modules/notifications/bindings/notifications_binding.dart';
 import 'package:yapster/app/modules/notifications/views/notifications_view.dart';
@@ -25,12 +24,12 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/stories/views/create_story_view.dart';
 import 'package:yapster/app/modules/stories/views/story_viewer_view.dart';
 import 'package:yapster/app/modules/stories/bindings/stories_binding.dart';
-import '../modules/home/bindings/home_binding.dart';
 import '../modules/home/views/home_view.dart';
 import '../modules/login/bindings/login_binding.dart';
 import '../modules/login/views/login_view.dart';
 import '../modules/splash/bindings/splash_binding.dart';
 import '../modules/splash/views/splash_view.dart';
+import 'package:yapster/app/startup/preloader/optimized_bindings.dart';
 import 'package:flutter/material.dart' show Curves;
 
 part 'app_routes.dart';
@@ -49,7 +48,7 @@ class AppPages {
     GetPage(
       name: _Paths.HOME,
       page: () => const HomeView(),
-      binding: HomeBinding(),
+      binding: OptimizedHomeBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
@@ -97,7 +96,7 @@ class AppPages {
     GetPage(
       name: _Paths.PROFILE, // Matches /profile
       page: () => ProfileView(), // For current user
-      binding: ProfileBinding(),
+      binding: OptimizedProfileBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
@@ -121,7 +120,7 @@ class AppPages {
     GetPage(
       name: _Paths.CHAT,
       page: () => const ChatView(),
-      binding: ChatBinding(),
+      binding: OptimizedChatBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
@@ -139,9 +138,17 @@ class AppPages {
       curve: Curves.easeInOut,
     ),
     GetPage(
+      name: _Paths.GROUP_CHAT,
+      page: () => const GroupChatWindowView(),
+      binding: ChatBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ),
+    GetPage(
       name: _Paths.EXPLORE,
       page: () => const ExploreView(),
-      binding: ExploreBinding(),
+      binding: OptimizedExploreBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
@@ -153,7 +160,7 @@ class AppPages {
     GetPage(
       name: _Paths.CREATE,
       page: () => const CreateView(),
-      binding: CreateBinding(),
+      binding: OptimizedCreateBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,

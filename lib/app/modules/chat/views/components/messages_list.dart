@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import '../../controllers/chat_controller.dart';
+import '../../controllers/group_controller.dart';
 import 'message_bubble.dart';
 
 class MessagesList extends StatelessWidget {
@@ -9,37 +10,81 @@ class MessagesList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.find<ChatController>();
+    final chatController = Get.find<ChatController>();
     final currentUserId = SupabaseService.to.currentUser.value?.id;
 
-    // Only observe the length of the messages list to minimize rebuilds
+    // Check if this is a group chat by trying to find GroupController
+    GroupController? groupController;
+    try {
+      groupController = Get.find<GroupController>();
+    } catch (e) {
+      // Not a group chat
+    }
+
+    final args = Get.arguments;
+    final bool isGroupChat =
+        args != null &&
+        args is Map<String, dynamic> &&
+        args.containsKey('groupId') &&
+        groupController != null;
+
     return Obx(() {
-      final messageCount = controller.sortedMessages.length;
+      List<dynamic> messages;
+      int messageCount;
+
+      if (isGroupChat) {
+        // Use group messages
+        messages = List.from(groupController!.currentGroupMessages)
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        messageCount = messages.length;
+      } else {
+        // Use regular chat messages
+        messages = chatController.sortedMessages;
+        messageCount = messages.length;
+      }
 
       if (messageCount == 0) {
-        return const Center(
-          child: Text('No messages yet', style: TextStyle(color: Colors.white)),
+        return Center(
+          child: Text(
+            isGroupChat
+                ? 'No messages yet\nStart the conversation!'
+                : 'No messages yet',
+            style: const TextStyle(color: Colors.white),
+            textAlign: TextAlign.center,
+          ),
         );
       }
 
-      final args = Get.arguments;
-      if (args == null || args is! Map<String, dynamic>) {
+      if (currentUserId == null) {
         return const Center(
           child: Text(
-            'Chat data unavailable',
+            'User not authenticated',
             style: TextStyle(color: Colors.red),
           ),
         );
       }
 
-      final String? otherUserId = args['otherUserId'] as String?;
-      if (otherUserId == null) {
-        return const Center(
-          child: Text(
-            'Other user info missing',
-            style: TextStyle(color: Colors.red),
-          ),
-        );
+      // For regular chat, we need otherUserId
+      String? otherUserId;
+      if (!isGroupChat) {
+        if (args == null || args is! Map<String, dynamic>) {
+          return const Center(
+            child: Text(
+              'Chat data unavailable',
+              style: TextStyle(color: Colors.red),
+            ),
+          );
+        }
+
+        otherUserId = args['otherUserId'] as String?;
+        if (otherUserId == null) {
+          return const Center(
+            child: Text(
+              'Other user info missing',
+              style: TextStyle(color: Colors.red),
+            ),
+          );
+        }
       }
 
       // Use ListView.builder with cacheExtent and keep-alive
@@ -49,16 +94,26 @@ class MessagesList extends StatelessWidget {
         reverse: true,
         cacheExtent: 1000, // keep items alive off-screen
         itemBuilder: (context, index) {
-          // Access the message directly from the controller to avoid rebuilding the whole list
-          final msg = controller.sortedMessages[index];
-          final isMe = msg.senderId == currentUserId;
+          final msg = messages[index];
+          final isMe =
+              isGroupChat
+                  ? msg.senderId == currentUserId
+                  : msg.senderId == currentUserId;
 
-          return _MessageBubbleWrapper(
-            message: msg,
-            isMe: isMe,
-            otherUserId: otherUserId,
-            onTapImage: (message) => _handleImageTap(context, message),
-          );
+          if (isGroupChat) {
+            return _GroupMessageBubbleWrapper(
+              message: msg,
+              isMe: isMe,
+              groupId: args['groupId'] as String,
+            );
+          } else {
+            return _MessageBubbleWrapper(
+              message: msg,
+              isMe: isMe,
+              otherUserId: otherUserId!,
+              onTapImage: (message) => _handleImageTap(context, message),
+            );
+          }
         },
       );
     });
@@ -152,5 +207,109 @@ class _MessageBubbleWrapper extends StatelessWidget {
         onAnimationComplete: controller.onMessageAnimationComplete,
       );
     });
+  }
+}
+
+// Wrapper for group message bubbles
+class _GroupMessageBubbleWrapper extends StatelessWidget {
+  final dynamic message; // GroupMessageModel
+  final bool isMe;
+  final String groupId;
+
+  const _GroupMessageBubbleWrapper({
+    required this.message,
+    required this.isMe,
+    required this.groupId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final groupController = Get.find<GroupController>();
+
+    return Obx(() {
+      final isDeleting = groupController.deletingMessageId.value == message.id;
+
+      // Convert group message to format expected by MessageBubble
+      final msgMap = {
+        'message_id': message.id ?? '',
+        'content': message.content ?? '',
+        'created_at':
+            message.createdAt?.toIso8601String() ??
+            DateTime.now().toIso8601String(),
+        'sender_id': message.senderId ?? '',
+        'is_read': true, // Group messages are always considered read
+        'expires_at':
+            DateTime.now()
+                .add(const Duration(days: 1))
+                .toIso8601String(), // Default expiry
+        'message_type': message.messageType ?? 'text',
+        'chat_id': groupId,
+        'recipient_id': '', // Not applicable for group messages
+        'is_new': groupController.messagesToAnimate.contains(message.id),
+      };
+
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        transform:
+            Matrix4.identity()
+              ..scale(isDeleting ? 0.0 : 1.0)
+              ..translate(isDeleting ? 50.0 : 0.0, 0.0),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 300),
+          opacity: isDeleting ? 0.0 : 1.0,
+          child: MessageBubble(
+            key: ValueKey(
+              'group_msg_${message.id}_${message.senderId}_${isMe}_${msgMap['is_new']}_$isDeleting',
+            ),
+            message: msgMap,
+            isMe: isMe,
+            otherUserId:
+                groupId, // Use groupId as otherUserId for group messages
+            onTapImage: (message) => _handleImageTap(context, message),
+            onAnimationComplete: (messageId) {
+              // Handle animation complete for group messages
+              groupController.onMessageAnimationComplete(messageId);
+            },
+          ),
+        ),
+      );
+    });
+  }
+
+  void _handleImageTap(BuildContext context, Map<String, dynamic> message) {
+    final String messageContent = (message['content'] ?? '').toString();
+    String? imageUrl;
+
+    // Check if this is an image message
+    if (messageContent.startsWith('http') &&
+        (messageContent.contains('.jpg') ||
+            messageContent.contains('.jpeg') ||
+            messageContent.contains('.png') ||
+            messageContent.contains('.gif'))) {
+      imageUrl = messageContent;
+    }
+
+    if (imageUrl != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder:
+              (context) => Scaffold(
+                backgroundColor: Colors.black,
+                appBar: AppBar(
+                  backgroundColor: Colors.transparent,
+                  iconTheme: const IconThemeData(color: Colors.white),
+                ),
+                body: Center(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Image.network(imageUrl!),
+                  ),
+                ),
+              ),
+        ),
+      );
+    }
   }
 }

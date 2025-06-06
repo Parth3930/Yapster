@@ -70,7 +70,7 @@ class AvatarUtils {
           .getPublicUrl("/$userId/avatar");
 
       debugPrint('Uploaded image URL: $imageUrl');
-      
+
       // Clear the cached image if it exists
       _imageCache.remove(imageUrl);
 
@@ -108,15 +108,16 @@ class AvatarUtils {
       debugPrint('Avatar URL is null or empty');
       return false;
     }
-    
+
     if (url == "skiped" || url == "null") {
       debugPrint('Avatar URL is explicitly marked as skipped: $url');
       return false;
     }
-    
+
     try {
       final uri = Uri.parse(url);
-      final bool isValid = uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+      final bool isValid =
+          uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
       if (!isValid) {
         debugPrint('Invalid URL scheme in AvatarUtils.isValidUrl: $url');
       }
@@ -135,36 +136,44 @@ class AvatarUtils {
   ) {
     if (selectedImage != null) {
       return FileImage(File(selectedImage.path));
-    } 
-    
+    }
+
     // First try profile avatar (only if it's not marked as skipped)
     final profileAvatarUrl = provider.avatar.value;
     final googleAvatarUrl = provider.googleAvatar.value;
-    
+
     // CRITICAL DEBUG: Log both avatar URLs to diagnose issues after hot restart
-    debugPrint('AVATAR GET - Profile avatar: $profileAvatarUrl (${isValidUrl(profileAvatarUrl) ? 'valid' : 'invalid'})');
-    debugPrint('AVATAR GET - Google avatar: $googleAvatarUrl (${isValidUrl(googleAvatarUrl) ? 'valid' : 'invalid'})');
-    
+    debugPrint(
+      'AVATAR GET - Profile avatar: $profileAvatarUrl (${isValidUrl(profileAvatarUrl) ? 'valid' : 'invalid'})',
+    );
+    debugPrint(
+      'AVATAR GET - Google avatar: $googleAvatarUrl (${isValidUrl(googleAvatarUrl) ? 'valid' : 'invalid'})',
+    );
+
     // Check if profile avatar is valid and not "skiped"
     if (isValidUrl(profileAvatarUrl)) {
       // Use cached image if available
       if (!_imageCache.containsKey(profileAvatarUrl)) {
-        _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(profileAvatarUrl);
+        _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(
+          profileAvatarUrl,
+        );
       }
       debugPrint('Using profile avatar: $profileAvatarUrl');
       return _imageCache[profileAvatarUrl];
-    } 
-    
+    }
+
     // Fall back to Google avatar if profile avatar is invalid or "skiped"
     if (isValidUrl(googleAvatarUrl)) {
       // Use cached image if available
       if (!_imageCache.containsKey(googleAvatarUrl)) {
-        _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(googleAvatarUrl);
+        _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(
+          googleAvatarUrl,
+        );
       }
       debugPrint('Using Google avatar fallback: $googleAvatarUrl');
       return _imageCache[googleAvatarUrl];
     }
-    
+
     // No valid avatar found - return null instead of asset image
     // Callers should handle null by showing a default icon
     debugPrint('No valid avatar found, returning null');
@@ -175,29 +184,48 @@ class AvatarUtils {
   static void preloadAvatarImages(AccountDataProvider provider) {
     try {
       // Log avatar sources for debugging
-      debugPrint('Preloading avatars - Profile avatar: ${provider.avatar.value}');
-      debugPrint('Preloading avatars - Google avatar: ${provider.googleAvatar.value}');
-      
-      final bool hasSkippedAvatar = provider.avatar.value == "skiped" || provider.avatar.value == "null" || provider.avatar.value.isEmpty;
-      
+      debugPrint(
+        'Preloading avatars - Profile avatar: ${provider.avatar.value}',
+      );
+      debugPrint(
+        'Preloading avatars - Google avatar: ${provider.googleAvatar.value}',
+      );
+
+      final bool hasSkippedAvatar =
+          provider.avatar.value == "skiped" ||
+          provider.avatar.value == "null" ||
+          provider.avatar.value.isEmpty;
+
       // Preload profile avatar if valid
       final profileAvatarUrl = provider.avatar.value;
       if (isValidUrl(profileAvatarUrl)) {
-        precacheImage(CachedNetworkImageProvider(profileAvatarUrl), Get.context!);
-        _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(profileAvatarUrl);
+        precacheImage(
+          CachedNetworkImageProvider(profileAvatarUrl),
+          Get.context!,
+        );
+        _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(
+          profileAvatarUrl,
+        );
         debugPrint('Profile avatar preloaded: $profileAvatarUrl');
       }
-      
+
       // Preload Google avatar if valid
       final googleAvatarUrl = provider.googleAvatar.value;
       if (isValidUrl(googleAvatarUrl)) {
-        precacheImage(CachedNetworkImageProvider(googleAvatarUrl), Get.context!);
-        _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(googleAvatarUrl);
+        precacheImage(
+          CachedNetworkImageProvider(googleAvatarUrl),
+          Get.context!,
+        );
+        _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(
+          googleAvatarUrl,
+        );
         debugPrint('Google avatar preloaded: $googleAvatarUrl');
-        
+
         // CRITICAL FIX: If regular avatar is skiped, ensure the Google avatar is ready
         if (hasSkippedAvatar) {
-          debugPrint('Regular avatar is skiped, ensuring Google avatar is set as fallback');
+          debugPrint(
+            'Regular avatar is skiped, ensuring Google avatar is set as fallback',
+          );
         }
       }
     } catch (e) {
@@ -214,17 +242,17 @@ class AvatarUtils {
     if (selectedImage != null) {
       return false;
     }
-    
+
     // Check if profile avatar is valid
     if (isValidUrl(provider.avatar.value)) {
       return false;
     }
-    
+
     // Check if Google avatar is valid as fallback
     if (isValidUrl(provider.googleAvatar.value)) {
       return false;
     }
-    
+
     // If we reach here, no valid avatar was found - show default icon
     return true;
   }
@@ -238,12 +266,12 @@ class AvatarUtils {
   }) {
     final bgColor = backgroundColor ?? Colors.grey.shade800;
     final avatar = getAvatarImage(selectedImage, provider);
-    
+
     // Log avatar sources for debugging
     debugPrint('Avatar Widget - Profile avatar: ${provider.avatar.value}');
     debugPrint('Avatar Widget - Google avatar: ${provider.googleAvatar.value}');
     debugPrint('Avatar Widget - Has valid avatar: ${avatar != null}');
-    
+
     if (avatar != null) {
       return CircleAvatar(
         radius: radius,
@@ -255,17 +283,13 @@ class AvatarUtils {
       return CircleAvatar(
         radius: radius,
         backgroundColor: bgColor,
-        child: Icon(
-          Icons.person,
-          size: radius * 0.8,
-          color: Colors.white,
-        ),
+        child: Icon(Icons.person, size: radius * 0.8, color: Colors.white),
       );
     }
   }
 
   /// Retrieves the appropriate avatar URL based on whether it's the current user or another user
-  /// 
+  ///
   /// [isCurrentUser] - Whether the avatar is for the current user
   /// [accountDataProvider] - The account data provider instance
   /// [exploreController] - The explore controller instance (only needed if isCurrentUser is false)
@@ -277,12 +301,13 @@ class AvatarUtils {
     if (isCurrentUser) {
       return accountDataProvider.avatar.value;
     } else {
-      return (exploreController?.selectedUserProfile?['avatar'] as String?) ?? '';
+      return (exploreController?.selectedUserProfile?['avatar'] as String?) ??
+          '';
     }
   }
 
   /// Retrieves the appropriate Google avatar URL based on whether it's the current user or another user
-  /// 
+  ///
   /// [isCurrentUser] - Whether the avatar is for the current user
   /// [accountDataProvider] - The account data provider instance
   /// [exploreController] - The explore controller instance (only needed if isCurrentUser is false)
@@ -294,12 +319,14 @@ class AvatarUtils {
     if (isCurrentUser) {
       return accountDataProvider.googleAvatar.value;
     } else {
-      return (exploreController?.selectedUserProfile?['google_avatar'] as String?) ?? '';
+      return (exploreController?.selectedUserProfile?['google_avatar']
+              as String?) ??
+          '';
     }
   }
 
   /// Retrieves both avatar and Google avatar URLs in a single call
-  /// 
+  ///
   /// [isCurrentUser] - Whether the avatar is for the current user
   /// [accountDataProvider] - The account data provider instance
   /// [exploreController] - The explore controller instance (only needed if isCurrentUser is false)
@@ -313,16 +340,63 @@ class AvatarUtils {
     String? customGoogleAvatar,
   }) {
     return {
-      'avatar': customAvatar ?? getAvatarUrl(
-        isCurrentUser: isCurrentUser,
-        accountDataProvider: accountDataProvider,
-        exploreController: exploreController,
-      ),
-      'google_avatar': customGoogleAvatar ?? getGoogleAvatarUrl(
-        isCurrentUser: isCurrentUser,
-        accountDataProvider: accountDataProvider,
-        exploreController: exploreController,
-      ),
+      'avatar':
+          customAvatar ??
+          getAvatarUrl(
+            isCurrentUser: isCurrentUser,
+            accountDataProvider: accountDataProvider,
+            exploreController: exploreController,
+          ),
+      'google_avatar':
+          customGoogleAvatar ??
+          getGoogleAvatarUrl(
+            isCurrentUser: isCurrentUser,
+            accountDataProvider: accountDataProvider,
+            exploreController: exploreController,
+          ),
     };
+  }
+
+  /// Gets the effective avatar URL with proper fallback logic
+  /// Returns the Google avatar if the regular avatar is "skiped" or invalid
+  static String getEffectiveAvatarUrl({
+    required bool isCurrentUser,
+    required AccountDataProvider accountDataProvider,
+    dynamic exploreController,
+    String? customAvatar,
+    String? customGoogleAvatar,
+  }) {
+    final avatarUrl =
+        customAvatar ??
+        getAvatarUrl(
+          isCurrentUser: isCurrentUser,
+          accountDataProvider: accountDataProvider,
+          exploreController: exploreController,
+        );
+
+    final googleAvatarUrl =
+        customGoogleAvatar ??
+        getGoogleAvatarUrl(
+          isCurrentUser: isCurrentUser,
+          accountDataProvider: accountDataProvider,
+          exploreController: exploreController,
+        );
+
+    // Check if avatar is "skiped" or invalid
+    if (avatarUrl == "skiped" ||
+        avatarUrl == "null" ||
+        !isValidUrl(avatarUrl)) {
+      // Use Google avatar as fallback
+      if (isValidUrl(googleAvatarUrl)) {
+        debugPrint('Using Google avatar as fallback: $googleAvatarUrl');
+        return googleAvatarUrl;
+      }
+    } else if (isValidUrl(avatarUrl)) {
+      debugPrint('Using regular avatar: $avatarUrl');
+      return avatarUrl;
+    }
+
+    debugPrint('No valid avatar found, returning empty string');
+    return '';
   }
 }

@@ -8,6 +8,8 @@ import 'package:yapster/app/core/utils/db_cache_service.dart';
 import 'package:yapster/app/core/utils/encryption_service.dart';
 import 'package:yapster/app/core/utils/chat_cache_service.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
+import 'package:yapster/app/startup/preloader/preloader_service.dart';
+import 'package:yapster/app/startup/preloader/cache_manager.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Handles initialization of all application services
@@ -17,9 +19,15 @@ class ServiceInitializer {
     // Initialize storage service first (required by other services)
     await Get.putAsync(() => StorageService().init());
 
+    // Initialize cache manager early for app optimization
+    Get.put(CacheManager(), permanent: true);
+
     // Initialize basic services
     Get.put(ApiService());
     Get.put(AccountDataProvider());
+
+    // Initialize app preloader service
+    Get.put(PreloaderService(), permanent: true);
   }
 
   /// Initialize remaining services after app has started
@@ -90,7 +98,16 @@ class ServiceInitializer {
       // Initialize connectivity monitoring
       setupConnectivityMonitoring();
 
-    debugPrint(
+      // Start app preloading if user is authenticated
+      if (supabaseService.isAuthenticated.value) {
+        final appPreloader = Get.find<PreloaderService>();
+        // Start preloading in background - don't await to avoid blocking
+        appPreloader.preloadApp().catchError((e) {
+          debugPrint('App preloading failed (non-critical): $e');
+        });
+      }
+
+      debugPrint(
         'All remaining services initialized in ${stopwatch.elapsedMilliseconds}ms',
       );
     } catch (e) {

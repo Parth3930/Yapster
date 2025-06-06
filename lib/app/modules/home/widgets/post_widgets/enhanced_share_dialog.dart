@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
+import 'package:yapster/app/modules/chat/controllers/group_controller.dart';
 import 'package:yapster/app/modules/chat/services/chat_message_service.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/data/models/group_model.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 
@@ -24,6 +26,7 @@ class EnhancedShareDialog extends StatefulWidget {
 class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
   late PageController pageController;
   final RxInt currentPage = 0.obs;
+  final RxBool showGroups = false.obs;
 
   @override
   void initState() {
@@ -41,8 +44,17 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
   Widget build(BuildContext context) {
     final ChatController chatController = Get.find<ChatController>();
 
+    // Get or create GroupController
+    GroupController groupController;
+    try {
+      groupController = Get.find<GroupController>();
+    } catch (e) {
+      groupController = GroupController();
+      Get.put(groupController);
+    }
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.4,
+      height: MediaQuery.of(context).size.height * 0.6,
       decoration: BoxDecoration(
         color: Colors.transparent.withValues(alpha: 0.7),
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -85,90 +97,168 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
             ),
           ),
 
-          // Recent chats grid
-          Expanded(
-            child: Obx(() {
-              if (chatController.isLoadingChats.value) {
-                return Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.red[300]!),
-                  ),
-                );
-              }
-
-              if (chatController.recentChats.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.chat_bubble_outline,
-                        color: Colors.grey[600],
-                        size: 64,
-                      ),
-                      SizedBox(height: 16),
-                      Text(
-                        'No recent chats',
-                        style: TextStyle(color: Colors.grey[400], fontSize: 16),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Start a conversation to share posts',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              final totalPages = (chatController.recentChats.length / 8).ceil();
-
-              return Column(
-                children: [
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20),
-                      child: PageView.builder(
-                        controller: pageController,
-                        itemCount: totalPages,
-                        onPageChanged: (page) => currentPage.value = page,
-                        itemBuilder: (context, pageIndex) {
-                          final startIndex = pageIndex * 8;
-                          final endIndex = (startIndex + 8).clamp(
-                            0,
-                            chatController.recentChats.length,
-                          );
-                          final pageChats = chatController.recentChats.sublist(
-                            startIndex,
-                            endIndex,
-                          );
-
-                          return GridView.builder(
-                            physics: NeverScrollableScrollPhysics(),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 4,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 20,
-                                  childAspectRatio: 0.8,
-                                ),
-                            itemCount: pageChats.length,
-                            itemBuilder: (context, index) {
-                              final chat = pageChats[index];
-                              return _buildUserTile(chat);
-                            },
-                          );
-                        },
+          // Toggle between chats and groups
+          Container(
+            margin: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.grey[800],
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Obx(
+                    () => GestureDetector(
+                      onTap: () => showGroups.value = false,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color:
+                              !showGroups.value
+                                  ? Colors.blue
+                                  : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Center(
+                          child: Text(
+                            'Chats',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight:
+                                  !showGroups.value
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
+                ),
+                Expanded(
+                  child: Obx(
+                    () => GestureDetector(
+                      onTap: () => showGroups.value = true,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color:
+                              showGroups.value
+                                  ? Colors.blue
+                                  : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Center(
+                          child: Text(
+                            'Groups',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight:
+                                  showGroups.value
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-                  // Page indicators
-                  if (totalPages > 1)
-                    Padding(
-                      padding: EdgeInsets.only(bottom: 16),
-                      child: Obx(
-                        () => Row(
+          // Content area (chats or groups)
+          Expanded(
+            child: Obx(() {
+              if (showGroups.value) {
+                // Show groups
+                if (groupController.isLoading.value) {
+                  return Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.red[300]!,
+                      ),
+                    ),
+                  );
+                }
+
+                if (groupController.groups.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.group_outlined,
+                          color: Colors.grey[600],
+                          size: 64,
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'No groups',
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 16,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Create a group to share posts',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                // Show groups grid
+                final totalPages = (groupController.groups.length / 8).ceil();
+                return Column(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        child: PageView.builder(
+                          controller: pageController,
+                          itemCount: totalPages,
+                          onPageChanged: (page) => currentPage.value = page,
+                          itemBuilder: (context, pageIndex) {
+                            final startIndex = pageIndex * 8;
+                            final endIndex = (startIndex + 8).clamp(
+                              0,
+                              groupController.groups.length,
+                            );
+                            final pageGroups = groupController.groups.sublist(
+                              startIndex,
+                              endIndex,
+                            );
+
+                            return GridView.builder(
+                              physics: NeverScrollableScrollPhysics(),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 4,
+                                    crossAxisSpacing: 16,
+                                    mainAxisSpacing: 20,
+                                    childAspectRatio: 0.8,
+                                  ),
+                              itemCount: pageGroups.length,
+                              itemBuilder: (context, index) {
+                                final group = pageGroups[index];
+                                return _buildGroupTile(group);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    // Page indicators for groups
+                    if (totalPages > 1)
+                      Padding(
+                        padding: EdgeInsets.only(bottom: 16),
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: List.generate(totalPages, (index) {
                             return Container(
@@ -186,9 +276,119 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
                           }),
                         ),
                       ),
+                  ],
+                );
+              } else {
+                // Show chats
+                if (chatController.isLoadingChats.value) {
+                  return Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.red[300]!,
+                      ),
                     ),
-                ],
-              );
+                  );
+                }
+
+                if (chatController.recentChats.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          color: Colors.grey[600],
+                          size: 64,
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'No recent chats',
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 16,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Start a conversation to share posts',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final totalPages =
+                    (chatController.recentChats.length / 8).ceil();
+
+                return Column(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        child: PageView.builder(
+                          controller: pageController,
+                          itemCount: totalPages,
+                          onPageChanged: (page) => currentPage.value = page,
+                          itemBuilder: (context, pageIndex) {
+                            final startIndex = pageIndex * 8;
+                            final endIndex = (startIndex + 8).clamp(
+                              0,
+                              chatController.recentChats.length,
+                            );
+                            final pageChats = chatController.recentChats
+                                .sublist(startIndex, endIndex);
+
+                            return GridView.builder(
+                              physics: NeverScrollableScrollPhysics(),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 4,
+                                    crossAxisSpacing: 16,
+                                    mainAxisSpacing: 20,
+                                    childAspectRatio: 0.8,
+                                  ),
+                              itemCount: pageChats.length,
+                              itemBuilder: (context, index) {
+                                final chat = pageChats[index];
+                                return _buildUserTile(chat);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+
+                    // Page indicators
+                    if (totalPages > 1)
+                      Padding(
+                        padding: EdgeInsets.only(bottom: 16),
+                        child: Obx(
+                          () => Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(totalPages, (index) {
+                              return Container(
+                                margin: EdgeInsets.symmetric(horizontal: 4),
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color:
+                                      currentPage.value == index
+                                          ? Colors.white
+                                          : Colors.grey[600],
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              }
             }),
           ),
 
@@ -199,28 +399,33 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _buildSocialButton(
-                  assetPath: 'assets/social/share.png',
+                  icon: Icons.share,
                   label: 'Share',
+                  color: Colors.blue,
                   onTap: () => _handleMoreShare(),
                 ),
                 _buildSocialButton(
-                  assetPath: 'assets/social/copy.png',
+                  icon: Icons.content_copy,
                   label: 'Copy',
+                  color: Colors.grey,
                   onTap: () => _handleCopyLink(),
                 ),
                 _buildSocialButton(
-                  assetPath: 'assets/social/whatsapp.png',
+                  icon: Icons.chat,
                   label: 'WhatsApp',
+                  color: Color(0xFF25D366),
                   onTap: () => _handleWhatsAppShare(),
                 ),
                 _buildSocialButton(
-                  assetPath: 'assets/social/instagram.png',
+                  icon: Icons.camera_alt,
                   label: 'Instagram',
+                  color: Color(0xFFE4405F),
                   onTap: () => _handleInstagramShare(),
                 ),
                 _buildSocialButton(
-                  assetPath: 'assets/social/snapchat.png',
+                  icon: Icons.camera,
                   label: 'Snapchat',
+                  color: Color(0xFFFFFC00),
                   onTap: () => _handleSnapchatShare(),
                 ),
               ],
@@ -285,9 +490,11 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
   }
 
   Widget _buildSocialButton({
-    required String assetPath,
+    IconData? icon,
+    String? assetPath,
     required String label,
     required VoidCallback onTap,
+    Color? color,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -296,30 +503,51 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
           Container(
             width: 50,
             height: 50,
-            decoration: BoxDecoration(shape: BoxShape.circle),
-            child: ClipOval(
-              child: Image.asset(
-                assetPath,
-                width: 50,
-                height: 50,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  // Fallback to icon if asset not found
-                  return Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[800],
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.share, color: Colors.white, size: 24),
-                  );
-                },
-              ),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color ?? Colors.grey[800],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
+            child:
+                icon != null
+                    ? Icon(
+                      icon,
+                      color: label == 'Snapchat' ? Colors.black : Colors.white,
+                      size: 24,
+                    )
+                    : assetPath != null
+                    ? ClipOval(
+                      child: Image.asset(
+                        assetPath,
+                        width: 50,
+                        height: 50,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(
+                            Icons.share,
+                            color: Colors.white,
+                            size: 24,
+                          );
+                        },
+                      ),
+                    )
+                    : Icon(Icons.share, color: Colors.white, size: 24),
           ),
           SizedBox(height: 8),
-          Text(label, style: TextStyle(color: Colors.white, fontSize: 12)),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );
@@ -459,5 +687,123 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
     Get.back();
     // Implement Snapchat share
     Get.snackbar('Snapchat', 'Snapchat sharing coming soon');
+  }
+
+  // Share post with specific group
+  Future<void> _shareWithGroup(String groupId, String groupName) async {
+    try {
+      // Close the share dialog
+      Get.back();
+
+      // Get the group controller
+      GroupController groupController;
+      try {
+        groupController = Get.find<GroupController>();
+      } catch (e) {
+        debugPrint('GroupController not found, registering it now');
+        groupController = GroupController();
+        Get.put(groupController);
+      }
+
+      // Create share message with post data for in-app display
+      final shareMessage = {
+        'type': 'shared_post',
+        'post_id': widget.post.id,
+        'author_id': widget.post.userId,
+        'content': widget.post.content,
+        'image_url': widget.post.imageUrl,
+        'video_url': widget.post.metadata['video_url'],
+        'author_username': widget.post.username,
+        'author_nickname': widget.post.nickname,
+        'author_avatar': widget.post.avatar,
+        'created_at': widget.post.createdAt.toIso8601String(),
+      };
+
+      // Convert to JSON string for storage
+      final shareMessageJson = jsonEncode(shareMessage);
+
+      // Send the message to group
+      await groupController.sendGroupMessage(
+        groupId: groupId,
+        content: shareMessageJson,
+        messageType: 'shared_post',
+      );
+
+      // Increment share count only when actually shared to someone
+      try {
+        final postsFeedController = Get.find<PostsFeedController>();
+        await postsFeedController.updatePostEngagement(
+          widget.post.id,
+          'shares',
+          1,
+        );
+      } catch (e) {
+        debugPrint('Error updating share count: $e');
+      }
+
+      // Call completion callback
+      if (widget.onShareComplete != null) {
+        widget.onShareComplete!();
+      }
+
+      // Success notification removed as requested
+    } catch (e) {
+      debugPrint('Error sharing post to group: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to share post to group. Please try again.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  Widget _buildGroupTile(GroupModel group) {
+    return GestureDetector(
+      onTap: () => _shareWithGroup(group.id, group.name),
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.grey[800]!, width: 2),
+            ),
+            child: CircleAvatar(
+              radius: 28,
+              backgroundColor: Colors.black,
+              backgroundImage:
+                  group.iconUrl != null && group.iconUrl!.isNotEmpty
+                      ? NetworkImage(group.iconUrl!)
+                      : null,
+              child:
+                  group.iconUrl == null || group.iconUrl!.isEmpty
+                      ? Text(
+                        'YAP',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                      : null,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            group.name,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
   }
 }
