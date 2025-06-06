@@ -166,30 +166,26 @@ class PostsFeedController extends GetxController {
       if (currentUserId.value.isEmpty) return;
 
       // Load posts from repository
+      debugPrint(
+        'Loading posts for user: ${currentUserId.value}, offset: ${forceRefresh ? 0 : _currentOffset}',
+      );
       final newPosts = await _postRepository.getPostsFeed(
         currentUserId.value,
         limit: _postsPerPage,
         offset: forceRefresh ? 0 : _currentOffset,
       );
+      debugPrint('Loaded ${newPosts.length} posts from repository');
 
       // Fetch likes and favorites for the current user
       final likesResponse = await _supabase.client
           .from('post_likes')
           .select('post_id')
-          .eq('user_id', currentUserId.value)
-          .select('*');
+          .eq('user_id', currentUserId.value);
 
       final favoritesResponse = await _supabase.client
           .from('user_favorites')
           .select('post_id')
-          .eq('user_id', currentUserId.value)
-          .select('*');
-
-      // Check for errors in the response
-      if (likesResponse.isNotEmpty) {
-        debugPrint('Error fetching likes or favorites');
-        return;
-      }
+          .eq('user_id', currentUserId.value);
 
       final likes = likesResponse as List<dynamic>;
       final favorites = favoritesResponse as List<dynamic>;
@@ -207,9 +203,13 @@ class PostsFeedController extends GetxController {
       if (forceRefresh) {
         posts.assignAll(newPosts);
         _currentOffset = newPosts.length;
+        debugPrint('Refreshed posts list with ${newPosts.length} posts');
       } else {
         posts.addAll(newPosts);
         _currentOffset += newPosts.length;
+        debugPrint(
+          'Added ${newPosts.length} posts to existing list. Total: ${posts.length}',
+        );
       }
 
       // Check if there are more posts
@@ -217,6 +217,9 @@ class PostsFeedController extends GetxController {
 
       hasLoadedOnce.value = true;
       _lastPostsLoad = DateTime.now();
+      debugPrint(
+        'Posts loading completed. hasLoadedOnce: ${hasLoadedOnce.value}, total posts: ${posts.length}',
+      );
     } catch (e) {
       debugPrint('Error loading posts: $e');
     } finally {

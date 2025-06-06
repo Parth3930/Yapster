@@ -149,12 +149,55 @@ class PostRepository extends GetxService {
     int offset = 0,
   }) async {
     try {
-      final response = await _supabase.client.rpc(
-        'get_posts_feed',
-        params: {'p_user_id': userId, 'p_limit': limit, 'p_offset': offset},
-      );
+      // Try the database function first
+      try {
+        final response = await _supabase.client.rpc(
+          'get_posts_feed',
+          params: {'p_user_id': userId, 'p_limit': limit, 'p_offset': offset},
+        );
+        return (response as List)
+            .map((post) => PostModel.fromMap(post))
+            .toList();
+      } catch (rpcError) {
+        debugPrint(
+          'RPC function get_posts_feed not found, using fallback query: $rpcError',
+        );
 
-      return (response as List).map((post) => PostModel.fromMap(post)).toList();
+        // Fallback: Direct query with joins
+        final response = await _supabase.client
+            .from('posts')
+            .select('''
+              *,
+              profiles!posts_user_id_fkey(username, nickname, avatar)
+            ''')
+            .eq('is_active', true)
+            .eq('is_deleted', false)
+            .order('created_at', ascending: false)
+            .range(offset, offset + limit - 1);
+
+        final posts = response as List;
+
+        // Transform the data to match PostModel structure
+        final List<PostModel> postModels =
+            posts.map((post) {
+              final postMap = Map<String, dynamic>.from(post);
+
+              // Extract profile data from the join
+              if (postMap['profiles'] != null) {
+                final profile = postMap['profiles'];
+                postMap['username'] = profile['username'];
+                postMap['nickname'] = profile['nickname'];
+                postMap['avatar'] = profile['avatar'];
+              }
+
+              // Remove the profiles key as it's not part of PostModel
+              postMap.remove('profiles');
+
+              return PostModel.fromMap(postMap);
+            }).toList();
+
+        return postModels;
+      }
     } catch (e) {
       debugPrint('Error getting posts feed: $e');
       return [];

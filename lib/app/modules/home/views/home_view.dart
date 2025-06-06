@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
-import 'package:yapster/app/modules/home/controllers/home_controller.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/home/widgets/stories_list_widget.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_widget_factory.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 import 'package:shimmer/shimmer.dart';
 import 'dart:async';
-import 'package:flutter/widgets.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -107,11 +105,22 @@ class _HomeViewState extends State<HomeView> {
                   ),
                   // Stories section
                   const SliverToBoxAdapter(child: StoriesListWidget()),
-                  // Posts Feed
-                  if (controller.posts.isEmpty &&
+                  // Posts Feed - Handle different states
+                  if (controller.isLoading.value &&
+                      !controller.hasLoadedOnce.value)
+                    // Initial loading state
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildShimmerEffect(context),
+                        childCount: 3, // Show 3 shimmer items
+                      ),
+                    )
+                  else if (controller.posts.isEmpty &&
                       controller.hasLoadedOnce.value)
-                    SliverToBoxAdapter(child: _buildEmptyState()),
-                  if (controller.posts.isNotEmpty)
+                    // Empty state - no posts available
+                    SliverToBoxAdapter(child: _buildEmptyState())
+                  else if (controller.posts.isNotEmpty)
+                    // Posts available - show the feed
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
@@ -136,6 +145,21 @@ class _HomeViewState extends State<HomeView> {
                         childCount:
                             controller.posts.length +
                             (controller.hasMorePosts.value ? 1 : 0),
+                      ),
+                    )
+                  else
+                    // Fallback loading state
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: 200,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   // Fix 3: Add bottom padding as a sliver to ensure proper spacing
@@ -165,7 +189,7 @@ class _HomeViewState extends State<HomeView> {
                 showBottomNav
                     ? [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 10,
                         offset: Offset(0, -2),
                       ),
