@@ -420,6 +420,21 @@ class ExploreController extends GetxController {
     }
   }
 
+  /// Fetches post count for a user
+  Future<Map<String, dynamic>> _fetchPostCount(String userId) async {
+    try {
+      final response = await _supabaseService.client
+          .from('posts')
+          .select()
+          .eq('user_id', userId);
+
+      return {'post_count': response.length};
+    } catch (e) {
+      debugPrint('Error fetching post count: $e');
+      return {'post_count': 0};
+    }
+  }
+
   /// Compares two profile maps to check if they're effectively equal
   bool _areProfilesEqual(Map<String, dynamic>? a, Map<String, dynamic>? b) {
     if (a == b) return true;
@@ -492,10 +507,12 @@ class ExploreController extends GetxController {
       final results = await Future.wait([
         _fetchFollowCounts(userId),
         _fetchProfileData(userId),
+        _fetchPostCount(userId),
       ]);
 
       final followCounts = results[0];
       final profileData = results[1];
+      final postCountData = results[2];
 
       debugPrint('✅ _loadFreshProfileData: Fetched data for $userId');
       debugPrint('📥 New banner from API: ${profileData['banner']}');
@@ -547,6 +564,10 @@ class ExploreController extends GetxController {
             followCounts['following_count'] ??
             selectedUserProfile['following_count'] ??
             0,
+        'post_count':
+            postCountData['post_count'] ??
+            selectedUserProfile['post_count'] ??
+            0,
       });
 
       debugPrint('🔄 Created updated profile:');
@@ -554,6 +575,7 @@ class ExploreController extends GetxController {
       debugPrint('   Avatar: ${updatedProfile['avatar']}');
       debugPrint('   Follower count: ${updatedProfile['follower_count']}');
       debugPrint('   Following count: ${updatedProfile['following_count']}');
+      debugPrint('   Post count: ${updatedProfile['post_count']}');
 
       // Check if profiles are different
       debugPrint('\n🔍 Comparing profiles:');

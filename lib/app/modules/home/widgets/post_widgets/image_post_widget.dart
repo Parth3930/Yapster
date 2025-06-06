@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 
@@ -116,24 +117,46 @@ class ImagePostWidget extends StatelessWidget {
                         Icon(Icons.verified, color: Colors.blue, size: 16),
                       ],
                       SizedBox(width: 8),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          'Follow',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
+                      // Only show follow button if this is not the current user's post
+                      if (!_isCurrentUserPost())
+                        Obx(() {
+                          final exploreController =
+                              Get.find<ExploreController>();
+                          final isFollowing = exploreController.isFollowingUser(
+                            post.userId,
+                          );
+
+                          // Don't show follow button if already following
+                          if (isFollowing) {
+                            return SizedBox.shrink();
+                          }
+
+                          return GestureDetector(
+                            onTap: () async {
+                              await exploreController.toggleFollowUser(
+                                post.userId,
+                              );
+                            },
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Text(
+                                'Follow',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
                       Spacer(),
                       Text(
                         _formatTimeAgo(post.createdAt),
@@ -201,7 +224,7 @@ class ImagePostWidget extends StatelessWidget {
     }
   }
 
-  void _navigateToProfile() {
+  void _navigateToProfile() async {
     // Navigate to profile page with user data
     // Ensure ExploreController is available
     ExploreController exploreController;
@@ -213,16 +236,21 @@ class ImagePostWidget extends StatelessWidget {
       Get.put(exploreController);
     }
 
-    // Set the user profile data in the explore controller
-    exploreController.selectedUserProfile.value = {
+    // Create user data object for profile loading
+    final userData = {
       'user_id': post.userId,
       'username': post.username ?? '',
       'nickname': post.nickname ?? '',
       'avatar': post.avatar ?? '',
     };
 
-    // Navigate using the correct route format
-    Get.toNamed('/profile/${post.userId}');
+    // Use the same method as explore to properly load profile data
+    exploreController.openUserProfile(userData);
+  }
+
+  bool _isCurrentUserPost() {
+    final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
+    return currentUserId != null && currentUserId == post.userId;
   }
 
   String _formatTimeAgo(DateTime dateTime) {
