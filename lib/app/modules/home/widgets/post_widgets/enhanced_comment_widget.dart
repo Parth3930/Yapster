@@ -35,46 +35,101 @@ class EnhancedCommentWidget extends StatelessWidget {
         // Main comment
         _buildCommentRow(),
 
-        // Replies section
+        // Replies section with connecting line
         Obx(() {
           final replies = controller.getReplies(comment.id);
           final isExpanded = controller.areRepliesExpanded(comment.id);
 
           if (replies.isEmpty) return SizedBox.shrink();
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          return Stack(
+            clipBehavior: Clip.none,
             children: [
-              // "X Replies" button
-              if (!isExpanded) ...[
-                SizedBox(height: 8),
-                GestureDetector(
-                  onTap: () => controller.toggleRepliesExpanded(comment.id),
-                  child: Padding(
-                    padding: EdgeInsets.only(left: 44),
-                    child: Text(
-                      '${replies.length} ${replies.length == 1 ? 'Reply' : 'Replies'}',
-                      style: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+              // Connecting line from parent profile picture
+              Positioned(
+                left: 16,
+                top: -40,
+                child: Container(
+                  width: 2,
+                  height: isExpanded ? (replies.length * 63.0) : 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[600],
+                    borderRadius: BorderRadius.circular(1),
                   ),
                 ),
-              ],
+              ),
 
-              // Expanded replies
-              if (isExpanded) ...[
-                SizedBox(height: 8),
-                ...replies.map(
-                  (reply) => EnhancedCommentWidget(
-                    comment: reply,
-                    controller: controller,
-                    isReply: true,
-                  ),
-                ),
-              ],
+              // Content
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // "X Replies" button
+                  if (!isExpanded) ...[
+                    SizedBox(height: 8),
+                    Row(
+                      children: [
+                        SizedBox(width: 16),
+                        Container(
+                          width: 12,
+                          height: 2,
+                          margin: EdgeInsets.only(right: 8, top: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[600],
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap:
+                              () =>
+                                  controller.toggleRepliesExpanded(comment.id),
+                          child: Text(
+                            '${replies.length} ${replies.length == 1 ? 'Reply' : 'Replies'}',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  // Expanded replies
+                  if (isExpanded) ...[
+                    SizedBox(height: 8),
+                    ...replies.map((reply) {
+                      return Stack(
+                        children: [
+                          // Horizontal connecting line to reply profile picture
+                          Positioned(
+                            left: 16,
+                            top: 14,
+                            child: Container(
+                              width: 50,
+                              height: 2,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[600],
+                                borderRadius: BorderRadius.circular(1),
+                              ),
+                            ),
+                          ),
+
+                          // Reply widget
+                          Container(
+                            margin: EdgeInsets.only(left: 44),
+                            child: EnhancedCommentWidget(
+                              comment: reply,
+                              controller: controller,
+                              isReply: true,
+                            ),
+                          ),
+                        ],
+                      );
+                    }),
+                  ],
+                ],
+              ),
             ],
           );
         }),
@@ -84,25 +139,8 @@ class EnhancedCommentWidget extends StatelessWidget {
 
   Widget _buildReplyComment() {
     return Container(
-      margin: EdgeInsets.only(left: 44, bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Connecting line
-          Container(
-            width: 2,
-            height: 40,
-            margin: EdgeInsets.only(right: 12, top: 4),
-            decoration: BoxDecoration(
-              color: Colors.grey[600],
-              borderRadius: BorderRadius.circular(1),
-            ),
-          ),
-
-          // Reply content
-          Expanded(child: _buildCommentRow()),
-        ],
-      ),
+      margin: EdgeInsets.only(bottom: 12),
+      child: _buildCommentRow(),
     );
   }
 
