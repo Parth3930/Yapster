@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
-
-import 'package:yapster/app/modules/home/widgets/post_widgets/base_post_widget.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 
 /// Widget for displaying image posts
 class ImagePostWidget extends StatelessWidget {
@@ -37,40 +35,43 @@ class ImagePostWidget extends StatelessWidget {
                 GestureDetector(
                   onTap:
                       () => _showImageFullscreen(context, post.imageUrl ?? ''),
-                  child: Image.network(
-                    post.imageUrl ?? '',
-                    fit: BoxFit.fitWidth,
-                    width: double.infinity,
-                    errorBuilder:
-                        (context, error, stackTrace) => Container(
+                  child: SizedBox(
+                    height: 500,
+                    child: Image.network(
+                      post.imageUrl ?? '',
+                      fit: BoxFit.fitWidth,
+                      width: double.infinity,
+                      errorBuilder:
+                          (context, error, stackTrace) => Container(
+                            color: Colors.grey[800],
+                            child: Center(
+                              child: Icon(
+                                Icons.broken_image,
+                                color: Colors.grey[600],
+                                size: 48,
+                              ),
+                            ),
+                          ),
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
                           color: Colors.grey[800],
                           child: Center(
-                            child: Icon(
-                              Icons.broken_image,
-                              color: Colors.grey[600],
-                              size: 48,
+                            child: CircularProgressIndicator(
+                              value:
+                                  loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
                             ),
                           ),
-                        ),
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        color: Colors.grey[800],
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            value:
-                                loadingProgress.expectedTotalBytes != null
-                                    ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
-                                    : null,
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
                 // User info bar (top left)
@@ -166,7 +167,7 @@ class ImagePostWidget extends StatelessWidget {
                       horizontal: 12,
                       vertical: 10,
                     ),
-                    child: CustomEngagementBar(
+                    child: PostInteractionButtons(
                       post: post,
                       controller: controller,
                       glassy: true,
@@ -176,39 +177,6 @@ class ImagePostWidget extends StatelessWidget {
               ],
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassyIconButton({
-    required String assetPath,
-    required VoidCallback onTap,
-  }) {
-    return ClipOval(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.28),
-            shape: BoxShape.circle,
-          ),
-          padding: const EdgeInsets.all(8),
-          child: Image.asset(assetPath, width: 25, height: 25),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassyPill(List<Widget> children) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          color: Colors.white.withOpacity(0.28),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(mainAxisSize: MainAxisSize.min, children: children),
         ),
       ),
     );

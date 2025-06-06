@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'base_post_widget.dart';
+import 'post_interaction_buttons.dart';
 
 /// Widget for displaying text-only posts
 class TextPostWidget extends BasePostWidget {
@@ -28,7 +29,7 @@ class TextPostWidget extends BasePostWidget {
           SizedBox(height: 12),
           buildPostContent(),
           SizedBox(height: 12),
-          CustomEngagementBar(
+          PostInteractionButtons(
             post: post,
             controller: controller,
             glassy: false,

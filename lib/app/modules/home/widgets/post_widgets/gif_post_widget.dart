@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 import 'base_post_widget.dart';
 
 /// Widget for displaying GIF posts
@@ -118,7 +119,7 @@ class GifPostWidget extends BasePostWidget {
             children: [
               Container(
                 width: double.infinity,
-                constraints: BoxConstraints(maxHeight: 300, minHeight: 200),
+                constraints: BoxConstraints(maxHeight: 500, minHeight: 200),
                 child: Image.network(
                   gifUrl,
                   fit: BoxFit.cover,
@@ -234,7 +235,7 @@ class GifPostWidget extends BasePostWidget {
                     horizontal: 12,
                     vertical: 10,
                   ),
-                  child: CustomEngagementBar(
+                  child: PostInteractionButtons(
                     post: post,
                     controller: controller,
                     glassy: true,

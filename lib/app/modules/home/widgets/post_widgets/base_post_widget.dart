@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
-import 'image_post_widget.dart'; // For access to the custom engagement bar builder
-import 'dart:ui';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 
 /// Base widget that contains common post elements like header, footer, and engagement buttons
 abstract class BasePostWidget extends StatelessWidget {
@@ -33,7 +32,11 @@ abstract class BasePostWidget extends StatelessWidget {
           SizedBox(height: 12),
           buildPostContent(), // Abstract method for specific content
           SizedBox(height: 12),
-          CustomEngagementBar(post: post, controller: controller),
+          PostInteractionButtons(
+            post: post,
+            controller: controller,
+            glassy: true,
+          ),
         ],
       ),
     );
@@ -127,125 +130,5 @@ abstract class BasePostWidget extends StatelessWidget {
     } else {
       return 'now';
     }
-  }
-}
-
-class CustomEngagementBar extends StatelessWidget {
-  final dynamic post;
-  final dynamic controller;
-  final bool glassy;
-  const CustomEngagementBar({
-    Key? key,
-    required this.post,
-    required this.controller,
-    this.glassy = true,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final iconsRow = [
-      _buildIconWithText(
-        assetPath: 'assets/postIcons/like_active.png',
-        text: post.likesCount.toString(),
-        onTap: () => controller.updatePostEngagement(post.id, 'likes', 1),
-      ),
-      SizedBox(width: 16),
-      _buildIconWithText(
-        assetPath: 'assets/postIcons/comment.png',
-        text: post.commentsCount.toString(),
-        onTap: () {},
-      ),
-      SizedBox(width: 16),
-      _buildIconWithText(
-        assetPath: 'assets/postIcons/send.png',
-        text: post.sharesCount.toString(),
-        onTap: () => controller.updatePostEngagement(post.id, 'shares', 1),
-      ),
-    ];
-    return Row(
-      children: [
-        glassy ? _buildGlassyPill(iconsRow) : Row(children: iconsRow),
-        Spacer(),
-        glassy
-            ? _buildGlassyIconButton(
-              assetPath: 'assets/postIcons/star.png',
-              onTap: () {},
-            )
-            : _buildIconButton(
-              assetPath: 'assets/postIcons/star.png',
-              onTap: () {},
-            ),
-      ],
-    );
-  }
-
-  Widget _buildGlassyIconButton({
-    required String assetPath,
-    required VoidCallback onTap,
-  }) {
-    return ClipOval(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.28),
-            shape: BoxShape.circle,
-          ),
-          padding: const EdgeInsets.all(8),
-          child: Image.asset(assetPath, width: 25, height: 25),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIconButton({
-    required String assetPath,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        child: Image.asset(assetPath, width: 25, height: 25),
-      ),
-    );
-  }
-
-  Widget _buildGlassyPill(List<Widget> children) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          color: Colors.white.withOpacity(0.28),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(mainAxisSize: MainAxisSize.min, children: children),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIconWithText({
-    required String assetPath,
-    required String text,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        children: [
-          Image.asset(assetPath, width: 25, height: 25),
-          SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

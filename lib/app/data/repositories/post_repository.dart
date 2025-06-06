@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -45,7 +46,7 @@ class PostRepository extends GetxService {
 
       return publicUrl;
     } catch (e) {
-      print('Error uploading post image: $e');
+      debugPrint('Error uploading post image: $e');
       return null;
     }
   }
@@ -81,7 +82,7 @@ class PostRepository extends GetxService {
     try {
       // Validate user_id is not empty
       if (post.userId.isEmpty) {
-        print('Error: user_id is null or empty');
+        debugPrint('Error: user_id is null or empty');
         return null;
       }
 
@@ -89,7 +90,7 @@ class PostRepository extends GetxService {
       final postData = post.toMap();
       postData.remove('id'); // Remove ID so database generates it
 
-      print('Creating post with data: $postData');
+      debugPrint('Creating post with data: $postData');
 
       final response =
           await _supabase.client
@@ -99,7 +100,7 @@ class PostRepository extends GetxService {
               .single();
 
       final postId = response['id'] as String;
-      print('Post created successfully with ID: $postId');
+      debugPrint('Post created successfully with ID: $postId');
 
       // Upload images if any
       if (imageFiles.isNotEmpty) {
@@ -125,13 +126,13 @@ class PostRepository extends GetxService {
               .update(updateData)
               .eq('id', postId);
 
-          print('Post updated with ${imageUrls.length} images');
+          debugPrint('Post updated with ${imageUrls.length} images');
         }
       }
 
       return postId;
     } catch (e) {
-      print('Error creating post: $e');
+      debugPrint('Error creating post: $e');
       return null;
     }
   }
@@ -155,20 +156,25 @@ class PostRepository extends GetxService {
 
       return (response as List).map((post) => PostModel.fromMap(post)).toList();
     } catch (e) {
-      print('Error getting posts feed: $e');
+      debugPrint('Error getting posts feed: $e');
       return [];
     }
   }
 
-  /// Get user's own posts
-  Future<List<PostModel>> getUserPosts(String userId) async {
+  /// Get user's own posts with pagination support
+  Future<List<PostModel>> getUserPosts(
+    String userId, {
+    int limit = 20,
+    int offset = 0,
+  }) async {
     try {
-      // First get the posts
+      // First get the posts with pagination
       final response = await _supabase.client
           .from('posts')
           .select('*')
           .eq('user_id', userId)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
 
       final posts = response as List;
 
@@ -196,7 +202,7 @@ class PostRepository extends GetxService {
 
       return postModels;
     } catch (e) {
-      print('Error getting user posts: $e');
+      debugPrint('Error getting user posts: $e');
       return [];
     }
   }
@@ -211,7 +217,7 @@ class PostRepository extends GetxService {
           .eq('user_id', userId);
       return true;
     } catch (e) {
-      print('Error deleting post: $e');
+      debugPrint('Error deleting post: $e');
       return false;
     }
   }
@@ -236,7 +242,18 @@ class PostRepository extends GetxService {
 
       return true;
     } catch (e) {
-      print('Error updating post engagement: $e');
+      debugPrint('Error updating post engagement: $e');
+      return false;
+    }
+  }
+
+  /// Update a post
+  Future<bool> updatePost(String postId, Map<String, dynamic> updates) async {
+    try {
+      await _supabase.client.from('posts').update(updates).eq('id', postId);
+      return true;
+    } catch (e) {
+      debugPrint('Error updating post: $e');
       return false;
     }
   }

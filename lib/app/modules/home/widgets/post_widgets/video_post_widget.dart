@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 import 'base_post_widget.dart';
 
 /// Widget for displaying video posts
@@ -96,7 +97,7 @@ class VideoPostWidget extends BasePostWidget {
               // Video thumbnail or placeholder
               Container(
                 width: double.infinity,
-                height: 250,
+                height: 500,
                 color: Colors.grey[800],
                 child:
                     thumbnailUrl != null && thumbnailUrl.isNotEmpty
@@ -221,7 +222,7 @@ class VideoPostWidget extends BasePostWidget {
                     horizontal: 12,
                     vertical: 10,
                   ),
-                  child: CustomEngagementBar(
+                  child: PostInteractionButtons(
                     post: post,
                     controller: controller,
                     glassy: true,

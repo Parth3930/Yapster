@@ -16,6 +16,6 @@ class HomeBinding extends Bindings {
     Get.put<StoriesHomeController>(StoriesHomeController(), permanent: true);
     Get.put<PostsFeedController>(PostsFeedController(), permanent: true);
     Get.lazyPut<CreatePostController>(() => CreatePostController());
-    Get.lazyPut(() => ChatController());
+    Get.lazyPut(() => ChatController(), fenix: true);
   }
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -57,7 +58,7 @@ class PostsFeedController extends GetxController {
               schema: 'public',
               table: 'posts',
               callback: (payload) {
-                print('New post inserted: ${payload.newRecord}');
+                debugPrint('New post inserted: ${payload.newRecord}');
                 _handleNewPost(payload.newRecord);
               },
             )
@@ -66,7 +67,7 @@ class PostsFeedController extends GetxController {
               schema: 'public',
               table: 'posts',
               callback: (payload) {
-                print('Post updated: ${payload.newRecord}');
+                debugPrint('Post updated: ${payload.newRecord}');
                 _handlePostUpdate(payload.newRecord);
               },
             )
@@ -75,7 +76,7 @@ class PostsFeedController extends GetxController {
               schema: 'public',
               table: 'posts',
               callback: (payload) {
-                print('Post deleted: ${payload.oldRecord}');
+                debugPrint('Post deleted: ${payload.oldRecord}');
                 _handlePostDelete(payload.oldRecord);
               },
             )
@@ -102,7 +103,7 @@ class PostsFeedController extends GetxController {
         }
       }
     } catch (e) {
-      print('Error handling new post: $e');
+      debugPrint('Error handling new post: $e');
     }
   }
 
@@ -124,7 +125,7 @@ class PostsFeedController extends GetxController {
         }
       }
     } catch (e) {
-      print('Error handling post update: $e');
+      debugPrint('Error handling post update: $e');
     }
   }
 
@@ -139,7 +140,7 @@ class PostsFeedController extends GetxController {
         _currentOffset--;
       }
     } catch (e) {
-      print('Error handling post delete: $e');
+      debugPrint('Error handling post delete: $e');
     }
   }
 
@@ -150,7 +151,7 @@ class PostsFeedController extends GetxController {
       if (!forceRefresh && _lastPostsLoad != null && hasLoadedOnce.value) {
         final timeSinceLastLoad = DateTime.now().difference(_lastPostsLoad!);
         if (timeSinceLastLoad < _postsCacheDuration) {
-          print('Using cached posts data');
+          debugPrint('Using cached posts data');
           return;
         }
       }
@@ -171,6 +172,38 @@ class PostsFeedController extends GetxController {
         offset: forceRefresh ? 0 : _currentOffset,
       );
 
+      // Fetch likes and favorites for the current user
+      final likesResponse = await _supabase.client
+          .from('post_likes')
+          .select('post_id')
+          .eq('user_id', currentUserId.value)
+          .select('*');
+
+      final favoritesResponse = await _supabase.client
+          .from('user_favorites')
+          .select('post_id')
+          .eq('user_id', currentUserId.value)
+          .select('*');
+
+      // Check for errors in the response
+      if (likesResponse.isNotEmpty) {
+        debugPrint('Error fetching likes or favorites');
+        return;
+      }
+
+      final likes = likesResponse as List<dynamic>;
+      final favorites = favoritesResponse as List<dynamic>;
+
+      // Update posts with like and favorite status
+      for (var post in newPosts) {
+        post.metadata['isLiked'] = likes.any(
+          (like) => like['post_id'] == post.id,
+        );
+        post.metadata['isFavorited'] = favorites.any(
+          (favorite) => favorite['post_id'] == post.id,
+        );
+      }
+
       if (forceRefresh) {
         posts.assignAll(newPosts);
         _currentOffset = newPosts.length;
@@ -185,7 +218,7 @@ class PostsFeedController extends GetxController {
       hasLoadedOnce.value = true;
       _lastPostsLoad = DateTime.now();
     } catch (e) {
-      print('Error loading posts: $e');
+      debugPrint('Error loading posts: $e');
     } finally {
       isLoading.value = false;
     }
@@ -214,7 +247,7 @@ class PostsFeedController extends GetxController {
       // Check if there are more posts
       hasMorePosts.value = newPosts.length == _postsPerPage;
     } catch (e) {
-      print('Error loading more posts: $e');
+      debugPrint('Error loading more posts: $e');
     } finally {
       isLoadingMore.value = false;
     }
@@ -283,9 +316,105 @@ class PostsFeedController extends GetxController {
         }
 
         posts[postIndex] = updatedPost;
+
+        // Force UI update
+        posts.refresh();
       }
     } catch (e) {
-      print('Error updating post engagement: $e');
+      debugPrint('Error updating post engagement: $e');
+    }
+  }
+
+  /// Toggle post like status
+  Future<void> togglePostLike(String postId) async {
+    final postIndex = posts.indexWhere((post) => post.id == postId);
+    if (postIndex != -1) {
+      final post = posts[postIndex];
+      final isCurrentlyLiked = post.metadata['isLiked'] == true;
+
+      // Update metadata
+      final updatedMetadata = Map<String, dynamic>.from(post.metadata);
+      updatedMetadata['isLiked'] = !isCurrentlyLiked;
+
+      // Update post with new metadata and like count
+      final updatedPost = post.copyWith(
+        metadata: updatedMetadata,
+        likesCount: post.likesCount + (isCurrentlyLiked ? -1 : 1),
+      );
+
+      posts[postIndex] = updatedPost;
+
+      // Update in database
+      final userId = _supabase.client.auth.currentUser?.id;
+      if (userId != null) {
+        try {
+          if (!isCurrentlyLiked) {
+            // Add to post_likes
+            await _supabase.client.from('post_likes').upsert({
+              'user_id': userId,
+              'post_id': postId,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          } else {
+            // Remove from post_likes
+            await _supabase.client
+                .from('post_likes')
+                .delete()
+                .eq('user_id', userId)
+                .eq('post_id', postId);
+          }
+        } catch (e) {
+          debugPrint('Error updating likes in database: $e');
+        }
+      }
+
+      // Force UI update
+      posts.refresh();
+    }
+  }
+
+  /// Toggle post favorite status
+  Future<void> togglePostFavorite(String postId) async {
+    final postIndex = posts.indexWhere((post) => post.id == postId);
+    if (postIndex != -1) {
+      final post = posts[postIndex];
+      final isCurrentlyFavorited = post.metadata['isFavorited'] == true;
+
+      // Update metadata
+      final updatedMetadata = Map<String, dynamic>.from(post.metadata);
+      updatedMetadata['isFavorited'] = !isCurrentlyFavorited;
+
+      // Update post with new metadata
+      final updatedPost = post.copyWith(metadata: updatedMetadata);
+
+      posts[postIndex] = updatedPost;
+
+      // Update in database - store in user_favorites table
+      final userId = _supabase.client.auth.currentUser?.id;
+      if (userId != null) {
+        try {
+          if (!isCurrentlyFavorited) {
+            // Add to user_favorites
+            await _supabase.client.from('user_favorites').upsert({
+              'user_id': userId,
+              'post_id': postId,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          } else {
+            // Remove from user_favorites
+            await _supabase.client
+                .from('user_favorites')
+                .delete()
+                .eq('user_id', userId)
+                .eq('post_id', postId);
+          }
+        } catch (e) {
+          debugPrint('Error updating favorites in database: $e');
+        }
+      }
+
+      // Force UI update
+      posts.refresh();
     }
   }
 

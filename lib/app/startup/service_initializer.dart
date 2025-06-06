@@ -90,7 +90,7 @@ class ServiceInitializer {
       // Initialize connectivity monitoring
       setupConnectivityMonitoring();
 
-      debugPrint(
+    debugPrint(
         'All remaining services initialized in ${stopwatch.elapsedMilliseconds}ms',
       );
     } catch (e) {
