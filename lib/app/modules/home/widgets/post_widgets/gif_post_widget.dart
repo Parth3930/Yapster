@@ -86,7 +86,7 @@ class GifPostWidget extends BasePostWidget {
   }
 
   Widget _buildGifContent() {
-    final gifUrl = post.gifUrl ?? post.metadata['gif_url'];
+    final gifUrl = post.gifUrl ?? _getMetadataValue(post.metadata, 'gif_url');
 
     if (gifUrl == null || gifUrl.isEmpty) {
       return Container(
@@ -288,7 +288,7 @@ class GifPostWidget extends BasePostWidget {
                         ),
                       ),
                       SizedBox(width: 4),
-                      if (post.metadata['verified'] == true)
+                      if (_getMetadataValue(post.metadata, 'verified') == true)
                         Icon(Icons.verified, color: Colors.blue, size: 16),
                       SizedBox(width: 8),
                       // Only show follow button if this is not the current user's post
@@ -386,6 +386,17 @@ class GifPostWidget extends BasePostWidget {
       return '${difference.inMinutes}m ago';
     } else {
       return 'now';
+    }
+  }
+
+  // Helper method to safely access metadata values
+  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+    try {
+      return metadata[key];
+    } catch (e) {
+      // If there's any type casting issue, return null
+      debugPrint('Error accessing metadata key "$key": $e');
+      return null;
     }
   }
 }

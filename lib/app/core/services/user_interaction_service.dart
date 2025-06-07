@@ -7,8 +7,8 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 
 /// Service for tracking user interactions and learning preferences
 class UserInteractionService extends GetxService {
-  final SupabaseService _supabase = Get.find<SupabaseService>();
-  final StorageService _storage = Get.find<StorageService>();
+  SupabaseService get _supabase => Get.find<SupabaseService>();
+  StorageService get _storage => Get.find<StorageService>();
 
   // Local cache for user preferences
   final Map<String, dynamic> _userPreferences = {};
@@ -95,11 +95,10 @@ class UserInteractionService extends GetxService {
     _updateContentTypePreference(postType, weight);
     _updateAuthorPreference(authorId, weight);
 
-    await _trackInteractionInDatabase(postId, isLike ? 'like' : 'unlike', {
-      'post_type': postType,
-      'author_id': authorId,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
+    // Note: The database interaction is now handled by the toggle_post_like function
+    // This method only updates local preferences for the recommendation algorithm
+    // The actual database interaction (user_interactions table) is managed atomically
+    // by the SQL function to ensure consistency
 
     await _saveUserPreferences();
   }
@@ -241,9 +240,25 @@ class UserInteractionService extends GetxService {
 
   /// Get detailed interaction patterns
   Map<String, dynamic> _getInteractionPatterns() {
-    final contentTypes =
-        _userPreferences['content_types'] as Map<String, dynamic>? ?? {};
-    final authors = _userPreferences['authors'] as Map<String, dynamic>? ?? {};
+    // Safe type casting for content types
+    Map<String, dynamic> contentTypes = {};
+    if (_userPreferences['content_types'] is Map<String, dynamic>) {
+      contentTypes = _userPreferences['content_types'] as Map<String, dynamic>;
+    } else if (_userPreferences['content_types'] is Map) {
+      (_userPreferences['content_types'] as Map).forEach((key, value) {
+        contentTypes[key.toString()] = value;
+      });
+    }
+
+    // Safe type casting for authors
+    Map<String, dynamic> authors = {};
+    if (_userPreferences['authors'] is Map<String, dynamic>) {
+      authors = _userPreferences['authors'] as Map<String, dynamic>;
+    } else if (_userPreferences['authors'] is Map) {
+      (_userPreferences['authors'] as Map).forEach((key, value) {
+        authors[key.toString()] = value;
+      });
+    }
 
     // Categorize preferences
     final strongContentPreferences = <String>[];

@@ -124,8 +124,14 @@ class PostScoringAlgorithm {
     final userPreferences = _interactionService.getUserPreferencesSummary();
 
     // Boost posts from authors user frequently likes (not just views)
-    final authorInteractions =
-        userPreferences['authors'] as Map<String, dynamic>? ?? {};
+    Map<String, dynamic> authorInteractions = {};
+    if (userPreferences['authors'] is Map<String, dynamic>) {
+      authorInteractions = userPreferences['authors'] as Map<String, dynamic>;
+    } else if (userPreferences['authors'] is Map) {
+      (userPreferences['authors'] as Map).forEach((key, value) {
+        authorInteractions[key.toString()] = value;
+      });
+    }
     final authorScore = authorInteractions[post.userId] ?? 0.0;
     if (authorScore > 2.0) {
       personalizedScore += 15.0; // Significant boost for liked authors
@@ -136,8 +142,14 @@ class PostScoringAlgorithm {
     }
 
     // Content type affinity boost
-    final contentTypes =
-        userPreferences['content_types'] as Map<String, dynamic>? ?? {};
+    Map<String, dynamic> contentTypes = {};
+    if (userPreferences['content_types'] is Map<String, dynamic>) {
+      contentTypes = userPreferences['content_types'] as Map<String, dynamic>;
+    } else if (userPreferences['content_types'] is Map) {
+      (userPreferences['content_types'] as Map).forEach((key, value) {
+        contentTypes[key.toString()] = value;
+      });
+    }
     final contentScore = contentTypes[post.postType] ?? 0.0;
     if (contentScore > 2.0) {
       personalizedScore += 12.0; // Strong preference for this content type

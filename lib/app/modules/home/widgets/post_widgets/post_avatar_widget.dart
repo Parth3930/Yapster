@@ -30,7 +30,7 @@ class PostAvatarWidget extends StatelessWidget {
           imageUrl: avatarUrl,
           width: radius * 2,
           height: radius * 2,
-          fit: BoxFit.contain,
+          fit: BoxFit.cover,
           // Remove fade animation and placeholder for instant display
           fadeInDuration: Duration.zero,
           fadeOutDuration: Duration.zero,
@@ -56,20 +56,37 @@ class PostAvatarWidget extends StatelessWidget {
 
   /// Get the best available avatar URL with proper fallback logic
   String? _getBestAvatarUrl() {
-    // First check if we have a regular avatar that's not "skiped"
+    // Debug: Log the current state of user data for this post
+    debugPrint(
+      'PostAvatar Debug - Post ID: ${post.id}, UserID: ${post.userId}',
+    );
+    debugPrint('  - avatar: ${post.avatar}');
+    debugPrint('  - googleAvatar: ${post.googleAvatar}');
+    debugPrint('  - username: ${post.username}');
+    debugPrint('  - nickname: ${post.nickname}');
+
+    // First check if we have a regular avatar that's not "skiped" or "null"
     if (post.avatar != null &&
         post.avatar!.isNotEmpty &&
         post.avatar != "skiped" &&
         post.avatar != "null") {
+      debugPrint('  - Using regular avatar: ${post.avatar}');
       return post.avatar;
     }
 
-    // If avatar is "skiped" or empty, use google_avatar from PostModel
-    if (post.googleAvatar != null &&
-        post.googleAvatar!.isNotEmpty &&
-        post.googleAvatar != "skiped" &&
-        post.googleAvatar != "null") {
-      return post.googleAvatar;
+    // SPECIFIC CHECK: If avatar == 'skiped', use google_avatar as fallback
+    if (post.avatar == "skiped" ||
+        post.avatar == null ||
+        post.avatar!.isEmpty) {
+      if (post.googleAvatar != null &&
+          post.googleAvatar!.isNotEmpty &&
+          post.googleAvatar != "skiped" &&
+          post.googleAvatar != "null") {
+        debugPrint(
+          '  - Avatar is skiped/empty, using google avatar: ${post.googleAvatar}',
+        );
+        return post.googleAvatar;
+      }
     }
 
     // Fallback: try to get google_avatar from metadata
@@ -79,6 +96,7 @@ class PostAvatarWidget extends StatelessWidget {
           googleAvatar.toString().isNotEmpty &&
           googleAvatar != "skiped" &&
           googleAvatar != "null") {
+        debugPrint('  - Using google avatar from metadata: $googleAvatar');
         return googleAvatar.toString();
       }
     }
@@ -93,11 +111,16 @@ class PostAvatarWidget extends StatelessWidget {
             googleAvatar.toString().isNotEmpty &&
             googleAvatar != "skiped" &&
             googleAvatar != "null") {
+          debugPrint(
+            '  - Using google avatar from profile_data: $googleAvatar',
+          );
           return googleAvatar.toString();
         }
       }
     }
 
+    // No avatar found - this indicates missing user data
+    debugPrint('  - NO AVATAR FOUND - falling back to default icon');
     return null;
   }
 }

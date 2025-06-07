@@ -6,29 +6,27 @@ import 'package:flutter/foundation.dart';
 
 class StorageService extends GetxService {
   late final SharedPreferences _prefs;
-  
+
   // In-memory cache for frequently accessed values
   final Map<String, dynamic> _cache = {};
-  
+
   // Keys that store sensitive data - use encryption for these
-  final List<String> _sensitiveKeys = [
-    AppConstants.tokenKey,
-  ];
+  final List<String> _sensitiveKeys = [AppConstants.tokenKey];
 
   Future<StorageService> init() async {
     try {
       _prefs = await SharedPreferences.getInstance();
-      
+
       // Preload frequently used values into memory
       _preCache();
-      
+
       return this;
     } catch (e) {
       debugPrint('Error initializing StorageService: $e');
       rethrow;
     }
   }
-  
+
   // Preload commonly used values into memory cache
   void _preCache() {
     try {
@@ -36,11 +34,11 @@ class StorageService extends GetxService {
       if (_prefs.containsKey(AppConstants.userDataKey)) {
         _cache[AppConstants.userDataKey] = getObject(AppConstants.userDataKey);
       }
-      
+
       if (_prefs.containsKey(AppConstants.tokenKey)) {
         _cache[AppConstants.tokenKey] = getString(AppConstants.tokenKey);
       }
-      
+
       if (_prefs.containsKey(AppConstants.themeKey)) {
         _cache[AppConstants.themeKey] = getString(AppConstants.themeKey);
       }
@@ -54,29 +52,29 @@ class StorageService extends GetxService {
     // This is a simple XOR encryption - for production, use proper encryption
     final key = AppConstants.encryptionKey;
     final result = <int>[];
-    
+
     for (var i = 0; i < value.length; i++) {
       final c = value.codeUnitAt(i);
       final k = key.codeUnitAt(i % key.length);
       result.add(c ^ k);
     }
-    
+
     return base64.encode(result);
   }
-  
+
   // Decrypt sensitive data
   String _decrypt(String encrypted) {
     try {
       final decoded = base64.decode(encrypted);
       final key = AppConstants.encryptionKey;
       final result = <int>[];
-      
+
       for (var i = 0; i < decoded.length; i++) {
         final c = decoded[i];
         final k = key.codeUnitAt(i % key.length);
         result.add(c ^ k);
       }
-      
+
       return String.fromCharCodes(result);
     } catch (e) {
       debugPrint('Error decrypting value: $e');
@@ -89,10 +87,11 @@ class StorageService extends GetxService {
     try {
       // Update memory cache
       _cache[key] = value;
-      
+
       // Encrypt sensitive values
-      final valueToStore = _sensitiveKeys.contains(key) ? _encrypt(value) : value;
-      
+      final valueToStore =
+          _sensitiveKeys.contains(key) ? _encrypt(value) : value;
+
       return await _prefs.setString(key, valueToStore);
     } catch (e) {
       debugPrint('Error saving string: $e');
@@ -107,10 +106,10 @@ class StorageService extends GetxService {
       if (_cache.containsKey(key)) {
         return _cache[key] as String?;
       }
-      
+
       // Not in cache, read from storage
       final value = _prefs.getString(key);
-      
+
       // Decrypt if sensitive
       if (value != null && _sensitiveKeys.contains(key)) {
         final decrypted = _decrypt(value);
@@ -118,12 +117,12 @@ class StorageService extends GetxService {
         _cache[key] = decrypted;
         return decrypted;
       }
-      
+
       // Update cache
       if (value != null) {
         _cache[key] = value;
       }
-      
+
       return value;
     } catch (e) {
       debugPrint('Error getting string: $e');
@@ -136,7 +135,7 @@ class StorageService extends GetxService {
     try {
       // Update memory cache
       _cache[key] = value;
-      
+
       return await _prefs.setBool(key, value);
     } catch (e) {
       debugPrint('Error saving boolean: $e');
@@ -151,15 +150,15 @@ class StorageService extends GetxService {
       if (_cache.containsKey(key)) {
         return _cache[key] as bool?;
       }
-      
+
       // Not in cache, read from storage
       final value = _prefs.getBool(key);
-      
+
       // Update cache
       if (value != null) {
         _cache[key] = value;
       }
-      
+
       return value;
     } catch (e) {
       debugPrint('Error getting boolean: $e');
@@ -172,7 +171,7 @@ class StorageService extends GetxService {
     try {
       // Update memory cache
       _cache[key] = value;
-      
+
       return await _prefs.setInt(key, value);
     } catch (e) {
       debugPrint('Error saving int: $e');
@@ -187,15 +186,15 @@ class StorageService extends GetxService {
       if (_cache.containsKey(key)) {
         return _cache[key] as int?;
       }
-      
+
       // Not in cache, read from storage
       final value = _prefs.getInt(key);
-      
+
       // Update cache
       if (value != null) {
         _cache[key] = value;
       }
-      
+
       return value;
     } catch (e) {
       debugPrint('Error getting int: $e');
@@ -208,7 +207,7 @@ class StorageService extends GetxService {
     try {
       // Update memory cache
       _cache[key] = value;
-      
+
       return await _prefs.setDouble(key, value);
     } catch (e) {
       debugPrint('Error saving double: $e');
@@ -223,15 +222,15 @@ class StorageService extends GetxService {
       if (_cache.containsKey(key)) {
         return _cache[key] as double?;
       }
-      
+
       // Not in cache, read from storage
       final value = _prefs.getDouble(key);
-      
+
       // Update cache
       if (value != null) {
         _cache[key] = value;
       }
-      
+
       return value;
     } catch (e) {
       debugPrint('Error getting double: $e');
@@ -244,14 +243,14 @@ class StorageService extends GetxService {
     try {
       // Update memory cache
       _cache[key] = value;
-      
+
       String jsonString = json.encode(value);
-      
+
       // Encrypt if sensitive
       if (_sensitiveKeys.contains(key)) {
         jsonString = _encrypt(jsonString);
       }
-      
+
       return await _prefs.setString(key, jsonString);
     } catch (e) {
       debugPrint('Error saving object: $e');
@@ -264,24 +263,46 @@ class StorageService extends GetxService {
     try {
       // Check cache first
       if (_cache.containsKey(key)) {
-        return _cache[key] as Map<String, dynamic>?;
+        final cached = _cache[key];
+        if (cached is Map<String, dynamic>) {
+          return cached;
+        } else if (cached is Map) {
+          final safeMap = <String, dynamic>{};
+          cached.forEach((key, value) {
+            safeMap[key.toString()] = value;
+          });
+          return safeMap;
+        }
+        return null;
       }
-      
+
       // Not in cache, read from storage
       String? jsonString = _prefs.getString(key);
       if (jsonString == null) return null;
-      
+
       // Decrypt if sensitive
       if (_sensitiveKeys.contains(key)) {
         jsonString = _decrypt(jsonString);
       }
-      
-      final decoded = json.decode(jsonString) as Map<String, dynamic>;
-      
+
+      final decoded = json.decode(jsonString);
+      Map<String, dynamic> result;
+
+      if (decoded is Map<String, dynamic>) {
+        result = decoded;
+      } else if (decoded is Map) {
+        result = <String, dynamic>{};
+        decoded.forEach((key, value) {
+          result[key.toString()] = value;
+        });
+      } else {
+        throw Exception('Invalid object format in storage');
+      }
+
       // Update cache
-      _cache[key] = decoded;
-      
-      return decoded;
+      _cache[key] = result;
+
+      return result;
     } catch (e) {
       debugPrint('Error getting object: $e');
       return null;
@@ -323,7 +344,7 @@ class StorageService extends GetxService {
     try {
       // Remove from cache
       _cache.remove(key);
-      
+
       return await _prefs.remove(key);
     } catch (e) {
       debugPrint('Error removing key: $e');
@@ -336,14 +357,14 @@ class StorageService extends GetxService {
     try {
       // Clear cache
       _cache.clear();
-      
+
       return await _prefs.clear();
     } catch (e) {
       debugPrint('Error clearing storage: $e');
       return false;
     }
   }
-  
+
   // Clear cache only (without clearing persistent storage)
   void clearCache() {
     _cache.clear();

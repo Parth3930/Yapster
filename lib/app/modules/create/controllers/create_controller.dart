@@ -161,14 +161,6 @@ class CreateController extends GetxController {
           debugPrint('Posts feed controller not found: $e');
         }
 
-        Get.snackbar(
-          'Success',
-          'Post created successfully!',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.green,
-          colorText: Colors.white,
-        );
-
         // Clear form
         _clearForm();
 

@@ -45,6 +45,47 @@ class PostModel {
   });
 
   factory PostModel.fromMap(Map<String, dynamic> map) {
+    // Safe type casting for metadata - ensure it's a mutable map
+    Map<String, dynamic> safeMetadata = <String, dynamic>{};
+    final metadataValue = map['metadata'];
+    if (metadataValue is Map<String, dynamic>) {
+      safeMetadata = Map<String, dynamic>.from(metadataValue);
+    } else if (metadataValue is Map) {
+      metadataValue.forEach((key, value) {
+        safeMetadata[key.toString()] = value;
+      });
+    }
+
+    // Safe type casting for engagement_data - ensure it's a mutable map
+    Map<String, dynamic> safeEngagementData = <String, dynamic>{};
+    final engagementValue = map['engagement_data'];
+    if (engagementValue is Map<String, dynamic>) {
+      safeEngagementData = Map<String, dynamic>.from(engagementValue);
+    } else if (engagementValue is Map) {
+      engagementValue.forEach((key, value) {
+        safeEngagementData[key.toString()] = value;
+      });
+    }
+
+    // Safe access to profiles data
+    String? profileUsername;
+    String? profileNickname;
+    String? profileAvatar;
+    String? profileGoogleAvatar;
+
+    final profilesValue = map['profiles'];
+    if (profilesValue is Map<String, dynamic>) {
+      profileUsername = profilesValue['username'];
+      profileNickname = profilesValue['nickname'];
+      profileAvatar = profilesValue['avatar'];
+      profileGoogleAvatar = profilesValue['google_avatar'];
+    } else if (profilesValue is Map) {
+      profileUsername = profilesValue['username']?.toString();
+      profileNickname = profilesValue['nickname']?.toString();
+      profileAvatar = profilesValue['avatar']?.toString();
+      profileGoogleAvatar = profilesValue['google_avatar']?.toString();
+    }
+
     return PostModel(
       id: map['id'] ?? '',
       userId: map['user_id'] ?? '',
@@ -53,7 +94,7 @@ class PostModel {
       imageUrl: map['image_url'],
       gifUrl: map['gif_url'],
       stickerUrl: map['sticker_url'],
-      metadata: Map<String, dynamic>.from(map['metadata'] ?? {}),
+      metadata: safeMetadata,
       createdAt: DateTime.parse(
         map['created_at'] ?? DateTime.now().toIso8601String(),
       ),
@@ -64,11 +105,11 @@ class PostModel {
       commentsCount: map['comments_count'] ?? 0,
       viewsCount: map['views_count'] ?? 0,
       sharesCount: map['shares_count'] ?? 0,
-      engagementData: Map<String, dynamic>.from(map['engagement_data'] ?? {}),
-      username: map['username'] ?? map['profiles']?['username'],
-      nickname: map['nickname'] ?? map['profiles']?['nickname'],
-      avatar: map['avatar'] ?? map['profiles']?['avatar'],
-      googleAvatar: map['google_avatar'] ?? map['profiles']?['google_avatar'],
+      engagementData: safeEngagementData,
+      username: map['username'] ?? profileUsername,
+      nickname: map['nickname'] ?? profileNickname,
+      avatar: map['avatar'] ?? profileAvatar,
+      googleAvatar: map['google_avatar'] ?? profileGoogleAvatar,
     );
   }
 
@@ -89,6 +130,34 @@ class PostModel {
       'views_count': viewsCount,
       'shares_count': sharesCount,
       'engagement_data': engagementData,
+      // Include profile data for proper caching
+      'username': username,
+      'nickname': nickname,
+      'avatar': avatar,
+      'google_avatar': googleAvatar,
+    };
+  }
+
+  /// Returns only the database fields for insertion (excludes profile data)
+  Map<String, dynamic> toDatabaseMap() {
+    return {
+      'id': id,
+      'user_id': userId,
+      'content': content,
+      'post_type': postType,
+      'image_url': imageUrl,
+      'gif_url': gifUrl,
+      'sticker_url': stickerUrl,
+      'metadata': metadata,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'likes_count': likesCount,
+      'comments_count': commentsCount,
+      'views_count': viewsCount,
+      'shares_count': sharesCount,
+      'engagement_data': engagementData,
+      'is_active': true, // Ensure posts are active by default
+      'is_deleted': false, // Ensure posts are not deleted by default
     };
   }
 

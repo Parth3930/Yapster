@@ -35,35 +35,18 @@ class ProfilePostsController extends GetxController {
       }
 
       // Load posts from cache service (handles database calls internally)
+      // The cache service now validates cached posts against database results
       final posts = await _cacheService.getUserPosts(
         userId,
         forceRefresh: forceRefresh,
       );
 
-      // Fetch likes and favorites for the current user (only if we have posts)
+      // Load engagement states for posts using the new user_interactions table
       if (posts.isNotEmpty) {
-        final likesResponse = await _supabase.client
-            .from('post_likes')
-            .select('post_id')
-            .eq('user_id', currentUserId.value);
-
-        final favoritesResponse = await _supabase.client
-            .from('user_favorites')
-            .select('post_id')
-            .eq('user_id', currentUserId.value);
-
-        final likes = likesResponse as List<dynamic>;
-        final favorites = favoritesResponse as List<dynamic>;
-
-        // Update posts with like and favorite status
-        for (var post in posts) {
-          post.metadata['isLiked'] = likes.any(
-            (like) => like['post_id'] == post.id,
-          );
-          post.metadata['isFavorited'] = favorites.any(
-            (favorite) => favorite['post_id'] == post.id,
-          );
-        }
+        debugPrint(
+          'Loading engagement states for ${posts.length} profile posts',
+        );
+        await _loadEngagementStates(posts);
       }
 
       profilePosts.assignAll(posts);
@@ -84,48 +67,40 @@ class ProfilePostsController extends GetxController {
       final post = profilePosts[postIndex];
       final isCurrentlyLiked = post.metadata['isLiked'] == true;
 
-      // Update metadata
-      final updatedMetadata = Map<String, dynamic>.from(post.metadata);
-      updatedMetadata['isLiked'] = !isCurrentlyLiked;
-
-      // Update post with new metadata and like count
-      final updatedPost = post.copyWith(
-        metadata: updatedMetadata,
-        likesCount: post.likesCount + (isCurrentlyLiked ? -1 : 1),
-      );
-
-      profilePosts[postIndex] = updatedPost;
-
-      // Update in database
+      // Update in database using the new toggle function
       final userId = _supabase.client.auth.currentUser?.id;
       if (userId != null) {
         try {
-          if (!isCurrentlyLiked) {
-            // Add to post_likes
-            await _supabase.client.from('post_likes').upsert({
-              'user_id': userId,
-              'post_id': postId,
-              'created_at': DateTime.now().toIso8601String(),
-            });
-          } else {
-            // Remove from post_likes
-            await _supabase.client
-                .from('post_likes')
-                .delete()
-                .eq('user_id', userId)
-                .eq('post_id', postId);
-          }
-
-          // Update cache with the new post data
-          _cacheService.updatePostInCache(post.userId, updatedPost);
-
-          debugPrint(
-            'Successfully ${isCurrentlyLiked ? 'unliked' : 'liked'} post: $postId',
+          // Use the new toggle function
+          final success = await _postRepository.togglePostEngagement(
+            postId,
+            userId,
+            'likes',
           );
+
+          if (success) {
+            // Update metadata
+            final updatedMetadata = Map<String, dynamic>.from(post.metadata);
+            updatedMetadata['isLiked'] = !isCurrentlyLiked;
+
+            // Update post with new metadata and like count
+            final updatedPost = post.copyWith(
+              metadata: updatedMetadata,
+              likesCount: post.likesCount + (isCurrentlyLiked ? -1 : 1),
+            );
+
+            profilePosts[postIndex] = updatedPost;
+
+            // Update cache with the new post data
+            _cacheService.updatePostInCache(post.userId, updatedPost);
+
+            debugPrint(
+              'Successfully ${isCurrentlyLiked ? 'unliked' : 'liked'} post: $postId',
+            );
+          }
         } catch (e) {
           debugPrint('Error updating likes in database: $e');
-          // Revert the local change if database update fails
-          profilePosts[postIndex] = post;
+          // Don't update UI if database operation failed
         }
       }
 
@@ -141,41 +116,33 @@ class ProfilePostsController extends GetxController {
       final post = profilePosts[postIndex];
       final isCurrentlyFavorited = post.metadata['isFavorited'] == true;
 
-      // Update metadata
-      final updatedMetadata = Map<String, dynamic>.from(post.metadata);
-      updatedMetadata['isFavorited'] = !isCurrentlyFavorited;
-
-      // Update post with new metadata
-      final updatedPost = post.copyWith(metadata: updatedMetadata);
-
-      profilePosts[postIndex] = updatedPost;
-
-      // Update in database - store in user_favorites table
+      // Update in database using the new toggle function
       final userId = _supabase.client.auth.currentUser?.id;
       if (userId != null) {
         try {
-          if (!isCurrentlyFavorited) {
-            // Add to user_favorites
-            await _supabase.client.from('user_favorites').upsert({
-              'user_id': userId,
-              'post_id': postId,
-              'created_at': DateTime.now().toIso8601String(),
-            });
-          } else {
-            // Remove from user_favorites
-            await _supabase.client
-                .from('user_favorites')
-                .delete()
-                .eq('user_id', userId)
-                .eq('post_id', postId);
-          }
-          debugPrint(
-            'Successfully ${isCurrentlyFavorited ? 'unfavorited' : 'favorited'} post: $postId',
+          // Use the new toggle function
+          final success = await _postRepository.togglePostEngagement(
+            postId,
+            userId,
+            'stars',
           );
+
+          if (success) {
+            // Update metadata
+            final updatedMetadata = Map<String, dynamic>.from(post.metadata);
+            updatedMetadata['isFavorited'] = !isCurrentlyFavorited;
+
+            // Update post with new metadata
+            final updatedPost = post.copyWith(metadata: updatedMetadata);
+            profilePosts[postIndex] = updatedPost;
+
+            debugPrint(
+              'Successfully ${isCurrentlyFavorited ? 'unfavorited' : 'favorited'} post: $postId',
+            );
+          }
         } catch (e) {
           debugPrint('Error updating favorites in database: $e');
-          // Revert the local change if database update fails
-          profilePosts[postIndex] = post;
+          // Don't update UI if database operation failed
         }
       }
 
@@ -281,8 +248,45 @@ class ProfilePostsController extends GetxController {
     }
   }
 
+  /// Load engagement states for posts
+  Future<void> _loadEngagementStates(List<PostModel> postsList) async {
+    final userId = _supabase.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      for (int i = 0; i < postsList.length; i++) {
+        final post = postsList[i];
+        final engagement = await _postRepository.getUserPostEngagement(
+          post.id,
+          userId,
+        );
+
+        // Update metadata with engagement state
+        final updatedMetadata = Map<String, dynamic>.from(post.metadata);
+        updatedMetadata['isLiked'] = engagement['isLiked'];
+        updatedMetadata['isFavorited'] = engagement['isFavorited'];
+
+        // Update the post in the list
+        postsList[i] = post.copyWith(metadata: updatedMetadata);
+      }
+    } catch (e) {
+      debugPrint('Error loading engagement states: $e');
+    }
+  }
+
   /// Get cached posts count for current user
   int getCachedPostsCount() {
     return _cacheService.getCachedPostsCount(currentUserId.value);
+  }
+
+  /// Refresh posts for a user (force reload from database)
+  Future<void> refreshUserPosts(String userId) async {
+    await loadUserPosts(userId, forceRefresh: true);
+  }
+
+  /// Invalidate cache and reload posts for a user
+  Future<void> invalidateAndReloadUserPosts(String userId) async {
+    _cacheService.invalidateUserCache(userId);
+    await loadUserPosts(userId);
   }
 }

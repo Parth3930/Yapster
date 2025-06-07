@@ -6,7 +6,6 @@ import 'package:yapster/app/modules/explore/controllers/explore_controller.dart'
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_avatar_widget.dart';
-import 'package:yapster/app/routes/app_pages.dart';
 
 /// Base widget that contains common post elements like header, footer, and engagement buttons
 abstract class BasePostWidget extends StatelessWidget {
@@ -80,7 +79,7 @@ abstract class BasePostWidget extends StatelessWidget {
                         ),
                       ),
                       SizedBox(width: 4),
-                      if (post.metadata['verified'] == true)
+                      if (_getMetadataValue(post.metadata, 'verified') == true)
                         Icon(Icons.verified, color: Colors.blue, size: 16),
                       SizedBox(width: 8),
                       // Only show follow button if this is not the current user's post
@@ -189,6 +188,17 @@ abstract class BasePostWidget extends StatelessWidget {
       return '${difference.inMinutes}m ago';
     } else {
       return 'now';
+    }
+  }
+
+  // Helper method to safely access metadata values
+  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+    try {
+      return metadata[key];
+    } catch (e) {
+      // If there's any type casting issue, return null
+      debugPrint('Error accessing metadata key "$key": $e');
+      return null;
     }
   }
 }

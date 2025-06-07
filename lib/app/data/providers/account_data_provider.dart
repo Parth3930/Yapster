@@ -680,6 +680,45 @@ class AccountDataProvider extends GetxController {
     _followersFetchTime[userId] = DateTime.now();
   }
 
+  /// Force refresh profile data after updates (like avatar changes)
+  Future<void> forceRefreshProfileData() async {
+    try {
+      debugPrint('AccountDataProvider: Force refreshing profile data');
+
+      // Fetch fresh user data from database
+      final userData = await fetchUserData();
+      if (userData.isNotEmpty) {
+        // Update all user data fields
+        username.value = userData['username'] ?? '';
+        nickname.value = userData['nickname'] ?? '';
+        bio.value = userData['bio'] ?? '';
+        avatar.value = userData['avatar'] ?? '';
+        banner.value = userData['banner'] ?? '';
+        email.value = userData['email'] ?? '';
+        googleAvatar.value = userData['google_avatar'] ?? '';
+
+        // Force refresh all reactive values to ensure UI updates
+        username.refresh();
+        nickname.refresh();
+        bio.refresh();
+        avatar.refresh();
+        banner.refresh();
+        email.refresh();
+        googleAvatar.refresh();
+
+        debugPrint('AccountDataProvider: Profile data force refreshed');
+        debugPrint('  Username: ${username.value}');
+        debugPrint('  Nickname: ${nickname.value}');
+        debugPrint('  Avatar: ${avatar.value}');
+        debugPrint('  Google Avatar: ${googleAvatar.value}');
+      }
+    } catch (e) {
+      debugPrint(
+        'AccountDataProvider: Error force refreshing profile data: $e',
+      );
+    }
+  }
+
   /// Updates the following cache timestamp without fetching new data
   void markFollowingFetched(String userId) {
     _followingFetchTime[userId] = DateTime.now();

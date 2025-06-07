@@ -5,8 +5,8 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AccountRepository {
-  final AccountDataProvider _provider = Get.find<AccountDataProvider>();
-  final SupabaseService _supabase = Get.find<SupabaseService>();
+  AccountDataProvider get _provider => Get.find<AccountDataProvider>();
+  SupabaseService get _supabase => Get.find<SupabaseService>();
 
   // Realtime subscriptions
   RealtimeChannel? _profilesSubscription;

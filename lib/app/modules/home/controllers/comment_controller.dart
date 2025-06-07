@@ -25,16 +25,30 @@ class CommentController extends GetxController {
 
       final response = await _supabase.client
           .from('post_comments')
-          .select('*, profiles:profiles!user_id(username, avatar)')
+          .select(
+            '*, profiles:profiles!user_id(username, avatar, google_avatar)',
+          )
           .eq('post_id', postId)
           .order('created_at', ascending: false)
           .limit(50);
 
       if (response.isNotEmpty) {
         final commentsList =
-            (response as List)
-                .map((comment) => CommentModel.fromMap(comment))
-                .toList();
+            (response as List).map((comment) {
+              // Debug logging to see what profile data we're getting
+              debugPrint('Comment data: ${comment.toString()}');
+              if (comment['profiles'] != null) {
+                debugPrint('Profile data: ${comment['profiles'].toString()}');
+              }
+              return CommentModel.fromMap(comment);
+            }).toList();
+
+        // Debug logging for created comment models
+        for (final comment in commentsList) {
+          debugPrint(
+            'Comment ${comment.id}: avatar=${comment.avatar}, googleAvatar=${comment.googleAvatar}, username=${comment.username}',
+          );
+        }
 
         // Load like status for current user
         await _loadCommentLikeStatus(commentsList);
@@ -107,20 +121,31 @@ class CommentController extends GetxController {
           await _supabase.client
               .from('post_comments')
               .insert(commentData)
-              .select('*, profiles:profiles!user_id(username, avatar)')
+              .select(
+                '*, profiles:profiles!user_id(username, avatar, google_avatar)',
+              )
               .single();
 
       if (response.isNotEmpty) {
         final newComment = CommentModel.fromMap(response);
         newComment.metadata['isLiked'] = false;
 
-        // Add to the beginning of the list
-        comments.insert(0, newComment);
+        // Check if comment already exists to prevent duplicates
+        final existingIndex = comments.indexWhere((c) => c.id == newComment.id);
+        if (existingIndex == -1) {
+          // Add to the beginning of the list only if it doesn't exist
+          comments.insert(0, newComment);
 
-        // Update post comments count
-        await _updatePostCommentsCount(postId, 1);
+          // Update post comments count only when actually adding new comment
+          await _updatePostCommentsCount(postId, 1);
 
-        debugPrint('Added new comment: ${newComment.id}');
+          debugPrint('Added new comment: ${newComment.id}');
+        } else {
+          debugPrint(
+            'Comment ${newComment.id} already exists, skipping duplicate',
+          );
+        }
+
         return newComment;
       }
     } catch (e) {
@@ -200,25 +225,43 @@ class CommentController extends GetxController {
     }
   }
 
-  /// Update post comments count
+  /// Update post comments count using atomic increment
   Future<void> _updatePostCommentsCount(String postId, int increment) async {
     try {
-      final postResponse =
-          await _supabase.client
-              .from('posts')
-              .select('comments_count')
-              .eq('id', postId)
-              .single();
-
-      if (postResponse.isNotEmpty) {
-        final currentCount = postResponse['comments_count'] as int;
-        await _supabase.client
-            .from('posts')
-            .update({'comments_count': currentCount + increment})
-            .eq('id', postId);
-      }
+      // Use RPC function for atomic increment to prevent race conditions
+      await _supabase.client.rpc(
+        'increment_post_engagement',
+        params: {
+          'post_id': postId,
+          'column_name': 'comments_count',
+          'increment_by': increment,
+        },
+      );
+      debugPrint(
+        'Successfully updated comments count for post $postId by $increment',
+      );
     } catch (e) {
       debugPrint('Error updating post comments count: $e');
+      // Fallback to direct update if RPC fails
+      try {
+        final postResponse =
+            await _supabase.client
+                .from('posts')
+                .select('comments_count')
+                .eq('id', postId)
+                .single();
+
+        if (postResponse.isNotEmpty) {
+          final currentCount = postResponse['comments_count'] as int? ?? 0;
+          await _supabase.client
+              .from('posts')
+              .update({'comments_count': currentCount + increment})
+              .eq('id', postId);
+          debugPrint('Fallback: Updated comments count for post $postId');
+        }
+      } catch (fallbackError) {
+        debugPrint('Fallback also failed: $fallbackError');
+      }
     }
   }
 

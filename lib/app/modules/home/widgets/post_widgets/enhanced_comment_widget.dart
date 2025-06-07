@@ -48,10 +48,10 @@ class EnhancedCommentWidget extends StatelessWidget {
               // Connecting line from parent profile picture
               Positioned(
                 left: 16,
-                top: -40,
+                top: -50,
                 child: Container(
                   width: 1,
-                  height: isExpanded ? (replies.length * 63.0) : 60,
+                  height: isExpanded ? (replies.length * 73) : 70,
                   decoration: BoxDecoration(
                     color: Color(0xff474747),
                     borderRadius: BorderRadius.circular(1),
@@ -107,7 +107,7 @@ class EnhancedCommentWidget extends StatelessWidget {
                             top: 14,
                             child: Container(
                               width: 50,
-                              height: 2,
+                              height: 1,
                               decoration: BoxDecoration(
                                 color: Colors.grey[600],
                                 borderRadius: BorderRadius.circular(1),
@@ -156,20 +156,11 @@ class EnhancedCommentWidget extends StatelessWidget {
             height: isReply ? 28 : 32,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              image:
-                  comment.avatar != null && comment.avatar!.isNotEmpty
-                      ? DecorationImage(
-                        image: NetworkImage(comment.avatar!),
-                        fit: BoxFit.cover,
-                      )
-                      : null,
-              color:
-                  comment.avatar == null || comment.avatar!.isEmpty
-                      ? Colors.grey[300]
-                      : null,
+              image: _getCommentAvatarImage(),
+              color: _getCommentAvatarImage() == null ? Colors.grey[300] : null,
             ),
             child:
-                comment.avatar == null || comment.avatar!.isEmpty
+                _getCommentAvatarImage() == null
                     ? Icon(
                       Icons.person,
                       color: Colors.grey[600],
@@ -236,10 +227,11 @@ class EnhancedCommentWidget extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              isLiked ? Icons.favorite : Icons.favorite_border,
-                              color: isLiked ? Colors.red : Colors.grey[500],
-                              size: isReply ? 14 : 16,
+                            Image.asset(
+                              isLiked
+                                  ? 'assets/postIcons/like_active.png'
+                                  : 'assets/postIcons/like.png',
+                              width: 15,
                             ),
                             if (currentComment.likesCount > 0) ...[
                               SizedBox(width: 4),
@@ -263,13 +255,9 @@ class EnhancedCommentWidget extends StatelessWidget {
                     if (!isReply && onReplyTap != null)
                       GestureDetector(
                         onTap: onReplyTap,
-                        child: Text(
-                          'Reply',
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        child: Image.asset(
+                          'assets/postIcons/comment.png',
+                          width: 15,
                         ),
                       ),
                   ],
@@ -305,5 +293,39 @@ class EnhancedCommentWidget extends StatelessWidget {
     } else {
       return count.toString();
     }
+  }
+
+  /// Get the best available avatar image for comment
+  DecorationImage? _getCommentAvatarImage() {
+    // Debug logging
+    debugPrint(
+      'Comment ${comment.id} avatar data: avatar="${comment.avatar}", googleAvatar="${comment.googleAvatar}", username="${comment.username}"',
+    );
+
+    // Check if we have a valid avatar that's not "skiped" or "null"
+    if (comment.avatar != null &&
+        comment.avatar!.isNotEmpty &&
+        comment.avatar != "skiped" &&
+        comment.avatar != "null") {
+      debugPrint('Using avatar: ${comment.avatar}');
+      return DecorationImage(
+        image: NetworkImage(comment.avatar!),
+        fit: BoxFit.cover,
+      );
+    }
+
+    // Fallback to google_avatar if avatar is "skiped" or invalid
+    if (comment.googleAvatar != null &&
+        comment.googleAvatar!.isNotEmpty &&
+        comment.googleAvatar != "null") {
+      debugPrint('Using googleAvatar: ${comment.googleAvatar}');
+      return DecorationImage(
+        image: NetworkImage(comment.googleAvatar!),
+        fit: BoxFit.cover,
+      );
+    }
+
+    debugPrint('No valid avatar found, using default icon');
+    return null;
   }
 }

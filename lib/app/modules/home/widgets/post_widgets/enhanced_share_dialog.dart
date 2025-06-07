@@ -8,6 +8,7 @@ import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/data/models/group_model.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class EnhancedShareDialog extends StatefulWidget {
   final PostModel post;
@@ -399,31 +400,31 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _buildSocialButton(
-                  icon: Icons.share,
+                  icon: FontAwesomeIcons.share,
                   label: 'Share',
                   color: Colors.blue,
                   onTap: () => _handleMoreShare(),
                 ),
                 _buildSocialButton(
-                  icon: Icons.content_copy,
+                  icon: FontAwesomeIcons.copy,
                   label: 'Copy',
                   color: Colors.grey,
                   onTap: () => _handleCopyLink(),
                 ),
                 _buildSocialButton(
-                  icon: Icons.chat,
+                  icon: FontAwesomeIcons.whatsapp,
                   label: 'WhatsApp',
                   color: Color(0xFF25D366),
                   onTap: () => _handleWhatsAppShare(),
                 ),
                 _buildSocialButton(
-                  icon: Icons.camera_alt,
+                  icon: FontAwesomeIcons.instagram,
                   label: 'Instagram',
                   color: Color(0xFFE4405F),
                   onTap: () => _handleInstagramShare(),
                 ),
                 _buildSocialButton(
-                  icon: Icons.camera,
+                  icon: FontAwesomeIcons.snapchat,
                   label: 'Snapchat',
                   color: Color(0xFFFFFC00),
                   onTap: () => _handleSnapchatShare(),
@@ -516,7 +517,7 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
             ),
             child:
                 icon != null
-                    ? Icon(
+                    ? FaIcon(
                       icon,
                       color: label == 'Snapchat' ? Colors.black : Colors.white,
                       size: 24,
@@ -529,15 +530,19 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
                         height: 50,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            Icons.share,
+                          return FaIcon(
+                            FontAwesomeIcons.share,
                             color: Colors.white,
                             size: 24,
                           );
                         },
                       ),
                     )
-                    : Icon(Icons.share, color: Colors.white, size: 24),
+                    : FaIcon(
+                      FontAwesomeIcons.share,
+                      color: Colors.white,
+                      size: 24,
+                    ),
           ),
           SizedBox(height: 8),
           Text(
@@ -607,7 +612,7 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
           'author_id': widget.post.userId,
           'content': widget.post.content,
           'image_url': widget.post.imageUrl,
-          'video_url': widget.post.metadata['video_url'],
+          'video_url': _getMetadataValue(widget.post.metadata, 'video_url'),
           'author_username': widget.post.username,
           'author_nickname': widget.post.nickname,
           'author_avatar': widget.post.avatar,
@@ -712,7 +717,7 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
         'author_id': widget.post.userId,
         'content': widget.post.content,
         'image_url': widget.post.imageUrl,
-        'video_url': widget.post.metadata['video_url'],
+        'video_url': _getMetadataValue(widget.post.metadata, 'video_url'),
         'author_username': widget.post.username,
         'author_nickname': widget.post.nickname,
         'author_avatar': widget.post.avatar,
@@ -805,5 +810,16 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
         ],
       ),
     );
+  }
+
+  // Helper method to safely access metadata values
+  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+    try {
+      return metadata[key];
+    } catch (e) {
+      // If there's any type casting issue, return null
+      debugPrint('Error accessing metadata key "$key": $e');
+      return null;
+    }
   }
 }

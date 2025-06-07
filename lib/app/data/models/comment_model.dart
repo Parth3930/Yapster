@@ -7,11 +7,12 @@ class CommentModel {
   final int likesCount;
   final DateTime createdAt;
   final DateTime updatedAt;
-  
+
   // Profile data (when fetched with joins)
   final String? username;
   final String? avatar;
-  
+  final String? googleAvatar;
+
   // Metadata for UI state
   final Map<String, dynamic> metadata;
 
@@ -26,13 +27,22 @@ class CommentModel {
     required this.updatedAt,
     this.username,
     this.avatar,
+    this.googleAvatar,
     this.metadata = const {},
   });
 
   factory CommentModel.fromMap(Map<String, dynamic> map) {
-    // Handle profile data from join
-    final profiles = map['profiles'] as Map<String, dynamic>?;
-    
+    // Handle profile data from join with safe type casting
+    Map<String, dynamic>? profiles;
+    if (map['profiles'] is Map<String, dynamic>) {
+      profiles = map['profiles'] as Map<String, dynamic>;
+    } else if (map['profiles'] is Map) {
+      profiles = <String, dynamic>{};
+      (map['profiles'] as Map).forEach((key, value) {
+        profiles![key.toString()] = value;
+      });
+    }
+
     return CommentModel(
       id: map['id'] ?? '',
       postId: map['post_id'] ?? '',
@@ -48,6 +58,7 @@ class CommentModel {
       ),
       username: profiles?['username'] ?? map['username'],
       avatar: profiles?['avatar'] ?? map['avatar'],
+      googleAvatar: profiles?['google_avatar'] ?? map['google_avatar'],
       metadata: Map<String, dynamic>.from(map['metadata'] ?? {}),
     );
   }
@@ -77,6 +88,7 @@ class CommentModel {
     DateTime? updatedAt,
     String? username,
     String? avatar,
+    String? googleAvatar,
     Map<String, dynamic>? metadata,
   }) {
     return CommentModel(
@@ -90,6 +102,7 @@ class CommentModel {
       updatedAt: updatedAt ?? this.updatedAt,
       username: username ?? this.username,
       avatar: avatar ?? this.avatar,
+      googleAvatar: googleAvatar ?? this.googleAvatar,
       metadata: metadata ?? this.metadata,
     );
   }

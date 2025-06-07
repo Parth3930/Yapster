@@ -4,6 +4,7 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'base_post_widget.dart';
 import 'post_interaction_buttons.dart';
+import 'post_avatar_widget.dart';
 
 /// Widget for displaying text-only posts
 class TextPostWidget extends BasePostWidget {
@@ -45,18 +46,10 @@ class TextPostWidget extends BasePostWidget {
   Widget _buildPostHeader() {
     return Row(
       children: [
-        GestureDetector(
+        PostAvatarWidget(
+          post: post,
+          radius: 20,
           onTap: () => _navigateToProfile(),
-          child: CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.grey[800],
-            backgroundImage:
-                post.avatar != null ? NetworkImage(post.avatar!) : null,
-            child:
-                post.avatar == null
-                    ? Icon(Icons.person, color: Colors.grey[600])
-                    : null,
-          ),
         ),
         SizedBox(width: 12),
         Expanded(
@@ -80,7 +73,7 @@ class TextPostWidget extends BasePostWidget {
                         ),
                       ),
                       SizedBox(width: 4),
-                      if (post.metadata['verified'] == true)
+                      if (_getMetadataValue(post.metadata, 'verified') == true)
                         Icon(Icons.verified, color: Colors.blue, size: 16),
                       SizedBox(width: 8),
                       // Only show follow button if this is not the current user's post
@@ -213,6 +206,17 @@ class TextPostWidget extends BasePostWidget {
       return '${difference.inMinutes}m ago';
     } else {
       return 'now';
+    }
+  }
+
+  // Helper method to safely access metadata values
+  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+    try {
+      return metadata[key];
+    } catch (e) {
+      // If there's any type casting issue, return null
+      debugPrint('Error accessing metadata key "$key": $e');
+      return null;
     }
   }
 }

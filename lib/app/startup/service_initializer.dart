@@ -24,26 +24,46 @@ class ServiceInitializer {
   /// Initialize essential services required before app startup
   static Future<void> initializeEssentialServices() async {
     // Initialize storage service first (required by other services)
-    await Get.putAsync(() => StorageService().init());
+    if (!Get.isRegistered<StorageService>()) {
+      await Get.putAsync(() => StorageService().init());
+    }
 
     // Initialize cache manager early for app optimization
-    Get.put(CacheManager(), permanent: true);
+    if (!Get.isRegistered<CacheManager>()) {
+      Get.put(CacheManager(), permanent: true);
+    }
 
     // Initialize basic services
-    Get.put(ApiService());
-    Get.put(AccountDataProvider());
+    if (!Get.isRegistered<ApiService>()) {
+      Get.put(ApiService());
+    }
+    if (!Get.isRegistered<AccountDataProvider>()) {
+      Get.put(AccountDataProvider());
+    }
 
     // Initialize app preloader service
-    Get.put(PreloaderService(), permanent: true);
+    if (!Get.isRegistered<PreloaderService>()) {
+      Get.put(PreloaderService(), permanent: true);
+    }
 
     // Initialize repositories
-    Get.put(PostRepository(), permanent: true);
-    Get.put(AccountRepository(), permanent: true);
-    Get.put(StoryRepository(), permanent: true);
+    if (!Get.isRegistered<PostRepository>()) {
+      Get.put(PostRepository(), permanent: true);
+    }
+    if (!Get.isRegistered<AccountRepository>()) {
+      Get.put(AccountRepository(), permanent: true);
+    }
+    if (!Get.isRegistered<StoryRepository>()) {
+      Get.put(StoryRepository(), permanent: true);
+    }
 
     // Initialize intelligent feed services (UserPostsCacheService moved to initializeRemainingServices)
-    Get.put(UserInteractionService(), permanent: true);
-    Get.put(IntelligentFeedService(), permanent: true);
+    if (!Get.isRegistered<UserInteractionService>()) {
+      Get.put(UserInteractionService(), permanent: true);
+    }
+    if (!Get.isRegistered<IntelligentFeedService>()) {
+      Get.put(IntelligentFeedService(), permanent: true);
+    }
   }
 
   /// Initialize remaining services after app has started
@@ -52,69 +72,84 @@ class ServiceInitializer {
 
     try {
       // Initialize DB cache service
-      await Get.putAsync(() => DbCacheService().init()).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          throw TimeoutException('DbCacheService initialization timed out');
-        },
-      );
-      debugPrint(
-        'DbCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
-      );
+      if (!Get.isRegistered<DbCacheService>()) {
+        await Get.putAsync(() => DbCacheService().init()).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            throw TimeoutException('DbCacheService initialization timed out');
+          },
+        );
+        debugPrint(
+          'DbCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
 
       // Initialize Supabase (most time-consuming)
-      await Get.putAsync(() => SupabaseService().init()).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw TimeoutException('SupabaseService initialization timed out');
-        },
-      );
-      debugPrint(
-        'SupabaseService initialized in ${stopwatch.elapsedMilliseconds}ms',
-      );
+      if (!Get.isRegistered<SupabaseService>()) {
+        await Get.putAsync(() => SupabaseService().init()).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw TimeoutException('SupabaseService initialization timed out');
+          },
+        );
+        debugPrint(
+          'SupabaseService initialized in ${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
 
       // Initialize UserPostsCacheService after SupabaseService is ready
-      Get.put(UserPostsCacheService(), permanent: true);
-      debugPrint(
-        'UserPostsCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
-      );
+      if (!Get.isRegistered<UserPostsCacheService>()) {
+        Get.put(UserPostsCacheService(), permanent: true);
+        debugPrint(
+          'UserPostsCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
 
       // Initialize encryption service if user is logged in
       final supabaseService = Get.find<SupabaseService>();
       if (supabaseService.isAuthenticated.value &&
           supabaseService.currentUser.value?.id != null) {
         final userId = supabaseService.currentUser.value!.id;
-        await Get.putAsync(() => EncryptionService().init(userId)).timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {
-            throw TimeoutException(
-              'EncryptionService initialization timed out',
-            );
-          },
-        );
-        debugPrint(
-          'EncryptionService initialized in ${stopwatch.elapsedMilliseconds}ms',
-        );
+
+        if (!Get.isRegistered<EncryptionService>()) {
+          await Get.putAsync(() => EncryptionService().init(userId)).timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              throw TimeoutException(
+                'EncryptionService initialization timed out',
+              );
+            },
+          );
+          debugPrint(
+            'EncryptionService initialized in ${stopwatch.elapsedMilliseconds}ms',
+          );
+        }
 
         // Initialize chat cache service (depends on encryption service)
-        final chatCacheService = ChatCacheService();
-        Get.put(chatCacheService);
-        await chatCacheService.init();
-        debugPrint(
-          'ChatCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
-        );
+        if (!Get.isRegistered<ChatCacheService>()) {
+          final chatCacheService = ChatCacheService();
+          Get.put(chatCacheService);
+          await chatCacheService.init();
+          debugPrint(
+            'ChatCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
+          );
+        }
       } else {
         // Still register the service without initialization
-        Get.put(EncryptionService());
-        debugPrint(
-          'EncryptionService registered (not initialized yet, waiting for login)',
-        );
+        if (!Get.isRegistered<EncryptionService>()) {
+          Get.put(EncryptionService());
+          debugPrint(
+            'EncryptionService registered (not initialized yet, waiting for login)',
+          );
+        }
 
         // Register chat cache service as well
-        Get.put(ChatCacheService());
-        debugPrint(
-          'ChatCacheService registered (not initialized, waiting for login)',
-        );
+        if (!Get.isRegistered<ChatCacheService>()) {
+          Get.put(ChatCacheService());
+          debugPrint(
+            'ChatCacheService registered (not initialized, waiting for login)',
+          );
+        }
       }
 
       // Initialize connectivity monitoring
@@ -122,11 +157,13 @@ class ServiceInitializer {
 
       // Start app preloading if user is authenticated
       if (supabaseService.isAuthenticated.value) {
-        final appPreloader = Get.find<PreloaderService>();
-        // Start preloading in background - don't await to avoid blocking
-        appPreloader.preloadApp().catchError((e) {
-          debugPrint('App preloading failed (non-critical): $e');
-        });
+        if (Get.isRegistered<PreloaderService>()) {
+          final appPreloader = Get.find<PreloaderService>();
+          // Start preloading in background - don't await to avoid blocking
+          appPreloader.preloadApp().catchError((e) {
+            debugPrint('App preloading failed (non-critical): $e');
+          });
+        }
       }
 
       debugPrint(
@@ -264,10 +301,13 @@ class ServiceInitializer {
         final accountDataProvider = Get.find<AccountDataProvider>();
         await accountDataProvider.preloadUserData();
 
-        // Force refresh posts feed if controller exists
+        // DON'T force refresh posts feed on hot reload - let the controller use cached data
+        // The posts feed controller will handle hot reload properly with cached user data
         if (Get.isRegistered<PostsFeedController>()) {
-          final postsFeedController = Get.find<PostsFeedController>();
-          await postsFeedController.loadPosts(forceRefresh: true);
+          debugPrint(
+            'PostsFeedController exists - letting it handle hot reload with cached data',
+          );
+          // The controller's onInit will detect hot reload and use cached posts with user data
         }
       }
     } catch (e) {

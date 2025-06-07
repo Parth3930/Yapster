@@ -60,9 +60,11 @@ class VideoPostWidget extends BasePostWidget {
   }
 
   Widget _buildVideoContent() {
-    final videoUrl = post.metadata['video_url'] as String?;
-    final thumbnailUrl = post.metadata['video_thumbnail'] as String?;
-    final duration = post.metadata['video_duration'] as String?;
+    final videoUrl = _getMetadataValue(post.metadata, 'video_url') as String?;
+    final thumbnailUrl =
+        _getMetadataValue(post.metadata, 'video_thumbnail') as String?;
+    final duration =
+        _getMetadataValue(post.metadata, 'video_duration') as String?;
 
     if (videoUrl == null || videoUrl.isEmpty) {
       return Container(
@@ -312,7 +314,7 @@ class VideoPostWidget extends BasePostWidget {
                         ),
                       ),
                       SizedBox(width: 4),
-                      if (post.metadata['verified'] == true)
+                      if (_getMetadataValue(post.metadata, 'verified') == true)
                         Icon(Icons.verified, color: Colors.blue, size: 16),
                       SizedBox(width: 8),
                       // Only show follow button if this is not the current user's post
@@ -410,6 +412,17 @@ class VideoPostWidget extends BasePostWidget {
       return '${difference.inMinutes}m ago';
     } else {
       return 'now';
+    }
+  }
+
+  // Helper method to safely access metadata values
+  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+    try {
+      return metadata[key];
+    } catch (e) {
+      // If there's any type casting issue, return null
+      debugPrint('Error accessing metadata key "$key": $e');
+      return null;
     }
   }
 }

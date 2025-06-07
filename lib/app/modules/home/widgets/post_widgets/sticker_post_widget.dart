@@ -59,9 +59,12 @@ class StickerPostWidget extends BasePostWidget {
   }
 
   Widget _buildStickerContent() {
-    final stickerUrl = post.stickerUrl ?? post.metadata['sticker_url'];
-    final stickerPack = post.metadata['sticker_pack'] as String?;
-    final stickerName = post.metadata['sticker_name'] as String?;
+    final stickerUrl =
+        post.stickerUrl ?? _getMetadataValue(post.metadata, 'sticker_url');
+    final stickerPack =
+        _getMetadataValue(post.metadata, 'sticker_pack') as String?;
+    final stickerName =
+        _getMetadataValue(post.metadata, 'sticker_name') as String?;
 
     if (stickerUrl == null || stickerUrl.isEmpty) {
       return Container(
@@ -297,5 +300,16 @@ class StickerPostWidget extends BasePostWidget {
         ],
       ),
     );
+  }
+
+  // Helper method to safely access metadata values
+  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+    try {
+      return metadata[key];
+    } catch (e) {
+      // If there's any type casting issue, return null
+      debugPrint('Error accessing metadata key "$key": $e');
+      return null;
+    }
   }
 }

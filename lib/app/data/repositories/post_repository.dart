@@ -6,7 +6,7 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 
 class PostRepository extends GetxService {
-  final SupabaseService _supabase = Get.find<SupabaseService>();
+  SupabaseService get _supabase => Get.find<SupabaseService>();
 
   /// Upload post image to storage with proper structure
   /// Storage structure: posts/{user_id}/{post_id}/{filename}
@@ -87,7 +87,7 @@ class PostRepository extends GetxService {
       }
 
       // First, create the post to get the ID
-      final postData = post.toMap();
+      final postData = post.toDatabaseMap();
       postData.remove('id'); // Remove ID so database generates it
 
       debugPrint('Creating post with data: $postData');
@@ -155,40 +155,68 @@ class PostRepository extends GetxService {
           'get_posts_feed',
           params: {'p_user_id': userId, 'p_limit': limit, 'p_offset': offset},
         );
-        return (response as List)
-            .map((post) => PostModel.fromMap(post))
-            .toList();
+        return (response as List).map((post) {
+          // Safe type casting to handle Map<dynamic, dynamic> from Supabase RPC
+          if (post is Map<String, dynamic>) {
+            return PostModel.fromMap(post);
+          } else if (post is Map) {
+            final safeMap = <String, dynamic>{};
+            post.forEach((key, value) {
+              safeMap[key.toString()] = value;
+            });
+            return PostModel.fromMap(safeMap);
+          } else {
+            throw Exception('Invalid post data format from get_posts_feed RPC');
+          }
+        }).toList();
       } catch (rpcError) {
         debugPrint(
           'RPC function get_posts_feed not found, using fallback query: $rpcError',
         );
 
         // Fallback: Direct query with joins
+        debugPrint(
+          'Repository: Querying posts with offset: $offset, limit: $limit',
+        );
         final response = await _supabase.client
             .from('posts')
             .select('''
               *,
               profiles!posts_user_id_fkey(username, nickname, avatar, google_avatar)
             ''')
-            .eq('is_active', true)
-            .eq('is_deleted', false)
+            .or(
+              'is_active.is.null,is_active.eq.true',
+            ) // Include posts where is_active is null or true
+            .or(
+              'is_deleted.is.null,is_deleted.eq.false',
+            ) // Include posts where is_deleted is null or false
             .order('created_at', ascending: false)
             .range(offset, offset + limit - 1);
+        debugPrint('Repository: Query completed');
 
         final posts = response as List;
+        debugPrint('Repository: Found ${posts.length} posts in database');
 
         // Transform the data to match PostModel structure
         final List<PostModel> postModels =
             posts.map((post) {
-              final postMap = Map<String, dynamic>.from(post);
+              // Safe type casting to handle Map<dynamic, dynamic> from Supabase
+              final postMap = <String, dynamic>{};
+              if (post is Map) {
+                post.forEach((key, value) {
+                  postMap[key.toString()] = value;
+                });
+              }
 
               // Extract profile data from the join
               if (postMap['profiles'] != null) {
                 final profile = postMap['profiles'];
-                postMap['username'] = profile['username'];
-                postMap['nickname'] = profile['nickname'];
-                postMap['avatar'] = profile['avatar'];
-                postMap['google_avatar'] = profile['google_avatar'];
+                if (profile is Map) {
+                  postMap['username'] = profile['username'];
+                  postMap['nickname'] = profile['nickname'];
+                  postMap['avatar'] = profile['avatar'];
+                  postMap['google_avatar'] = profile['google_avatar'];
+                }
               }
 
               // Remove the profiles key as it's not part of PostModel
@@ -237,7 +265,13 @@ class PostRepository extends GetxService {
       // Combine the data
       final List<PostModel> postModels =
           posts.map((post) {
-            final postMap = Map<String, dynamic>.from(post);
+            // Safe type casting to handle Map<dynamic, dynamic> from Supabase
+            final postMap = <String, dynamic>{};
+            if (post is Map) {
+              post.forEach((key, value) {
+                postMap[key.toString()] = value;
+              });
+            }
             postMap['username'] = profileResponse['username'];
             postMap['nickname'] = profileResponse['nickname'];
             postMap['avatar'] = profileResponse['avatar'];
@@ -276,19 +310,178 @@ class PostRepository extends GetxService {
     try {
       final columnName = '${engagementType}_count';
 
-      await _supabase.client.rpc(
-        'increment_post_engagement',
-        params: {
-          'post_id': postId,
-          'column_name': columnName,
-          'increment_by': increment,
-        },
-      );
+      // Try RPC function first, fallback to direct update if it fails
+      try {
+        await _supabase.client.rpc(
+          'increment_post_engagement',
+          params: {
+            'post_id': postId,
+            'column_name': columnName,
+            'increment_by': increment,
+          },
+        );
+        debugPrint(
+          'Successfully updated $columnName for post $postId using RPC',
+        );
+      } catch (rpcError) {
+        debugPrint('RPC function failed, using direct update: $rpcError');
+
+        // Fallback: Get current value and update directly
+        try {
+          final currentPost =
+              await _supabase.client
+                  .from('posts')
+                  .select(columnName)
+                  .eq('id', postId)
+                  .single();
+
+          final currentValue = currentPost[columnName] as int? ?? 0;
+          final newValue = (currentValue + increment).clamp(
+            0,
+            999999,
+          ); // Prevent negative values
+
+          await _supabase.client
+              .from('posts')
+              .update({
+                columnName: newValue,
+                'updated_at': DateTime.now().toIso8601String(),
+              })
+              .eq('id', postId);
+
+          debugPrint(
+            'Successfully updated $columnName for post $postId using direct update: $currentValue -> $newValue',
+          );
+        } catch (fallbackError) {
+          debugPrint('Fallback update also failed: $fallbackError');
+
+          // Last resort: try a simple update without getting current value
+          await _supabase.client.rpc(
+            'increment_post_engagement_simple',
+            params: {
+              'p_post_id': postId,
+              'p_column': columnName,
+              'p_increment': increment,
+            },
+          );
+        }
+      }
 
       return true;
     } catch (e) {
       debugPrint('Error updating post engagement: $e');
       return false;
+    }
+  }
+
+  /// Toggle post like using the new atomic SQL function
+  Future<Map<String, dynamic>?> togglePostLike(
+    String postId,
+    String userId,
+  ) async {
+    try {
+      final response = await _supabase.client.rpc(
+        'toggle_post_like',
+        params: {'p_post_id': postId, 'p_user_id': userId},
+      );
+
+      if (response != null && response is List && response.isNotEmpty) {
+        final result = response.first;
+        debugPrint(
+          'Successfully toggled like for post $postId by user $userId. New state: ${result['is_liked']}, Count: ${result['new_likes_count']}',
+        );
+        return {
+          'isLiked': result['is_liked'] as bool,
+          'likesCount': result['new_likes_count'] as int,
+        };
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error toggling post like: $e');
+      return null;
+    }
+  }
+
+  /// Toggle post engagement (stars) using the existing SQL function
+  Future<bool> togglePostEngagement(
+    String postId,
+    String userId,
+    String engagementType,
+  ) async {
+    try {
+      // Only handle stars now, likes are handled by togglePostLike
+      if (engagementType != 'stars') {
+        throw Exception(
+          'Use togglePostLike for likes. This function only handles stars.',
+        );
+      }
+
+      await _supabase.client.rpc(
+        'toggle_post_engagement',
+        params: {'p_post_id': postId, 'p_user_id': userId, 'p_column': 'stars'},
+      );
+      debugPrint(
+        'Successfully toggled $engagementType for post $postId by user $userId',
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Error toggling post engagement: $e');
+      return false;
+    }
+  }
+
+  /// Get current like state for a user and post
+  Future<Map<String, dynamic>?> getUserPostLikeState(
+    String postId,
+    String userId,
+  ) async {
+    try {
+      final response = await _supabase.client.rpc(
+        'get_user_post_like_state',
+        params: {'p_post_id': postId, 'p_user_id': userId},
+      );
+
+      if (response != null && response is List && response.isNotEmpty) {
+        final result = response.first;
+        return {
+          'isLiked': result['is_liked'] as bool,
+          'likesCount': result['likes_count'] as int,
+        };
+      }
+      return {'isLiked': false, 'likesCount': 0};
+    } catch (e) {
+      debugPrint('Error getting user post like state: $e');
+      return {'isLiked': false, 'likesCount': 0};
+    }
+  }
+
+  /// Check if user has interacted with a post (like or star)
+  /// @deprecated This method uses the old user_post_engagements table
+  /// Use getUserPostLikeState() for likes and implement separate methods for other engagements
+  Future<Map<String, bool>> getUserPostEngagement(
+    String postId,
+    String userId,
+  ) async {
+    try {
+      final response =
+          await _supabase.client
+              .from('user_post_engagements')
+              .select('likes, stars')
+              .eq('post_id', postId)
+              .eq('user_id', userId)
+              .maybeSingle();
+
+      if (response == null) {
+        return {'isLiked': false, 'isFavorited': false};
+      }
+
+      return {
+        'isLiked': response['likes'] == true,
+        'isFavorited': response['stars'] == true,
+      };
+    } catch (e) {
+      debugPrint('Error checking user post engagement: $e');
+      return {'isLiked': false, 'isFavorited': false};
     }
   }
 

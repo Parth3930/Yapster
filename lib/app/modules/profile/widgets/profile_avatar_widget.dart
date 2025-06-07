@@ -132,7 +132,7 @@ class ProfileAvatarWidget extends StatelessWidget {
           imageUrl: imageUrl!,
           width: radius * 2,
           height: radius * 2,
-          fit: BoxFit.contain,
+          fit: BoxFit.cover,
           fadeInDuration: Duration.zero, // Remove fade animation
           fadeOutDuration: Duration.zero, // Remove fade animation
           placeholder: null, // Remove placeholder for instant display
@@ -142,8 +142,6 @@ class ProfileAvatarWidget extends StatelessWidget {
                 backgroundColor: ProfileConstants.darkBackground,
                 child: Icon(Icons.person, size: radius, color: Colors.white),
               ),
-          memCacheWidth: (radius * 2 * 2).toInt(), // 2x for high DPI
-          memCacheHeight: (radius * 2 * 2).toInt(),
         ),
       );
     }
@@ -158,7 +156,7 @@ class ProfileAvatarWidget extends StatelessWidget {
           imageUrl: googleAvatarUrl!,
           width: radius * 2,
           height: radius * 2,
-          fit: BoxFit.contain,
+          fit: BoxFit.cover,
           fadeInDuration: Duration.zero, // Remove fade animation
           fadeOutDuration: Duration.zero, // Remove fade animation
           placeholder: null, // Remove placeholder for instant display

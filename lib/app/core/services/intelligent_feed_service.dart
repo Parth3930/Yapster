@@ -6,7 +6,7 @@ import 'package:yapster/app/core/algorithms/post_scoring_algorithm.dart';
 
 /// Service for managing intelligent post feed with deduplication and scoring
 class IntelligentFeedService extends GetxService {
-  final UserInteractionService _interactionService =
+  UserInteractionService get _interactionService =>
       Get.find<UserInteractionService>();
   late final PostScoringAlgorithm _scoringAlgorithm;
 

@@ -32,8 +32,11 @@ class PostInteractionButtons extends StatelessWidget {
         orElse: () => post,
       );
 
-      final isLiked = currentPost.metadata['isLiked'] == true;
-      final isFavorited = currentPost.metadata['isFavorited'] == true;
+      // Safe access to metadata values
+      final isLiked =
+          _getMetadataValue(currentPost.metadata, 'isLiked') == true;
+      final isFavorited =
+          _getMetadataValue(currentPost.metadata, 'isFavorited') == true;
 
       final interactionButtons = [
         _buildLikeButton(isLiked: isLiked, likesCount: currentPost.likesCount),
@@ -97,16 +100,6 @@ class PostInteractionButtons extends StatelessWidget {
   void _handleLikeTap(bool isCurrentlyLiked) {
     // Use the controller to toggle like status
     controller.togglePostLike(post.id);
-
-    // Show toast for like/unlike
-    Get.snackbar(
-      isCurrentlyLiked ? 'Unliked' : 'Liked',
-      isCurrentlyLiked ? 'You unliked this post' : 'You liked this post',
-      snackPosition: SnackPosition.BOTTOM,
-      duration: Duration(seconds: 1),
-      backgroundColor: Colors.black54,
-      colorText: Colors.white,
-    );
   }
 
   // Handle comment button tap
@@ -122,8 +115,8 @@ class PostInteractionButtons extends StatelessWidget {
         postId: post.id,
         post: post,
         onCommentSubmit: (postId, commentText) async {
-          // Add comment logic
-          await controller.updatePostEngagement(postId, 'comments', 1);
+          // Comment count is already incremented in CommentController.addComment()
+          // No additional increment needed here to avoid duplication
 
           // No need for toast as the comment is already visible in the dialog
         },
@@ -156,15 +149,7 @@ class PostInteractionButtons extends StatelessWidget {
       }
     } catch (e) {
       debugPrint('Error loading recent chats: $e');
-      // Show a simple share dialog if we can't load chats
-      Get.snackbar(
-        'Shared',
-        'Post shared successfully',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.green[800],
-        colorText: Colors.white,
-        duration: Duration(seconds: 2),
-      );
+      // If we can't load chats, just return silently
       return;
     }
 
@@ -186,18 +171,6 @@ class PostInteractionButtons extends StatelessWidget {
   Future<void> _handleFavoriteTap(bool isCurrentlyFavorited) async {
     // Use the controller to toggle favorite status
     await controller.togglePostFavorite(post.id);
-
-    // Show toast for favorite/unfavorite
-    Get.snackbar(
-      isCurrentlyFavorited ? 'Removed from Favorites' : 'Added to Favorites',
-      isCurrentlyFavorited
-          ? 'Post removed from your favorites'
-          : 'Post added to your favorites',
-      snackPosition: SnackPosition.BOTTOM,
-      duration: Duration(seconds: 1),
-      backgroundColor: Colors.black54,
-      colorText: Colors.white,
-    );
   }
 
   // Helper method for glassy pill container
@@ -212,5 +185,16 @@ class PostInteractionButtons extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // Helper method to safely access metadata values
+  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+    try {
+      return metadata[key];
+    } catch (e) {
+      // If there's any type casting issue, return null
+      debugPrint('Error accessing metadata key "$key": $e');
+      return null;
+    }
   }
 }

@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/post_avatar_widget.dart';
 
 /// Widget for displaying image posts
 class ImagePostWidget extends StatelessWidget {
@@ -85,20 +86,10 @@ class ImagePostWidget extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      GestureDetector(
+                      PostAvatarWidget(
+                        post: post,
+                        radius: 20,
                         onTap: () => _navigateToProfile(),
-                        child: CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Colors.grey[800],
-                          backgroundImage:
-                              post.avatar != null
-                                  ? NetworkImage(post.avatar!)
-                                  : null,
-                          child:
-                              post.avatar == null
-                                  ? Icon(Icons.person, color: Colors.grey[600])
-                                  : null,
-                        ),
                       ),
                       SizedBox(width: 10),
                       GestureDetector(
@@ -112,7 +103,8 @@ class ImagePostWidget extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (post.metadata['verified'] == true) ...[
+                      if (_getMetadataValue(post.metadata, 'verified') ==
+                          true) ...[
                         SizedBox(width: 4),
                         Icon(Icons.verified, color: Colors.blue, size: 16),
                       ],
@@ -299,5 +291,16 @@ class ImagePostWidget extends StatelessWidget {
             ),
           ),
     );
+  }
+
+  // Helper method to safely access metadata values
+  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+    try {
+      return metadata[key];
+    } catch (e) {
+      // If there's any type casting issue, return null
+      debugPrint('Error accessing metadata key "$key": $e');
+      return null;
+    }
   }
 }

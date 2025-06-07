@@ -5,7 +5,7 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/models/story_model.dart';
 
 class StoryRepository extends GetxService {
-  final SupabaseService _supabase = Get.find<SupabaseService>();
+  SupabaseService get _supabase => Get.find<SupabaseService>();
 
   /// Upload story image to storage
   Future<String?> uploadStoryImage(File imageFile, String userId) async {

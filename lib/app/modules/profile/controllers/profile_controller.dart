@@ -8,6 +8,7 @@ import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
 import 'package:yapster/app/core/models/follow_type.dart';
+import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 
 class ProfileController extends GetxController {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
@@ -353,6 +354,33 @@ class ProfileController extends GetxController {
       _accountDataProvider.nickname.value = nicknameController.text;
       _accountDataProvider.username.value = usernameController.text;
       _accountDataProvider.bio.value = bioController.text;
+
+      // Force refresh all reactive values to ensure UI updates
+      _accountDataProvider.nickname.refresh();
+      _accountDataProvider.username.refresh();
+      _accountDataProvider.bio.refresh();
+      _accountDataProvider.avatar.refresh();
+      _accountDataProvider.banner.refresh();
+
+      // Invalidate cache to force fresh data on next load
+      _supabaseService.profileDataCached.value = false;
+      _supabaseService.lastProfileFetch = null;
+
+      // Force refresh profile data to ensure all UI components update
+      await _accountDataProvider.forceRefreshProfileData();
+
+      // Clear user posts cache to force refresh with updated profile data
+      if (Get.isRegistered<UserPostsCacheService>()) {
+        final cacheService = Get.find<UserPostsCacheService>();
+        final currentUserId = _supabaseService.currentUser.value?.id;
+        if (currentUserId != null) {
+          cacheService.clearUserCache(currentUserId);
+          debugPrint('Cleared user posts cache after profile update');
+        }
+      }
+
+      // Force UI update
+      update();
 
       Get.back(); // Return to profile view
       Get.snackbar(

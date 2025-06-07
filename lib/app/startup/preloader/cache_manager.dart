@@ -293,7 +293,21 @@ class CacheManager extends GetxService {
       if (_isCacheValid(key, _defaultCacheDuration)) {
         final cachedJson = _storageService.getString(key);
         if (cachedJson != null) {
-          final data = List<Map<String, dynamic>>.from(jsonDecode(cachedJson));
+          final decoded = jsonDecode(cachedJson);
+          final data = <Map<String, dynamic>>[];
+          if (decoded is List) {
+            for (final item in decoded) {
+              if (item is Map<String, dynamic>) {
+                data.add(item);
+              } else if (item is Map) {
+                final safeMap = <String, dynamic>{};
+                item.forEach((key, value) {
+                  safeMap[key.toString()] = value;
+                });
+                data.add(safeMap);
+              }
+            }
+          }
           _memoryCache[key] = data;
           debugPrint('$_tag: Returning user posts from persistent cache');
           return data;
@@ -344,7 +358,21 @@ class CacheManager extends GetxService {
       if (_isCacheValid(key, _defaultCacheDuration)) {
         final cachedJson = _storageService.getString(key);
         if (cachedJson != null) {
-          final data = List<Map<String, dynamic>>.from(jsonDecode(cachedJson));
+          final decoded = jsonDecode(cachedJson);
+          final data = <Map<String, dynamic>>[];
+          if (decoded is List) {
+            for (final item in decoded) {
+              if (item is Map<String, dynamic>) {
+                data.add(item);
+              } else if (item is Map) {
+                final safeMap = <String, dynamic>{};
+                item.forEach((key, value) {
+                  safeMap[key.toString()] = value;
+                });
+                data.add(safeMap);
+              }
+            }
+          }
           _memoryCache[key] = data;
           debugPrint('$_tag: Returning user followers from persistent cache');
           return data;
@@ -395,7 +423,21 @@ class CacheManager extends GetxService {
       if (_isCacheValid(key, _defaultCacheDuration)) {
         final cachedJson = _storageService.getString(key);
         if (cachedJson != null) {
-          final data = List<Map<String, dynamic>>.from(jsonDecode(cachedJson));
+          final decoded = jsonDecode(cachedJson);
+          final data = <Map<String, dynamic>>[];
+          if (decoded is List) {
+            for (final item in decoded) {
+              if (item is Map<String, dynamic>) {
+                data.add(item);
+              } else if (item is Map) {
+                final safeMap = <String, dynamic>{};
+                item.forEach((key, value) {
+                  safeMap[key.toString()] = value;
+                });
+                data.add(safeMap);
+              }
+            }
+          }
           _memoryCache[key] = data;
           debugPrint('$_tag: Returning user following from persistent cache');
           return data;
@@ -444,7 +486,21 @@ class CacheManager extends GetxService {
       if (_isCacheValid(key, _chatCacheDuration)) {
         final cachedJson = _storageService.getString(key);
         if (cachedJson != null) {
-          final data = List<Map<String, dynamic>>.from(jsonDecode(cachedJson));
+          final decoded = jsonDecode(cachedJson);
+          final data = <Map<String, dynamic>>[];
+          if (decoded is List) {
+            for (final item in decoded) {
+              if (item is Map<String, dynamic>) {
+                data.add(item);
+              } else if (item is Map) {
+                final safeMap = <String, dynamic>{};
+                item.forEach((key, value) {
+                  safeMap[key.toString()] = value;
+                });
+                data.add(safeMap);
+              }
+            }
+          }
           _memoryCache[key] = data;
           debugPrint('$_tag: Returning groups data from persistent cache');
           return data;

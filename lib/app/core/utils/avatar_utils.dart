@@ -6,6 +6,7 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:get/get.dart';
+import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 
 /// Utility class for handling avatar-related operations
 /// This centralizes common avatar functionality used across controllers
@@ -80,13 +81,29 @@ class AvatarUtils {
         'avatar': imageUrl,
       });
 
-      // Update cache status
-      supabaseService.profileDataCached.value = true;
-      supabaseService.lastProfileFetch = DateTime.now();
-
       // Update the account data provider
       final accountDataProvider = Get.find<AccountDataProvider>();
       accountDataProvider.avatar.value = imageUrl;
+
+      // Force refresh the avatar to ensure UI updates
+      accountDataProvider.avatar.refresh();
+
+      // Invalidate cache to force fresh data on next load
+      supabaseService.profileDataCached.value = false;
+      supabaseService.lastProfileFetch = null;
+
+      // Force refresh profile data to ensure all UI components update
+      await accountDataProvider.forceRefreshProfileData();
+
+      // Clear user posts cache to force refresh with updated profile data
+      if (Get.isRegistered<UserPostsCacheService>()) {
+        final cacheService = Get.find<UserPostsCacheService>();
+        final currentUserId = supabaseService.currentUser.value?.id;
+        if (currentUserId != null) {
+          cacheService.clearUserCache(currentUserId);
+          debugPrint('Cleared user posts cache after avatar update');
+        }
+      }
 
       return imageUrl;
     } catch (e) {

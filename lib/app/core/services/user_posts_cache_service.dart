@@ -8,24 +8,54 @@ import 'dart:convert';
 
 /// Service for caching and managing user posts to avoid repeated database calls
 class UserPostsCacheService extends GetxService {
-  // Lazy initialization to avoid dependency issues
-  SupabaseService get _supabase => Get.find<SupabaseService>();
-  StorageService get _storage => Get.find<StorageService>();
-  PostRepository get _postRepository => Get.find<PostRepository>();
+  // Lazy initialization to avoid dependency issues with null safety
+  SupabaseService? get _supabase {
+    try {
+      return Get.find<SupabaseService>();
+    } catch (e) {
+      debugPrint('SupabaseService not available yet: $e');
+      return null;
+    }
+  }
+
+  StorageService? get _storage {
+    try {
+      return Get.find<StorageService>();
+    } catch (e) {
+      debugPrint('StorageService not available yet: $e');
+      return null;
+    }
+  }
+
+  PostRepository? get _postRepository {
+    try {
+      return Get.find<PostRepository>();
+    } catch (e) {
+      debugPrint('PostRepository not available yet: $e');
+      return null;
+    }
+  }
 
   // Cache for user posts
   final Map<String, List<PostModel>> _userPostsCache = {};
   final Map<String, DateTime> _lastFetchTime = {};
   final Map<String, bool> _isLoading = {};
 
-  // Cache duration
-  static const Duration _cacheDuration = Duration(minutes: 10);
+  // Cache duration - reduced to be more responsive to changes
+  static const Duration _cacheDuration = Duration(minutes: 2);
   static const String _cacheKeyPrefix = 'user_posts_';
 
   @override
   void onInit() {
     super.onInit();
-    _loadCachedPosts();
+    // Only load cached posts if services are available
+    if (_supabase != null && _storage != null) {
+      _loadCachedPosts();
+    } else {
+      debugPrint(
+        'UserPostsCacheService: Services not ready, skipping cache load',
+      );
+    }
   }
 
   /// Load cached posts from local storage
@@ -38,15 +68,28 @@ class UserPostsCacheService extends GetxService {
         return;
       }
 
-      final currentUserId = _supabase.client.auth.currentUser?.id;
-      if (currentUserId != null) {
-        final cachedData = _storage.getString(
+      final currentUserId = _supabase?.client.auth.currentUser?.id;
+      if (currentUserId != null && _storage != null) {
+        final cachedData = _storage!.getString(
           '${_cacheKeyPrefix}$currentUserId',
         );
         if (cachedData != null) {
           final List<dynamic> postsJson = json.decode(cachedData);
           final posts =
-              postsJson.map((json) => PostModel.fromMap(json)).toList();
+              postsJson.map((json) {
+                // Safe type casting for cached JSON data
+                if (json is Map<String, dynamic>) {
+                  return PostModel.fromMap(json);
+                } else if (json is Map) {
+                  final safeMap = <String, dynamic>{};
+                  json.forEach((key, value) {
+                    safeMap[key.toString()] = value;
+                  });
+                  return PostModel.fromMap(safeMap);
+                } else {
+                  throw Exception('Invalid post data format in cache');
+                }
+              }).toList();
           _userPostsCache[currentUserId] = posts;
           _lastFetchTime[currentUserId] = DateTime.now();
           debugPrint('Loaded ${posts.length} cached posts for current user');
@@ -99,15 +142,40 @@ class UserPostsCacheService extends GetxService {
       _isLoading[userId] = true;
       debugPrint('Loading posts from database for user: $userId');
 
-      final posts = await _postRepository.getUserPosts(userId);
+      if (_postRepository == null) {
+        debugPrint('PostRepository not available, returning empty list');
+        return [];
+      }
 
-      // Update cache
+      final posts = await _postRepository!.getUserPosts(userId);
+
+      // Validate cached posts against database results
+      // Remove any cached posts that no longer exist in the database
+      final cachedPosts = _userPostsCache[userId];
+      if (cachedPosts != null && cachedPosts.isNotEmpty) {
+        final databasePostIds = posts.map((p) => p.id).toSet();
+        final removedPosts =
+            cachedPosts
+                .where((cachedPost) => !databasePostIds.contains(cachedPost.id))
+                .toList();
+
+        if (removedPosts.isNotEmpty) {
+          debugPrint(
+            'Found ${removedPosts.length} posts in cache that no longer exist in database',
+          );
+          for (final removedPost in removedPosts) {
+            debugPrint('Removing deleted post from cache: ${removedPost.id}');
+          }
+        }
+      }
+
+      // Update cache with fresh database results
       _userPostsCache[userId] = posts;
       _lastFetchTime[userId] = DateTime.now();
 
       // Save to local storage for current user
-      final currentUserId = _supabase.client.auth.currentUser?.id;
-      if (userId == currentUserId) {
+      final currentUserId = _supabase?.client.auth.currentUser?.id;
+      if (userId == currentUserId && _storage != null) {
         await _saveCachedPosts(userId, posts);
       }
 
@@ -124,8 +192,13 @@ class UserPostsCacheService extends GetxService {
   /// Save posts to local storage
   Future<void> _saveCachedPosts(String userId, List<PostModel> posts) async {
     try {
+      if (_storage == null) {
+        debugPrint('StorageService not available, skipping cache save');
+        return;
+      }
+
       final postsJson = posts.map((post) => post.toMap()).toList();
-      await _storage.saveString(
+      await _storage!.saveString(
         '${_cacheKeyPrefix}$userId',
         json.encode(postsJson),
       );
@@ -141,7 +214,7 @@ class UserPostsCacheService extends GetxService {
     _userPostsCache[userId] = cachedPosts;
 
     // Save to local storage for current user
-    final currentUserId = _supabase.client.auth.currentUser?.id;
+    final currentUserId = _supabase?.client.auth.currentUser?.id;
     if (userId == currentUserId) {
       _saveCachedPosts(userId, cachedPosts);
     }
@@ -159,7 +232,7 @@ class UserPostsCacheService extends GetxService {
         _userPostsCache[userId] = cachedPosts;
 
         // Save to local storage for current user
-        final currentUserId = _supabase.client.auth.currentUser?.id;
+        final currentUserId = _supabase?.client.auth.currentUser?.id;
         if (userId == currentUserId) {
           _saveCachedPosts(userId, cachedPosts);
         }
@@ -177,7 +250,7 @@ class UserPostsCacheService extends GetxService {
       _userPostsCache[userId] = cachedPosts;
 
       // Save to local storage for current user
-      final currentUserId = _supabase.client.auth.currentUser?.id;
+      final currentUserId = _supabase?.client.auth.currentUser?.id;
       if (userId == currentUserId) {
         _saveCachedPosts(userId, cachedPosts);
       }
@@ -203,8 +276,16 @@ class UserPostsCacheService extends GetxService {
     _isLoading.remove(userId);
 
     // Remove from local storage
-    _storage.remove('${_cacheKeyPrefix}$userId');
+    _storage?.remove('${_cacheKeyPrefix}$userId');
     debugPrint('Cleared cache for user: $userId');
+  }
+
+  /// Invalidate cache for a user (forces next load to fetch from database)
+  void invalidateUserCache(String userId) {
+    _lastFetchTime.remove(userId);
+    debugPrint(
+      'Invalidated cache for user: $userId - next load will fetch from database',
+    );
   }
 
   /// Clear all caches
@@ -232,7 +313,7 @@ class UserPostsCacheService extends GetxService {
 
   /// Preload posts for current user
   Future<void> preloadCurrentUserPosts() async {
-    final currentUserId = _supabase.client.auth.currentUser?.id;
+    final currentUserId = _supabase?.client.auth.currentUser?.id;
     if (currentUserId != null) {
       await getUserPosts(currentUserId);
     }
@@ -281,7 +362,7 @@ class UserPostsCacheService extends GetxService {
         _userPostsCache[userId] = cachedPosts;
 
         // Save to local storage for current user
-        final currentUserId = _supabase.client.auth.currentUser?.id;
+        final currentUserId = _supabase?.client.auth.currentUser?.id;
         if (userId == currentUserId) {
           _saveCachedPosts(userId, cachedPosts);
         }
