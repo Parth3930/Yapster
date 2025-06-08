@@ -279,11 +279,27 @@ class ExploreController extends GetxController {
     // Add to recent searches
     addToRecentSearches(user);
 
-    // Load user profile data before navigating
-    loadUserProfile(user['user_id']).then((_) {
-      // Navigate to user profile using the UserProfileView
-      Get.toNamed("${Routes.PROFILE}/${user['user_id']}");
-    });
+    // Set basic profile data immediately for instant navigation
+    final userId = user['user_id'];
+    selectedUserProfile.value = {
+      'user_id': userId,
+      'username': user['username'] ?? '',
+      'nickname': user['nickname'] ?? '',
+      'avatar': user['avatar'] ?? '',
+      'google_avatar': user['google_avatar'] ?? '',
+      'bio': '',
+      'banner': '',
+      'follower_count': 0,
+      'following_count': 0,
+      'post_count': 0,
+      'is_verified': false,
+    };
+
+    // Navigate immediately for speed
+    Get.toNamed("${Routes.PROFILE}/${userId}");
+
+    // Load detailed profile data in background
+    loadUserProfile(userId);
   }
 
   // Creates a default profile with existing values if available

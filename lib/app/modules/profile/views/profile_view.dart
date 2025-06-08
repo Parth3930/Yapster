@@ -72,37 +72,16 @@ class ProfileView extends GetView<ProfileController> {
             // Check cache timestamps in accountDataProvider before loading
             if (accountDataProvider.shouldRefreshFollowers(currentUserId)) {
               await accountDataProvider.loadFollowers(currentUserId);
-              debugPrint('Loaded followers data from database');
-            } else {
-              debugPrint('Using cached followers data');
             }
 
             if (accountDataProvider.shouldRefreshFollowing(currentUserId)) {
               await accountDataProvider.loadFollowing(currentUserId);
-              debugPrint('Loaded following data from database');
-            } else {
-              debugPrint('Using cached following data');
             }
 
             // CRITICAL FIX: Ensure posts are loaded
             if (accountDataProvider.posts.isEmpty) {
-              debugPrint('Posts are empty, loading posts...');
               await accountDataProvider.loadUserPosts(currentUserId);
             }
-
-            debugPrint(
-              'Profile counts - Posts: ${accountDataProvider.posts.length}, Followers: ${accountDataProvider.followerCount}, Following: ${accountDataProvider.followingCount}',
-            );
-          }
-        } else if (userId != null) {
-          // For other users' profiles, only load if we don't have the data cached
-          final userProfile = exploreController.selectedUserProfile;
-          if (userProfile.isEmpty ||
-              !userProfile.containsKey('follower_count')) {
-            // We don't have this user's data - let the ExploreController handle loading it
-            debugPrint(
-              'No cached data for user $userId, letting ExploreController handle it',
-            );
           }
         }
 
@@ -111,40 +90,18 @@ class ProfileView extends GetView<ProfileController> {
       });
     }
 
-    // This will run when the view is built or becomes visible after navigation
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Only preload if we haven't already done so for this user
+    // Optimized loading - only preload essential data
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       final cacheKey = userId ?? 'current';
-      if (!_initialDataLoaded.containsKey(cacheKey) ||
-          _initialDataLoaded[cacheKey] != true) {
-        // Get avatar URLs using the utility method
-        final avatars = AvatarUtils.getAvatarUrls(
-          isCurrentUser: isCurrentUser,
-          accountDataProvider: accountDataProvider,
-          exploreController: exploreController,
-        );
-
-        // Preload avatars if available
-        if (avatars['avatar']!.isNotEmpty ||
-            avatars['google_avatar']!.isNotEmpty) {
-          if (isCurrentUser) {
-            AvatarUtils.preloadAvatarImages(accountDataProvider);
-          }
-          controller.isAvatarLoaded.value = true;
-        }
-
-        // Preload banner image
-        if (isCurrentUser) {
-          await BannerUtils.preloadBannerImages(accountDataProvider);
-        } else if (exploreController.selectedUserProfile['banner'] != null) {
-          // For other users, update the account data provider temporarily
-          final tempProvider = AccountDataProvider();
-          tempProvider.banner.value =
-              exploreController.selectedUserProfile['banner'];
-          await BannerUtils.preloadBannerImages(tempProvider);
-        }
-
+      if (!_initialDataLoaded.containsKey(cacheKey)) {
+        // Mark as loaded immediately to prevent duplicate loading
         _initialDataLoaded[cacheKey] = true;
+
+        // Set avatar as loaded immediately for faster UI
+        controller.isAvatarLoaded.value = true;
+
+        // Skip heavy preloading operations for speed
+        // Images will load on-demand with caching
       }
     });
 
@@ -167,21 +124,11 @@ class ProfileView extends GetView<ProfileController> {
                     ),
                   ),
                   child: Obx(() {
-                    debugPrint(
-                      'Banner widget rebuilt at ${DateTime.now().toIso8601String()}',
-                    );
-
                     String bannerUrl =
                         isCurrentUser
                             ? accountDataProvider.banner.value
                             : exploreController.selectedUserProfile['banner'] ??
                                 '';
-
-                    debugPrint('Banner URL: $bannerUrl');
-
-                    if (bannerUrl.isEmpty) {
-                      debugPrint('No banner URL available');
-                    }
 
                     if (bannerUrl.isEmpty) {
                       return const SizedBox.shrink();
@@ -243,7 +190,6 @@ class ProfileView extends GetView<ProfileController> {
                       imageUrl: avatarUrl,
                       googleAvatarUrl: googleAvatarUrl,
                       onTap: () {
-                        debugPrint('Profile image tapped');
                         // You can add profile image tap functionality here if needed
                       },
                       radius: 45,

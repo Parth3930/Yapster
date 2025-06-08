@@ -274,7 +274,7 @@ class AvatarUtils {
     return true;
   }
 
-  /// Creates a widget for displaying an avatar with proper fallbacks
+  /// Creates a widget for displaying an avatar with proper fallbacks - optimized for speed
   static Widget getAvatarWidget(
     XFile? selectedImage,
     AccountDataProvider provider, {
@@ -284,10 +284,7 @@ class AvatarUtils {
     final bgColor = backgroundColor ?? Colors.grey.shade800;
     final avatar = getAvatarImage(selectedImage, provider);
 
-    // Log avatar sources for debugging
-    debugPrint('Avatar Widget - Profile avatar: ${provider.avatar.value}');
-    debugPrint('Avatar Widget - Google avatar: ${provider.googleAvatar.value}');
-    debugPrint('Avatar Widget - Has valid avatar: ${avatar != null}');
+    // Removed debug prints for better performance
 
     if (avatar != null) {
       return CircleAvatar(

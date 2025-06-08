@@ -113,10 +113,15 @@ class AppPages {
         final String? userId = Get.parameters['id'];
         return ProfileView(userId: userId); // For other users
       },
-      binding: ProfileBinding(),
-      transition: Transition.fadeIn,
-      transitionDuration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
+      binding: OptimizedProfileBinding(), // Use optimized binding for speed
+      transition:
+          Transition.noTransition, // Remove transition for instant loading
+      transitionDuration: Duration.zero,
+      curve: Curves.linear,
+      fullscreenDialog: false,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: false,
     ),
 
     GetPage(
