@@ -95,9 +95,6 @@ class _GroupChatWindowViewState extends State<GroupChatWindowView>
   Widget build(BuildContext context) {
     final args = Get.arguments;
 
-    // Debug the arguments
-    debugPrint('Group chat arguments: $args');
-
     if (args == null || args is! Map<String, dynamic>) {
       return _buildErrorScaffold(
         'Group data unavailable - no arguments passed',
@@ -108,11 +105,15 @@ class _GroupChatWindowViewState extends State<GroupChatWindowView>
     final String groupName = args['groupName']?.toString() ?? 'Group Chat';
     final Map<String, dynamic>? groupData = args['groupData'];
 
-    debugPrint('Parsed groupId: $groupId, groupName: $groupName');
-    debugPrint('Group data available: ${groupData != null}');
-
     if (groupId.isEmpty) {
       return _buildErrorScaffold('Invalid group ID - empty or null');
+    }
+
+    // CRITICAL FIX: Clear group messages IMMEDIATELY when building the widget to prevent flicker
+    // This happens synchronously before any UI is rendered
+    if (controller.selectedGroupId.value != groupId) {
+      controller.currentGroupMessages.clear();
+      controller.selectedGroupId.value = groupId;
     }
 
     // If we have group data, ensure it's in the controller
@@ -124,7 +125,7 @@ class _GroupChatWindowViewState extends State<GroupChatWindowView>
           controller.groups.add(groupModel);
         }
       } catch (e) {
-        debugPrint('Error parsing group data: $e');
+        // Error parsing group data
       }
     }
 
@@ -248,16 +249,19 @@ class _GroupChatWindowViewState extends State<GroupChatWindowView>
     _isInitialized = true;
     _currentGroupId = groupId;
 
+    // CRITICAL FIX: Clear messages immediately to prevent showing previous group messages
+    controller.currentGroupMessages.clear();
+
     // Create focus node for input
     final inputFocusNode = FocusNode();
     Get.put(inputFocusNode, tag: 'input_focus_node');
 
-    // Set selected chat ID to the group ID for the chat controller
+    // Set selected chat ID immediately for instant UI
     chatController.selectedChatId.value = groupId;
-
-    // Set selected group and load messages
     controller.selectedGroupId.value = groupId;
-    controller.loadGroupMessages(groupId);
+
+    // Load messages in background for better performance
+    Future.microtask(() => controller.loadGroupMessages(groupId));
   }
 
   void _showGroupSettings() {

@@ -95,12 +95,18 @@ class ChatWindowView extends GetView<ChatController> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    // CRITICAL FIX: Clear messages IMMEDIATELY when building the widget to prevent flicker
+    // This happens synchronously before any UI is rendered
+    if (controller.selectedChatId.value != chatId) {
+      controller.messages.clear();
+      controller.selectedChatId.value = chatId;
+    }
+
     // Only initialize once per chat or when chat changes
     final bool needsInitialization =
         _currentChatId != chatId || !_isInitialized;
 
     if (needsInitialization) {
-      debugPrint('Initializing chat: $chatId');
       _currentChatId = chatId;
       _isInitialized = true;
 
@@ -128,7 +134,7 @@ class ChatWindowView extends GetView<ChatController> {
               // Trigger background refresh of chats when returning
               controller.preloadRecentChats();
             } catch (e) {
-              debugPrint('Error refreshing chats on back: $e');
+              // Error refreshing chats on back
             }
 
             Get.back();
@@ -232,65 +238,91 @@ class ChatWindowView extends GetView<ChatController> {
     return isMe ? 'You: $content' : content;
   }
 
-  // Consolidated initialization method
+  // Optimized initialization method - minimal setup for instant loading
   void _initializeChat(String chatId, String otherUserId, String username) {
+    // CRITICAL FIX: Use optimized method to clear messages and set chat ID
+    controller.clearMessagesForNewChat(chatId);
+
     // Create a final focus node
     final inputFocusNode = FocusNode();
     Get.put(inputFocusNode, tag: 'input_focus_node');
 
-    // Set up lifecycle observers only once
+    // Handle special loading case
+    if (chatId == 'loading') {
+      _handleLoadingChat(otherUserId, username);
+      return;
+    }
+
+    // Do heavy initialization in background
+    _setupInBackground(chatId, otherUserId);
+  }
+
+  // Handle the loading chat case where we need to create the chat
+  void _handleLoadingChat(String otherUserId, String username) async {
+    final args = Get.arguments as Map<String, dynamic>?;
+    final userOne = args?['userOne'] as String?;
+    final userTwo = args?['userTwo'] as String?;
+
+    if (userOne != null && userTwo != null) {
+      try {
+        final supabaseService = Get.find<SupabaseService>();
+        final chatId = await supabaseService.client.rpc(
+          'user_chat_connect',
+          params: {'user_one': userOne, 'user_two': userTwo},
+        );
+
+        if (chatId != null && (chatId is String) && chatId.isNotEmpty) {
+          // Clear messages again before setting new chat ID
+          controller.messages.clear();
+          // Update the selected chat ID with the real one
+          controller.selectedChatId.value = chatId;
+          // Continue with normal initialization
+          _setupInBackground(chatId, otherUserId);
+        }
+      } catch (e) {
+        // If we can't create the chat, show an error and go back
+        Get.back();
+        Get.snackbar('Error', 'Unable to start chat. Please try again.');
+      }
+    }
+  }
+
+  // Setup heavy operations in background for better performance
+  void _setupInBackground(String chatId, String otherUserId) async {
+    // Set up lifecycle observers
     _setupLifecycleObservers(chatId);
 
-    // Set up keyboard observers only once
+    // Set up keyboard observers
     _setupKeyboardObservers();
-
-    // Set up message observers with debouncing
-    _setupMessageObservers(chatId);
 
     // Set up cleanup
     _setupCleanup();
 
-    // Fetch user profile (with caching)
+    // Fetch user profile in background
     _fetchOtherUserProfileCached(otherUserId);
 
-    // Set the selected chat ID and load messages ONCE
-    controller.selectedChatId.value = chatId;
-
-    // Initial load of messages - only do this once per chat
+    // Load messages in background
     _loadMessagesOnce(chatId);
   }
 
   // Track if messages have been marked as read for this chat
   static final Set<String> _chatsMarkedAsRead = <String>{};
 
-  // Load messages once when chat is opened
+  // Load messages once when chat is opened - optimized for speed
   void _loadMessagesOnce(String chatId) async {
     try {
-      debugPrint('Initial load of messages for chat: $chatId');
-
-      // Reset messages state to avoid showing old messages temporarily
+      // Ensure messages are cleared before loading new ones
       controller.messages.clear();
 
-      // Check for persistent cached messages first to show immediately
-      final cachedMessages = controller.getCachedMessages(chatId);
-      if (cachedMessages != null && cachedMessages.isNotEmpty) {
-        debugPrint(
-          'Using ${cachedMessages.length} cached messages for chat: $chatId',
-        );
-        controller.messages.assignAll(cachedMessages);
-      }
-
-      // Load messages (will use cache if available, or load from database)
+      // Load messages directly without showing cached ones first to avoid confusion
       await controller.preloadMessages(chatId);
 
       // Mark as read only if we haven't done so for this chat
       if (!_chatsMarkedAsRead.contains(chatId)) {
-        debugPrint('Marking messages as read for chat: $chatId');
         await controller.markMessagesAsRead(chatId);
         _chatsMarkedAsRead.add(chatId);
       }
     } catch (e) {
-      debugPrint('Error loading messages initially: $e');
       if (!e.toString().contains('cancelled')) {
         Get.snackbar('Error', 'Failed to load messages. Please try again.');
       }
@@ -301,12 +333,11 @@ class ChatWindowView extends GetView<ChatController> {
   void _setupLifecycleObservers(String chatId) {
     final lifecycleObserver = _AppLifecycleObserver(
       onResume: () {
-        debugPrint('App resumed - syncing messages');
         // Only sync when app resumes (not full reload)
         controller.syncMessagesWithDatabase(chatId);
       },
       onPause: () {
-        debugPrint('App paused - preparing for background');
+        // App paused - preparing for background
       },
     );
 
@@ -325,19 +356,12 @@ class ChatWindowView extends GetView<ChatController> {
           FocusScope.of(Get.context!).unfocus();
         }
         isKeyboardVisible.value = false;
-        debugPrint('Keyboard hidden, cleared focus');
       },
       onShow: () {
         isKeyboardVisible.value = true;
-        debugPrint('Keyboard shown');
       },
     );
     WidgetsBinding.instance.addObserver(observer);
-  }
-
-  // No longer using message observers for read status
-  void _setupMessageObservers(String chatId) {
-    // This method is kept for future use if needed
   }
 
   // Set up cleanup
@@ -347,8 +371,6 @@ class ChatWindowView extends GetView<ChatController> {
     ever(routeObs, (route) {
       if (Get.previousRoute == Routes.CHAT_WINDOW &&
           Get.currentRoute != Routes.CHAT_WINDOW) {
-        debugPrint('Leaving chat Window - cleaning up');
-
         // Reset initialization flags
         _isInitialized = false;
         _currentChatId = null;

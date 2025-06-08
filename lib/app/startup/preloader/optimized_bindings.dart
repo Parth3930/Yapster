@@ -11,10 +11,8 @@ import 'package:yapster/app/modules/profile/controllers/profile_controller.dart'
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/create/controllers/create_controller.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
-import 'package:yapster/app/modules/chat/services/audio_services.dart';
 import 'package:yapster/app/modules/chat/services/chat_message_service.dart';
-import 'package:yapster/app/modules/chat/services/chat_search_service.dart';
-import 'package:yapster/app/modules/chat/services/chat_cleanup_service.dart';
+import 'package:yapster/app/modules/chat/services/audio_services.dart';
 import 'package:yapster/app/core/utils/chat_cache_service.dart';
 import 'package:yapster/app/startup/preloader/preloader_service.dart';
 
@@ -90,20 +88,25 @@ class OptimizedProfileBinding extends Bindings {
 class OptimizedChatBinding extends Bindings {
   @override
   void dependencies() {
-    // Import chat-specific services
-    Get.lazyPut(() => ChatCacheService());
-    Get.lazyPut(() => ChatMessageService());
-    Get.lazyPut(() => ChatSearchService());
-    Get.lazyPut(() => ChatCleanupService());
-    Get.lazyPut(() => AudioService());
-
-    // Use preloaded controllers
-    if (!Get.isRegistered<ExploreController>()) {
-      Get.put<ExploreController>(ExploreController(), permanent: true);
-    }
+    // Only load essential services for instant chat opening
     if (!Get.isRegistered<ChatController>()) {
       Get.put<ChatController>(ChatController(), permanent: true);
     }
+    if (!Get.isRegistered<ExploreController>()) {
+      Get.put<ExploreController>(ExploreController(), permanent: true);
+    }
+
+    // Load only critical services immediately
+    Get.lazyPut(() => ChatCacheService());
+    Get.lazyPut(() => ChatMessageService());
+
+    // AudioService is needed for audio message controllers
+    Get.lazyPut(() => AudioService());
+
+    // Skip non-essential services for faster loading
+    // These will be loaded on-demand if needed:
+    // - ChatSearchService (only needed for search)
+    // - ChatCleanupService (only needed for cleanup)
   }
 }
 

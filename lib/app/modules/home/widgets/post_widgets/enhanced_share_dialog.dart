@@ -724,6 +724,11 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
         'author_avatar': widget.post.avatar,
         'author_google_avatar': widget.post.googleAvatar,
         'created_at': widget.post.createdAt.toIso8601String(),
+        // Include engagement counts for proper interaction display
+        'likes_count': widget.post.likesCount,
+        'comments_count': widget.post.commentsCount,
+        'shares_count': widget.post.sharesCount,
+        'views_count': widget.post.viewsCount,
       };
 
       // Convert to JSON string for storage

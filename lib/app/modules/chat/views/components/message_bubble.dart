@@ -883,14 +883,73 @@ class _MessageBubbleState extends State<MessageBubble>
   Widget _buildPostInteractionButtons() {
     if (_sharedPostData == null) return SizedBox.shrink();
 
+    return FutureBuilder<PostModel?>(
+      future: _createPostModelWithEngagement(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            height: 40,
+            child: Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
+                ),
+              ),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.hasError) {
+          debugPrint('Error loading post engagement data: ${snapshot.error}');
+          return SizedBox.shrink();
+        }
+
+        final postModel = snapshot.data!;
+        final controller = _SharedPostControllerAdapter(postModel);
+
+        return Container(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: PostInteractionButtons(
+            post: postModel,
+            controller: controller,
+            glassy: false, // Use solid buttons for better visibility in chat
+          ),
+        );
+      },
+    );
+  }
+
+  // Create PostModel with proper engagement data
+  Future<PostModel?> _createPostModelWithEngagement() async {
+    if (_sharedPostData == null) return null;
+
     try {
-      // Create a PostModel from the shared post data
       final postData = _sharedPostData;
+
+      // Determine post type based on content
+      String postType = 'text';
+      if (postData['image_url'] != null) {
+        postType = 'image';
+      } else if (postData['video_url'] != null) {
+        postType = 'video';
+      }
+
+      // Create initial metadata
+      final metadata = <String, dynamic>{};
+      if (postData['video_url'] != null) {
+        metadata['video_url'] = postData['video_url'];
+      }
+
+      // Create PostModel with engagement counts from shared data
       final postModel = PostModel(
         id: postData['post_id']?.toString() ?? '',
         userId: postData['author_id']?.toString() ?? '',
         content: postData['content']?.toString() ?? '',
-        postType: 'text', // Default to text, could be enhanced
+        postType: postType,
         imageUrl: postData['image_url']?.toString(),
         username: postData['author_username']?.toString(),
         nickname: postData['author_nickname']?.toString(),
@@ -900,26 +959,53 @@ class _MessageBubbleState extends State<MessageBubble>
             DateTime.tryParse(postData['created_at']?.toString() ?? '') ??
             DateTime.now(),
         updatedAt: DateTime.now(),
-        metadata:
-            postData['video_url'] != null
-                ? {'video_url': postData['video_url']}
-                : {},
+        likesCount: postData['likes_count'] ?? 0,
+        commentsCount: postData['comments_count'] ?? 0,
+        sharesCount: postData['shares_count'] ?? 0,
+        viewsCount: postData['views_count'] ?? 0,
+        metadata: metadata,
       );
 
-      // Create a controller adapter for shared posts
-      final controller = _SharedPostControllerAdapter(postModel);
+      // Load current user's engagement state
+      try {
+        final postRepository = Get.find<PostRepository>();
+        final supabaseService = Get.find<SupabaseService>();
+        final currentUserId = supabaseService.currentUser.value?.id;
 
-      return Container(
-        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: PostInteractionButtons(
-          post: postModel,
-          controller: controller,
-          glassy: false, // Use solid buttons for better visibility in chat
-        ),
-      );
+        if (currentUserId != null && postModel.id.isNotEmpty) {
+          final engagementState = await postRepository.getUserPostLikeState(
+            postModel.id,
+            currentUserId,
+          );
+
+          if (engagementState != null) {
+            // Update metadata with current user's engagement state
+            final updatedMetadata = Map<String, dynamic>.from(
+              postModel.metadata,
+            );
+            updatedMetadata['isLiked'] = engagementState['isLiked'] ?? false;
+            updatedMetadata['isFavorited'] =
+                false; // TODO: Add favorite state if needed
+
+            // Update likes count from server if available
+            final serverLikesCount = engagementState['likesCount'];
+            final finalLikesCount = serverLikesCount ?? postModel.likesCount;
+
+            return postModel.copyWith(
+              metadata: updatedMetadata,
+              likesCount: finalLikesCount,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Error loading engagement state for shared post: $e');
+        // Continue with the post model without engagement state
+      }
+
+      return postModel;
     } catch (e) {
-      debugPrint('Error building post interaction buttons: $e');
-      return SizedBox.shrink();
+      debugPrint('Error creating post model with engagement: $e');
+      return null;
     }
   }
 
@@ -951,25 +1037,35 @@ class _SharedPostControllerAdapter extends PostsFeedController {
     posts.add(sharedPost);
   }
 
+  // Override to get the current post state
+  PostModel get currentPost {
+    final index = posts.indexWhere((p) => p.id == sharedPost.id);
+    return index != -1 ? posts[index] : sharedPost;
+  }
+
   @override
   Future<void> togglePostLike(String postId) async {
     if (postId != sharedPost.id) return;
 
-    final isCurrentlyLiked = sharedPost.metadata['isLiked'] == true;
+    final currentPostState = currentPost;
+    final isCurrentlyLiked = currentPostState.metadata['isLiked'] == true;
 
     // Optimistic update
-    final updatedMetadata = Map<String, dynamic>.from(sharedPost.metadata);
+    final updatedMetadata = Map<String, dynamic>.from(
+      currentPostState.metadata,
+    );
     updatedMetadata['isLiked'] = !isCurrentlyLiked;
 
-    final updatedPost = sharedPost.copyWith(
+    final updatedPost = currentPostState.copyWith(
       metadata: updatedMetadata,
-      likesCount: sharedPost.likesCount + (isCurrentlyLiked ? -1 : 1),
+      likesCount: currentPostState.likesCount + (isCurrentlyLiked ? -1 : 1),
     );
 
     // Update the post in the list
     final index = posts.indexWhere((p) => p.id == postId);
     if (index != -1) {
       posts[index] = updatedPost;
+      posts.refresh(); // Trigger UI update
     }
 
     try {
@@ -986,17 +1082,20 @@ class _SharedPostControllerAdapter extends PostsFeedController {
 
         if (result != null) {
           // Update with server response
-          final serverMetadata = Map<String, dynamic>.from(sharedPost.metadata);
+          final serverMetadata = Map<String, dynamic>.from(
+            currentPostState.metadata,
+          );
           serverMetadata['isLiked'] = result['isLiked'] ?? false;
 
-          final serverUpdatedPost = sharedPost.copyWith(
+          final serverUpdatedPost = currentPostState.copyWith(
             metadata: serverMetadata,
-            likesCount: result['likesCount'] ?? sharedPost.likesCount,
+            likesCount: result['likesCount'] ?? currentPostState.likesCount,
           );
 
           final serverIndex = posts.indexWhere((p) => p.id == postId);
           if (serverIndex != -1) {
             posts[serverIndex] = serverUpdatedPost;
+            posts.refresh(); // Trigger UI update
           }
         }
       }
@@ -1005,7 +1104,8 @@ class _SharedPostControllerAdapter extends PostsFeedController {
       // Revert optimistic update
       final revertIndex = posts.indexWhere((p) => p.id == postId);
       if (revertIndex != -1) {
-        posts[revertIndex] = sharedPost;
+        posts[revertIndex] = currentPostState;
+        posts.refresh(); // Trigger UI update
       }
     }
   }
@@ -1014,18 +1114,23 @@ class _SharedPostControllerAdapter extends PostsFeedController {
   Future<void> togglePostFavorite(String postId) async {
     if (postId != sharedPost.id) return;
 
-    final isCurrentlyFavorited = sharedPost.metadata['isFavorited'] == true;
+    final currentPostState = currentPost;
+    final isCurrentlyFavorited =
+        currentPostState.metadata['isFavorited'] == true;
 
     // Optimistic update
-    final updatedMetadata = Map<String, dynamic>.from(sharedPost.metadata);
+    final updatedMetadata = Map<String, dynamic>.from(
+      currentPostState.metadata,
+    );
     updatedMetadata['isFavorited'] = !isCurrentlyFavorited;
 
-    final updatedPost = sharedPost.copyWith(metadata: updatedMetadata);
+    final updatedPost = currentPostState.copyWith(metadata: updatedMetadata);
 
     // Update the post in the list
     final index = posts.indexWhere((p) => p.id == postId);
     if (index != -1) {
       posts[index] = updatedPost;
+      posts.refresh(); // Trigger UI update
     }
 
     try {
@@ -1037,7 +1142,8 @@ class _SharedPostControllerAdapter extends PostsFeedController {
       // Revert optimistic update
       final revertIndex = posts.indexWhere((p) => p.id == postId);
       if (revertIndex != -1) {
-        posts[revertIndex] = sharedPost;
+        posts[revertIndex] = currentPostState;
+        posts.refresh(); // Trigger UI update
       }
     }
   }

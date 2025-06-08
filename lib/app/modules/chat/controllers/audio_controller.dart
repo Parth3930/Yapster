@@ -15,7 +15,17 @@ class AudioMessageController extends GetxController
 
   AudioMessageController({this.url, this.messageId, this.duration});
 
-  final audioService = Get.find<AudioService>();
+  // Use lazy loading for AudioService to prevent initialization errors
+  AudioService get audioService {
+    try {
+      return Get.find<AudioService>();
+    } catch (e) {
+      // If AudioService is not available, create it lazily
+      Get.lazyPut(() => AudioService());
+      return Get.find<AudioService>();
+    }
+  }
+
   PlayerController? playerController;
   RecorderController? recorderController;
 

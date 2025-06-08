@@ -1094,7 +1094,6 @@ mixin ChatControllerMessages {
     final currentUserId = supabaseService.client.auth.currentUser?.id;
 
     if (currentUserId == null) {
-      debugPrint('User not logged in');
       return;
     }
 
@@ -1116,11 +1115,20 @@ mixin ChatControllerMessages {
             'otherUserId': userTwoId,
           },
         );
-      } else {
-        debugPrint('Chat ID not found in response');
       }
     } catch (e) {
-      debugPrint('Failed to connect/open chat: $e');
+      // If there's an error, still try to navigate with a fallback approach
+      Get.toNamed(
+        Routes.CHAT_WINDOW,
+        arguments: {
+          'chatId': 'loading',
+          'username': username,
+          'otherUserId': userTwoId,
+          'needsChatCreation': true,
+          'userOne': currentUserId,
+          'userTwo': userTwoId,
+        },
+      );
     }
   }
 

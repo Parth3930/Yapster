@@ -51,12 +51,18 @@ class ChatController extends GetxController
   List<MessageModel>? getCachedMessages(String chatId) {
     if (_messageCache.containsKey(chatId)) {
       final cachedMessages = _messageCache[chatId];
-      debugPrint(
-        'Retrieved ${cachedMessages?.length} cached messages for chat $chatId',
-      );
       return cachedMessages;
     }
     return null;
+  }
+
+  // Clear messages immediately when switching chats to prevent flicker
+  void clearMessagesForNewChat(String newChatId) {
+    // Only clear if we're switching to a different chat
+    if (selectedChatId.value != newChatId) {
+      messages.clear();
+      selectedChatId.value = newChatId;
+    }
   }
 
   // Added properties needed by views

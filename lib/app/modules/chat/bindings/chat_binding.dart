@@ -15,13 +15,13 @@ class ChatBinding extends Bindings {
 
     // Chat-specific services
     Get.lazyPut(() => ChatMessageService());
+    Get.lazyPut(() => AudioService());
     Get.lazyPut(() => ChatSearchService());
     Get.lazyPut(() => ChatCleanupService());
-    Get.lazyPut(() => AudioService());
 
     // Explore controller for profile navigation
     Get.lazyPut(() => ExploreController());
-    
+
     // Main controller
     Get.lazyPut<ChatController>(() => ChatController());
   }

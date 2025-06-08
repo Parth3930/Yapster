@@ -4,7 +4,7 @@ import 'package:get/get.dart';
 import 'package:yapster/app/modules/account_setup/bindings/account_setup_binding.dart';
 import 'package:yapster/app/modules/account_setup/views/account_avatar.dart';
 import 'package:yapster/app/modules/account_setup/views/account_username_view.dart';
-import 'package:yapster/app/modules/chat/bindings/chat_binding.dart';
+
 import 'package:yapster/app/modules/chat/views/chat_view.dart';
 import 'package:yapster/app/modules/chat/views/chat_window_view.dart';
 import 'package:yapster/app/modules/chat/views/group_chat_window_view.dart';
@@ -139,18 +139,26 @@ class AppPages {
     GetPage(
       name: _Paths.CHAT_WINDOW,
       page: () => const ChatWindowView(),
-      binding: ChatBinding(),
+      binding: OptimizedChatBinding(), // Use optimized binding for speed
       transition: Transition.noTransition,
       transitionDuration: Duration.zero,
       curve: Curves.linear,
+      fullscreenDialog: false,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: false,
     ),
     GetPage(
       name: _Paths.GROUP_CHAT,
       page: () => const GroupChatWindowView(),
-      binding: ChatBinding(),
+      binding: OptimizedChatBinding(), // Use optimized binding for speed
       transition: Transition.noTransition,
       transitionDuration: Duration.zero,
       curve: Curves.linear,
+      fullscreenDialog: false,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: false,
     ),
     GetPage(
       name: _Paths.EXPLORE,
