@@ -16,8 +16,9 @@ class MessageCacheEntry {
   final List<MessageModel> messages;
   final DateTime timestamp;
 
-  static const Duration cacheDuration = Duration(minutes: 10);
-  static const Duration backgroundRefreshThreshold = Duration(minutes: 1);
+  // Increased cache duration for better performance and reduced database calls
+  static const Duration cacheDuration = Duration(minutes: 30);
+  static const Duration backgroundRefreshThreshold = Duration(minutes: 2);
 
   MessageCacheEntry(this.messages) : timestamp = DateTime.now();
 
@@ -36,8 +37,12 @@ mixin ChatControllerMessages {
   // Caching variables
   static final Map<String, Map<String, dynamic>> _chatCache = {};
   static DateTime? _lastChatFetchTime;
-  static const Duration _chatCacheDuration = Duration(minutes: 5);
-  static const Duration _backgroundRefreshThreshold = Duration(minutes: 1);
+  static const Duration _chatCacheDuration = Duration(
+    minutes: 15,
+  ); // Increased cache duration
+  static const Duration _backgroundRefreshThreshold = Duration(
+    minutes: 2,
+  ); // Increased refresh threshold
 
   // Track deleted messages to prevent showing them again
   static final Set<String> _deletedMessageIds = <String>{};
@@ -100,9 +105,11 @@ mixin ChatControllerMessages {
   // Static flag to prevent repeated preload calls
   static bool _isPreloadingChats = false;
 
-  // Cache duration constants
-  static const Duration chatCacheDuration = Duration(minutes: 5);
-  static const Duration messageCacheDuration = Duration(minutes: 10);
+  // Cache duration constants - increased for better performance
+  static const Duration chatCacheDuration = Duration(minutes: 15);
+  static const Duration messageCacheDuration = Duration(
+    minutes: 30,
+  ); // Longer cache for messages
 
   /// Clears all cached data
   void clearCache() {
@@ -206,22 +213,70 @@ mixin ChatControllerMessages {
 
   /// Preload messages for a specific chat in the background
   Future<void> preloadMessages(String chatId) async {
-    // Return cached messages immediately if available and fresh
-    final cachedMessages = _getCachedMessages(chatId);
-    if (cachedMessages != null) {
-      debugPrint('Using cached messages for chat $chatId');
-      _chatControler.messages.value = List.from(cachedMessages);
+    debugPrint('Preloading messages for chat $chatId');
 
-      // Refresh in background if cache is getting stale
-      if (_shouldRefreshInBackground(chatId)) {
-        _refreshMessagesInBackground(chatId);
+    try {
+      // First, try to get messages from persistent cache (fastest)
+      final persistentCachedMessages = _chatControler.getCachedMessages(chatId);
+      if (persistentCachedMessages != null &&
+          persistentCachedMessages.isNotEmpty) {
+        debugPrint(
+          'Using persistent cached messages for chat $chatId (${persistentCachedMessages.length} messages)',
+        );
+        _chatControler.messages.assignAll(persistentCachedMessages);
+
+        // Set up real-time subscription for new messages
+        _setupRealtimeSubscription(chatId);
+
+        // Refresh in background if needed
+        if (_shouldRefreshInBackground(chatId)) {
+          _refreshMessagesInBackground(chatId);
+        }
+        return;
       }
-      return;
-    }
 
-    // If no cache or cache expired, load fresh data
-    debugPrint('Preloading messages for chat $chatId in background');
-    await loadMessages(chatId, forceRefresh: false);
+      // Second, try local cache
+      final cachedMessages = _getCachedMessages(chatId);
+      if (cachedMessages != null && cachedMessages.isNotEmpty) {
+        debugPrint(
+          'Using local cached messages for chat $chatId (${cachedMessages.length} messages)',
+        );
+        _chatControler.messages.assignAll(cachedMessages);
+
+        // Update persistent cache
+        _chatControler.cacheMessages(chatId, cachedMessages);
+
+        // Set up real-time subscription
+        _setupRealtimeSubscription(chatId);
+
+        // Refresh in background if cache is getting stale
+        if (_shouldRefreshInBackground(chatId)) {
+          _refreshMessagesInBackground(chatId);
+        }
+        return;
+      }
+
+      // If no cache available, load fresh data from database
+      debugPrint(
+        'No cached messages found for chat $chatId, loading from database',
+      );
+      await loadMessages(chatId, forceRefresh: false);
+    } catch (e) {
+      debugPrint('Error in preloadMessages for chat $chatId: $e');
+
+      // Fallback: try to load messages with force refresh
+      try {
+        debugPrint('Attempting fallback load for chat $chatId');
+        await loadMessages(chatId, forceRefresh: true);
+      } catch (fallbackError) {
+        debugPrint(
+          'Fallback load also failed for chat $chatId: $fallbackError',
+        );
+
+        // Last resort: clear messages and show empty state
+        _chatControler.messages.clear();
+      }
+    }
   }
 
   /// Refresh messages in background without blocking UI
@@ -266,29 +321,35 @@ mixin ChatControllerMessages {
       await _messageSubscription?.unsubscribe();
       _messageSubscription = null;
 
-      // First try the static persistent cache in ChatController
+      // If not forcing refresh, try caches first
       if (!forceRefresh) {
+        // First try the static persistent cache in ChatController
         final persistentCachedMessages = _chatControler.getCachedMessages(
           chatId,
         );
         if (persistentCachedMessages != null &&
             persistentCachedMessages.isNotEmpty) {
-          debugPrint('Using persistent cached messages for chat $chatId');
-          _chatControler.messages.value = List.from(persistentCachedMessages);
+          debugPrint(
+            'Using persistent cached messages for chat $chatId (${persistentCachedMessages.length} messages)',
+          );
+          _chatControler.messages.assignAll(persistentCachedMessages);
           _setupRealtimeSubscription(chatId);
 
           // Refresh in background without UI blocking
           _refreshMessagesInBackground(chatId);
           return;
         }
-      }
 
-      // Then try the local cache if available and not forcing refresh
-      if (!forceRefresh) {
+        // Then try the local cache if available
         final cachedMessages = _getCachedMessages(chatId);
-        if (cachedMessages != null) {
-          debugPrint('Using local cached messages for chat $chatId');
-          _chatControler.messages.value = List.from(cachedMessages);
+        if (cachedMessages != null && cachedMessages.isNotEmpty) {
+          debugPrint(
+            'Using local cached messages for chat $chatId (${cachedMessages.length} messages)',
+          );
+          _chatControler.messages.assignAll(cachedMessages);
+
+          // Update persistent cache
+          _chatControler.cacheMessages(chatId, cachedMessages);
           _setupRealtimeSubscription(chatId);
 
           // Refresh in background if cache is getting stale
@@ -301,18 +362,44 @@ mixin ChatControllerMessages {
 
       // If cache is stale or empty, fetch from database
       debugPrint('Fetching messages from database for chat $chatId');
-      final response = await supabase
-          .from('messages')
-          .select()
-          .eq('chat_id', chatId)
-          .gt('expires_at', nowIso)
-          .order('created_at', ascending: true);
+
+      List<dynamic> response;
+      try {
+        response = await supabase
+            .from('messages')
+            .select()
+            .eq('chat_id', chatId)
+            .gt('expires_at', nowIso)
+            .order('created_at', ascending: true);
+      } catch (dbError) {
+        debugPrint('Database fetch failed for chat $chatId: $dbError');
+
+        // Try to use any available cached data as fallback
+        final fallbackMessages = _getCachedMessages(chatId);
+        if (fallbackMessages != null && fallbackMessages.isNotEmpty) {
+          debugPrint('Using fallback cached messages for chat $chatId');
+          _chatControler.messages.assignAll(fallbackMessages);
+          _setupRealtimeSubscription(chatId);
+          return;
+        }
+
+        // If no fallback available, clear messages and setup subscription anyway
+        _chatControler.messages.clear();
+        _setupRealtimeSubscription(chatId);
+        rethrow; // Re-throw to be caught by outer try-catch
+      }
 
       // Initialize encryption service for decryption
-      final encryptionService = Get.find<EncryptionService>();
-      if (!encryptionService.isInitialized.value) {
-        await encryptionService.initialize();
-        debugPrint('Encryption service initialized for message loading');
+      EncryptionService? encryptionService;
+      try {
+        encryptionService = Get.find<EncryptionService>();
+        if (!encryptionService.isInitialized.value) {
+          await encryptionService.initialize();
+          debugPrint('Encryption service initialized for message loading');
+        }
+      } catch (encryptionError) {
+        debugPrint('Error initializing encryption service: $encryptionError');
+        // Continue without encryption - messages might be plaintext
       }
 
       _chatControler.messages.clear();
@@ -325,42 +412,63 @@ mixin ChatControllerMessages {
         final List<MessageModel> loadedMessages = [];
 
         for (var msg in response) {
-          // Check if message contains encrypted content
-          if (msg['content'] != null) {
-            try {
-              // Attempt to decrypt the message content
-              final decryptedContent = await encryptionService
-                  .decryptMessageForChat(msg['content'].toString(), chatId);
+          try {
+            // Check if message contains encrypted content and we have encryption service
+            if (msg['content'] != null && encryptionService != null) {
+              try {
+                // Attempt to decrypt the message content
+                final decryptedContent = await encryptionService
+                    .decryptMessageForChat(msg['content'].toString(), chatId);
 
-              // Replace encrypted content with decrypted content
-              msg['content'] = decryptedContent;
-              debugPrint(
-                'Successfully decrypted message: ${msg['message_id']}',
-              );
-            } catch (e) {
-              debugPrint('Could not decrypt message ${msg['message_id']}: $e');
-              // If decryption fails, leave content as is (might be plaintext or old format)
+                // Replace encrypted content with decrypted content
+                msg['content'] = decryptedContent;
+                debugPrint(
+                  'Successfully decrypted message: ${msg['message_id']}',
+                );
+              } catch (e) {
+                debugPrint(
+                  'Could not decrypt message ${msg['message_id']}: $e',
+                );
+                // If decryption fails, leave content as is (might be plaintext or old format)
+              }
             }
+
+            // Create message model with decrypted content
+            loadedMessages.add(MessageModel.fromJson(msg));
+          } catch (messageError) {
+            debugPrint(
+              'Error processing message ${msg['message_id']}: $messageError',
+            );
+            // Skip this message and continue with others
+            continue;
+          }
+        }
+
+        if (loadedMessages.isNotEmpty) {
+          // Update cache with decrypted messages
+          _updateMessagesCache(chatId, loadedMessages);
+
+          // Update the persistent cache in ChatController
+          _chatControler.cacheMessages(chatId, loadedMessages);
+
+          // Only update UI if this is not a background refresh
+          if (!_activeBackgroundRefreshes.contains(chatId)) {
+            _chatControler.messages.assignAll(loadedMessages);
           }
 
-          // Create message model with decrypted content
-          loadedMessages.add(MessageModel.fromJson(msg));
+          debugPrint(
+            'Loaded and decrypted ${loadedMessages.length} messages from database',
+          );
+        } else {
+          debugPrint('No valid messages could be processed for chat $chatId');
+          // Update cache to avoid repeated calls
+          _updateMessagesCache(chatId, []);
+          _chatControler.cacheMessages(chatId, []);
+
+          if (!_activeBackgroundRefreshes.contains(chatId)) {
+            _chatControler.messages.clear();
+          }
         }
-
-        // Update cache with decrypted messages
-        _updateMessagesCache(chatId, loadedMessages);
-
-        // Update the persistent cache in ChatController
-        _chatControler.cacheMessages(chatId, loadedMessages);
-
-        // Only update UI if this is not a background refresh
-        if (!_activeBackgroundRefreshes.contains(chatId)) {
-          _chatControler.messages.assignAll(loadedMessages);
-        }
-
-        debugPrint(
-          'Loaded and decrypted ${loadedMessages.length} messages from database',
-        );
       } else {
         // Even if no messages, update cache to avoid repeated calls
         _updateMessagesCache(chatId, []);
@@ -379,7 +487,21 @@ mixin ChatControllerMessages {
         'Messages loaded successfully ${_chatControler.messages.length}',
       );
     } catch (e) {
-      debugPrint('Error loading messages: $e');
+      debugPrint('Error loading messages for chat $chatId: $e');
+
+      // Final fallback: ensure we have a clean state and real-time subscription
+      if (!_activeBackgroundRefreshes.contains(chatId)) {
+        _chatControler.messages.clear();
+      }
+
+      // Always try to setup real-time subscription even if loading failed
+      try {
+        _setupRealtimeSubscription(chatId);
+      } catch (subscriptionError) {
+        debugPrint(
+          'Failed to setup real-time subscription: $subscriptionError',
+        );
+      }
     }
   }
 

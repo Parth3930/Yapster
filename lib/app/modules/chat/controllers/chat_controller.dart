@@ -60,8 +60,34 @@ class ChatController extends GetxController
   void clearMessagesForNewChat(String newChatId) {
     // Only clear if we're switching to a different chat
     if (selectedChatId.value != newChatId) {
-      messages.clear();
+      // Before clearing, try to load cached messages for the new chat
+      final cachedMessages = getCachedMessages(newChatId);
+      if (cachedMessages != null && cachedMessages.isNotEmpty) {
+        debugPrint(
+          'Loading ${cachedMessages.length} cached messages for chat $newChatId',
+        );
+        messages.assignAll(cachedMessages);
+      } else {
+        messages.clear();
+      }
       selectedChatId.value = newChatId;
+    }
+  }
+
+  // Enhanced method to check if we have valid cached messages
+  bool hasCachedMessages(String chatId) {
+    return _messageCache.containsKey(chatId) &&
+        _messageCache[chatId]!.isNotEmpty;
+  }
+
+  // Method to preload cached messages immediately for instant display
+  void loadCachedMessagesImmediately(String chatId) {
+    final cachedMessages = getCachedMessages(chatId);
+    if (cachedMessages != null && cachedMessages.isNotEmpty) {
+      debugPrint(
+        'Immediately loading ${cachedMessages.length} cached messages for chat $chatId',
+      );
+      messages.assignAll(cachedMessages);
     }
   }
 

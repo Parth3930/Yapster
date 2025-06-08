@@ -44,7 +44,7 @@ class ImagePostWidget extends StatelessWidget {
                     height: 500,
                     child: Image.network(
                       post.imageUrl ?? '',
-                      fit: BoxFit.fitWidth,
+                      fit: BoxFit.contain,
                       width: double.infinity,
                       errorBuilder:
                           (context, error, stackTrace) => Container(

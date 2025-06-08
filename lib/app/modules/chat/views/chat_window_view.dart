@@ -95,11 +95,10 @@ class ChatWindowView extends GetView<ChatController> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    // CRITICAL FIX: Clear messages IMMEDIATELY when building the widget to prevent flicker
+    // CRITICAL FIX: Use improved method to handle chat switching with caching
     // This happens synchronously before any UI is rendered
     if (controller.selectedChatId.value != chatId) {
-      controller.messages.clear();
-      controller.selectedChatId.value = chatId;
+      controller.clearMessagesForNewChat(chatId);
     }
 
     // Only initialize once per chat or when chat changes
@@ -243,6 +242,12 @@ class ChatWindowView extends GetView<ChatController> {
     // CRITICAL FIX: Use optimized method to clear messages and set chat ID
     controller.clearMessagesForNewChat(chatId);
 
+    // Immediately load cached messages if available for instant display
+    if (controller.hasCachedMessages(chatId)) {
+      debugPrint('Chat $chatId has cached messages, loading immediately');
+      controller.loadCachedMessagesImmediately(chatId);
+    }
+
     // Create a final focus node
     final inputFocusNode = FocusNode();
     Get.put(inputFocusNode, tag: 'input_focus_node');
@@ -310,22 +315,93 @@ class ChatWindowView extends GetView<ChatController> {
 
   // Load messages once when chat is opened - optimized for speed
   void _loadMessagesOnce(String chatId) async {
+    int retryCount = 0;
+    const maxRetries = 3;
+
+    while (retryCount < maxRetries) {
+      try {
+        debugPrint(
+          'Loading messages for chat $chatId (attempt ${retryCount + 1})',
+        );
+
+        // Don't clear messages if we already have some from cache
+        if (controller.messages.isEmpty) {
+          debugPrint('No messages in controller, will load fresh');
+        } else {
+          debugPrint(
+            'Controller already has ${controller.messages.length} messages',
+          );
+        }
+
+        // Load messages with improved error handling
+        await controller.preloadMessages(chatId);
+
+        // Verify messages were actually loaded
+        if (controller.messages.isNotEmpty) {
+          debugPrint(
+            'Successfully loaded ${controller.messages.length} messages',
+          );
+
+          // Mark as read only if we haven't done so for this chat
+          if (!_chatsMarkedAsRead.contains(chatId)) {
+            await controller.markMessagesAsRead(chatId);
+            _chatsMarkedAsRead.add(chatId);
+          }
+
+          return; // Success, exit retry loop
+        } else {
+          debugPrint('No messages loaded, checking if this is expected...');
+
+          // Check if this chat actually has messages in the database
+          final hasMessages = await _checkIfChatHasMessages(chatId);
+          if (!hasMessages) {
+            debugPrint(
+              'Chat $chatId has no messages in database - this is normal',
+            );
+            return; // No messages is a valid state
+          }
+
+          // If we should have messages but don't, retry
+          throw Exception('Expected messages but none were loaded');
+        }
+      } catch (e) {
+        retryCount++;
+        debugPrint('Error loading messages (attempt $retryCount): $e');
+
+        if (retryCount >= maxRetries) {
+          debugPrint('Max retries reached for chat $chatId');
+          if (!e.toString().contains('cancelled')) {
+            // Show error only after all retries failed
+            Get.snackbar(
+              'Error',
+              'Failed to load messages after $maxRetries attempts. Please try again.',
+              duration: const Duration(seconds: 3),
+            );
+          }
+          break;
+        } else {
+          // Wait before retrying
+          await Future.delayed(Duration(milliseconds: 500 * retryCount));
+        }
+      }
+    }
+  }
+
+  // Helper method to check if a chat has messages in the database
+  Future<bool> _checkIfChatHasMessages(String chatId) async {
     try {
-      // Ensure messages are cleared before loading new ones
-      controller.messages.clear();
+      final supabaseService = Get.find<SupabaseService>();
+      final response = await supabaseService.client
+          .from('messages')
+          .select('message_id')
+          .eq('chat_id', chatId)
+          .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+          .limit(1);
 
-      // Load messages directly without showing cached ones first to avoid confusion
-      await controller.preloadMessages(chatId);
-
-      // Mark as read only if we haven't done so for this chat
-      if (!_chatsMarkedAsRead.contains(chatId)) {
-        await controller.markMessagesAsRead(chatId);
-        _chatsMarkedAsRead.add(chatId);
-      }
+      return response.isNotEmpty;
     } catch (e) {
-      if (!e.toString().contains('cancelled')) {
-        Get.snackbar('Error', 'Failed to load messages. Please try again.');
-      }
+      debugPrint('Error checking if chat has messages: $e');
+      return false; // Assume no messages on error
     }
   }
 
