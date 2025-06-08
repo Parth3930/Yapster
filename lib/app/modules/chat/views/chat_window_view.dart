@@ -210,8 +210,16 @@ class ChatWindowView extends GetView<ChatController> {
 
     String content = latestMessage.content;
 
-    // Handle different message types
-    if (content.startsWith('http') &&
+    // Check if it's a shared post by message type or content
+    bool isSharedPost =
+        latestMessage.messageType == 'shared_post' ||
+        content.contains('"type":"shared_post"') ||
+        content.contains('"type": "shared_post"') ||
+        content.contains('shard_post'); // Handle typo in data
+
+    if (isSharedPost) {
+      content = isMe ? 'Sent a post' : 'Received a post';
+    } else if (content.startsWith('http') &&
         (content.contains('.jpg') ||
             content.contains('.jpeg') ||
             content.contains('.png') ||

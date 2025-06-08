@@ -22,6 +22,7 @@ abstract class Routes {
   static const FOLLOWING = _Paths.FOLLOWING;
   static const CREATE_STORY = _Paths.CREATE_STORY;
   static const VIEW_STORIES = _Paths.VIEW_STORIES;
+  static const POST_DETAIL = _Paths.POST_DETAIL;
 }
 
 abstract class _Paths {
@@ -44,4 +45,5 @@ abstract class _Paths {
   static const FOLLOWING = '/following';
   static const CREATE_STORY = '/create-story';
   static const VIEW_STORIES = '/view-stories';
+  static const POST_DETAIL = '/post';
 }

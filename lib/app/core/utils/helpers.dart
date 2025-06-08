@@ -37,9 +37,20 @@ class Helpers {
     return Get.size;
   }
 
-  // Navigate to a named route
+  // Navigate to a named route - optimized for instant navigation
   static void navigateTo(String routeName, {dynamic arguments}) {
-    Get.toNamed(routeName, arguments: arguments);
+    // Use instant navigation for main app pages
+    final mainPages = ['/home', '/profile', '/chat', '/explore', '/create'];
+    if (mainPages.contains(routeName)) {
+      Get.offNamed(routeName, arguments: arguments);
+    } else {
+      Get.toNamed(routeName, arguments: arguments);
+    }
+  }
+
+  // Navigate instantly to main app pages (optimized for bottom navigation)
+  static void navigateToMainPage(String routeName, {dynamic arguments}) {
+    Get.offNamed(routeName, arguments: arguments);
   }
 
   // Go back to previous screen

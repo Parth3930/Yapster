@@ -2,6 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../routes/app_pages.dart';
 
+// Controller to manage bottom navigation animations globally
+class BottomNavAnimationController extends GetxController {
+  // Observable to trigger animations
+  final RxString animateIcon = ''.obs;
+
+  // Trigger animation for specific icon
+  void triggerAnimation(String route) {
+    print('BottomNavAnimationController: Triggering animation for $route');
+    animateIcon.value = route;
+    // Reset after longer animation duration
+    Future.delayed(const Duration(milliseconds: 800), () {
+      animateIcon.value = '';
+      print('BottomNavAnimationController: Animation reset for $route');
+    });
+  }
+}
+
 class BottomNavigation extends StatefulWidget {
   const BottomNavigation({super.key});
 
@@ -11,6 +28,12 @@ class BottomNavigation extends StatefulWidget {
 
 class _BottomNavigationState extends State<BottomNavigation>
     with TickerProviderStateMixin {
+  // Get the global animation controller
+  final BottomNavAnimationController _animationController = Get.put(
+    BottomNavAnimationController(),
+    permanent: true,
+  );
+
   // Controllers for each icon's animation
   late List<AnimationController> _controllers;
   late List<Animation> _animations;
@@ -35,7 +58,7 @@ class _BottomNavigationState extends State<BottomNavigation>
     _controllers = List.generate(
       3, // Reduced to 3 (for explore, chat, profile)
       (index) => AnimationController(
-        duration: const Duration(milliseconds: 400),
+        duration: const Duration(milliseconds: 600), // Slower animations
         vsync: this,
       ),
     );
@@ -82,7 +105,7 @@ class _BottomNavigationState extends State<BottomNavigation>
 
     // Initialize simple home animation
     _homeController = AnimationController(
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 600), // Slower animation
       vsync: this,
     );
 
@@ -97,7 +120,7 @@ class _BottomNavigationState extends State<BottomNavigation>
 
     // Initialize special controller for add button with longer duration for smoother animation
     _addButtonController = AnimationController(
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 800), // Slower rotation
       vsync: this,
     );
 
@@ -111,7 +134,7 @@ class _BottomNavigationState extends State<BottomNavigation>
 
     // Initialize explore ripple controller
     _exploreRippleController = AnimationController(
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 600), // Slower ripple effect
       vsync: this,
     );
 
@@ -119,6 +142,46 @@ class _BottomNavigationState extends State<BottomNavigation>
     _exploreRippleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _exploreRippleController, curve: Curves.easeOut),
     );
+
+    // Listen for animation triggers from navigation
+    _animationController.animateIcon.listen((route) {
+      if (route.isNotEmpty && mounted) {
+        _playAnimationForRoute(route);
+      }
+    });
+  }
+
+  // Play animation for specific route
+  void _playAnimationForRoute(String route) {
+    print('_playAnimationForRoute called for: $route');
+    AnimationController? controller;
+
+    switch (route) {
+      case Routes.HOME:
+        controller = _homeController;
+        break;
+      case Routes.EXPLORE:
+        controller = _exploreRippleController;
+        break;
+      case Routes.CHAT:
+        controller = _controllers[1];
+        break;
+      case Routes.PROFILE:
+        controller = _controllers[2];
+        break;
+      case Routes.CREATE:
+        controller = _addButtonController;
+        break;
+    }
+
+    // Play animation if controller exists
+    if (controller != null) {
+      print('Playing animation for $route');
+      controller.reset();
+      controller.forward();
+    } else {
+      print('No controller found for $route');
+    }
   }
 
   @override
@@ -139,33 +202,13 @@ class _BottomNavigationState extends State<BottomNavigation>
     if (Get.currentRoute != route) {
       // Special handling for create button is in _buildAddButton
       if (route == Routes.CREATE) return;
-      
-      // For other routes, start the animation and wait for completion
-      AnimationController controller;
-      
-      switch (route) {
-        case Routes.HOME:
-          controller = _homeController;
-          break;
-        case Routes.EXPLORE:
-          controller = _exploreRippleController;
-          break;
-        case Routes.CHAT:
-          controller = _controllers[1];
-          break;
-        case Routes.PROFILE:
-          controller = _controllers[2];
-          break;
-        default:
-          // Fallback for unknown routes
-          Get.offNamed(route);
-          return;
-      }
-      
-      // Reset and play the animation, then navigate when complete
-      controller.reset();
-      controller.forward().then((_) {
-        Get.offNamed(route);
+
+      // Navigate immediately for speed
+      Get.offNamed(route);
+
+      // Schedule animation to play on the new page after navigation completes
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _animationController.triggerAnimation(route);
       });
     }
   }
@@ -311,13 +354,16 @@ class _BottomNavigationState extends State<BottomNavigation>
   Widget _buildAddButton() {
     return GestureDetector(
       onTap: () {
-        // Special handling for create button to wait for animation completion
-        _addButtonController.reset();
-        _addButtonController.forward().then((_) {
-          Get.offNamed(Routes.CREATE);
+        // Navigate immediately for speed
+        Get.offNamed(Routes.CREATE);
+
+        // Schedule animation to play on the new page after navigation completes
+        Future.delayed(const Duration(milliseconds: 100), () {
+          _animationController.triggerAnimation(Routes.CREATE);
         });
       },
-      child: RepaintBoundary( // Use RepaintBoundary for better performance
+      child: RepaintBoundary(
+        // Use RepaintBoundary for better performance
         child: Container(
           width: 50,
           height: 50,

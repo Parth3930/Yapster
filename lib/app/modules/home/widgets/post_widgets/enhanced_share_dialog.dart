@@ -616,6 +616,7 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
           'author_username': widget.post.username,
           'author_nickname': widget.post.nickname,
           'author_avatar': widget.post.avatar,
+          'author_google_avatar': widget.post.googleAvatar,
           'created_at': widget.post.createdAt.toIso8601String(),
         };
 
@@ -721,6 +722,7 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
         'author_username': widget.post.username,
         'author_nickname': widget.post.nickname,
         'author_avatar': widget.post.avatar,
+        'author_google_avatar': widget.post.googleAvatar,
         'created_at': widget.post.createdAt.toIso8601String(),
       };
 

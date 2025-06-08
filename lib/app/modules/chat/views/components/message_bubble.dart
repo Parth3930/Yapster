@@ -10,6 +10,8 @@ import 'package:yapster/app/modules/chat/views/components/audio_message.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
+import 'package:yapster/app/data/repositories/post_repository.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 import '../../controllers/chat_controller.dart';
 import '../message_options.dart';
 
@@ -678,7 +680,17 @@ class _MessageBubbleState extends State<MessageBubble>
         postData['author_nickname']?.toString() ??
         postData['author_username']?.toString() ??
         'Yapper';
-    final authorAvatar = postData['author_avatar']?.toString();
+
+    // Handle avatar with fallback to google_avatar when avatar is null or "skiped"
+    String? authorAvatar = postData['author_avatar']?.toString();
+    final authorGoogleAvatar = postData['author_google_avatar']?.toString();
+
+    if (authorAvatar == 'skiped' ||
+        authorAvatar == null ||
+        authorAvatar.isEmpty) {
+      authorAvatar =
+          authorGoogleAvatar?.isNotEmpty == true ? authorGoogleAvatar : null;
+    }
 
     final hasImage = imageUrl != null && imageUrl.isNotEmpty;
 
@@ -883,6 +895,7 @@ class _MessageBubbleState extends State<MessageBubble>
         username: postData['author_username']?.toString(),
         nickname: postData['author_nickname']?.toString(),
         avatar: postData['author_avatar']?.toString(),
+        googleAvatar: postData['author_google_avatar']?.toString(),
         createdAt:
             DateTime.tryParse(postData['created_at']?.toString() ?? '') ??
             DateTime.now(),
@@ -893,14 +906,8 @@ class _MessageBubbleState extends State<MessageBubble>
                 : {},
       );
 
-      // Get or create PostsFeedController
-      PostsFeedController controller;
-      try {
-        controller = Get.find<PostsFeedController>();
-      } catch (e) {
-        controller = PostsFeedController();
-        Get.put(controller);
-      }
+      // Create a controller adapter for shared posts
+      final controller = _SharedPostControllerAdapter(postModel);
 
       return Container(
         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -920,13 +927,123 @@ class _MessageBubbleState extends State<MessageBubble>
   void _navigateToPost(String? postId) {
     if (postId != null && postId.isNotEmpty) {
       try {
-        // Navigate to home with post ID as argument to scroll to specific post
-        Get.toNamed('/home', arguments: {'scrollToPostId': postId});
+        // Navigate to dedicated post detail page
+        Get.toNamed('/post/$postId');
       } catch (e) {
         debugPrint('Error navigating to post: $e');
-        // Fallback to just going to home
-        Get.toNamed('/home');
+        Get.snackbar(
+          'Error',
+          'Could not open post. Please try again.',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
       }
     }
+  }
+}
+
+/// Adapter class for shared posts in chat to handle interactions
+class _SharedPostControllerAdapter extends PostsFeedController {
+  final PostModel sharedPost;
+
+  _SharedPostControllerAdapter(this.sharedPost) {
+    // Add the shared post to the posts list so interactions work
+    posts.add(sharedPost);
+  }
+
+  @override
+  Future<void> togglePostLike(String postId) async {
+    if (postId != sharedPost.id) return;
+
+    final isCurrentlyLiked = sharedPost.metadata['isLiked'] == true;
+
+    // Optimistic update
+    final updatedMetadata = Map<String, dynamic>.from(sharedPost.metadata);
+    updatedMetadata['isLiked'] = !isCurrentlyLiked;
+
+    final updatedPost = sharedPost.copyWith(
+      metadata: updatedMetadata,
+      likesCount: sharedPost.likesCount + (isCurrentlyLiked ? -1 : 1),
+    );
+
+    // Update the post in the list
+    final index = posts.indexWhere((p) => p.id == postId);
+    if (index != -1) {
+      posts[index] = updatedPost;
+    }
+
+    try {
+      // Get the repository and update in database
+      final postRepository = Get.find<PostRepository>();
+      final supabaseService = Get.find<SupabaseService>();
+      final currentUserId = supabaseService.currentUser.value?.id;
+
+      if (currentUserId != null) {
+        final result = await postRepository.togglePostLike(
+          postId,
+          currentUserId,
+        );
+
+        if (result != null) {
+          // Update with server response
+          final serverMetadata = Map<String, dynamic>.from(sharedPost.metadata);
+          serverMetadata['isLiked'] = result['isLiked'] ?? false;
+
+          final serverUpdatedPost = sharedPost.copyWith(
+            metadata: serverMetadata,
+            likesCount: result['likesCount'] ?? sharedPost.likesCount,
+          );
+
+          final serverIndex = posts.indexWhere((p) => p.id == postId);
+          if (serverIndex != -1) {
+            posts[serverIndex] = serverUpdatedPost;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error toggling like for shared post: $e');
+      // Revert optimistic update
+      final revertIndex = posts.indexWhere((p) => p.id == postId);
+      if (revertIndex != -1) {
+        posts[revertIndex] = sharedPost;
+      }
+    }
+  }
+
+  @override
+  Future<void> togglePostFavorite(String postId) async {
+    if (postId != sharedPost.id) return;
+
+    final isCurrentlyFavorited = sharedPost.metadata['isFavorited'] == true;
+
+    // Optimistic update
+    final updatedMetadata = Map<String, dynamic>.from(sharedPost.metadata);
+    updatedMetadata['isFavorited'] = !isCurrentlyFavorited;
+
+    final updatedPost = sharedPost.copyWith(metadata: updatedMetadata);
+
+    // Update the post in the list
+    final index = posts.indexWhere((p) => p.id == postId);
+    if (index != -1) {
+      posts[index] = updatedPost;
+    }
+
+    try {
+      // For now, just keep the optimistic update
+      // TODO: Implement favorite toggle in repository if needed
+      debugPrint('Favorite toggled for shared post: $postId');
+    } catch (e) {
+      debugPrint('Error toggling favorite for shared post: $e');
+      // Revert optimistic update
+      final revertIndex = posts.indexWhere((p) => p.id == postId);
+      if (revertIndex != -1) {
+        posts[revertIndex] = sharedPost;
+      }
+    }
+  }
+
+  @override
+  Future<void> trackPostShare(String postId) async {
+    debugPrint('Post shared from chat: $postId');
   }
 }

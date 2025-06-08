@@ -582,11 +582,24 @@ class _ChatViewState extends State<ChatView> {
             ),
         ],
       ),
-      onTap:
-          () => controller.openChat(
-            chat['other_user_id'],
-            chat['other_username'] ?? 'User',
-          ),
+      onTap: () {
+        // Use 'other_id' instead of 'other_user_id'
+        final otherUserId = chat['other_id']?.toString();
+        final otherUsername = chat['other_username']?.toString() ?? 'User';
+
+        debugPrint(
+          'Chat tap - other_id: $otherUserId, other_username: $otherUsername',
+        );
+
+        if (otherUserId == null || otherUserId.isEmpty) {
+          debugPrint(
+            'Cannot open chat: Invalid other_id - value: $otherUserId',
+          );
+          return;
+        }
+
+        controller.openChat(otherUserId, otherUsername);
+      },
     );
   }
 

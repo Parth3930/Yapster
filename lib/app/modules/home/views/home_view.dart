@@ -236,11 +236,11 @@ class _HomeViewState extends State<HomeView> {
       // Fix 4: Use extendBody to allow content behind bottom nav when hidden
       extendBody: true,
       bottomNavigationBar: AnimatedSlide(
-        duration: const Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 150),
         offset: showBottomNav ? Offset.zero : const Offset(0, 1),
-        curve: Curves.easeInOut,
+        curve: Curves.easeOut,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
+          duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
             color: showBottomNav ? Colors.black : Colors.transparent,
             boxShadow:

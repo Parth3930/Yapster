@@ -12,15 +12,15 @@ class AppConstants {
   static const String userDataKey = 'user_data';
   static const String themeKey = 'app_theme';
   static const String languageKey = 'app_language';
-  
+
   // Security
   static const String encryptionKey = 'yapster_secure_storage_key_2024';
-  
+
   // Cache Settings
   static const String cachingEnabledKey = 'caching_enabled';
   static const String offlineModeKey = 'offline_mode_enabled';
   static const String cacheExpirationTimesKey = 'cache_expiration_times';
-  static const int maxCacheSizeMB = 50; 
+  static const int maxCacheSizeMB = 50;
 
   // Timeouts
   static const int connectionTimeout = 30000;
@@ -30,6 +30,6 @@ class AppConstants {
   static const int defaultPageSize = 20;
 
   // Animation Durations
-  static const Duration defaultAnimationDuration = Duration(milliseconds: 300);
-  static const Duration longAnimationDuration = Duration(milliseconds: 500);
+  static const Duration defaultAnimationDuration = Duration(milliseconds: 150);
+  static const Duration longAnimationDuration = Duration(milliseconds: 250);
 }

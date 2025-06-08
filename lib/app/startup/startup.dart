@@ -30,7 +30,8 @@ class _MyAppState extends State<MyApp> {
       initialRoute: widget.initializationFailed ? Routes.ERROR : Routes.SPLASH,
       getPages: AppPages.routes,
       debugShowCheckedModeBanner: false,
-      defaultTransition: Transition.fade,
+      defaultTransition: Transition.noTransition,
+      transitionDuration: Duration.zero,
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: Colors.black,
