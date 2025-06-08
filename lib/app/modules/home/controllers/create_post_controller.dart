@@ -66,7 +66,7 @@ class CreatePostController extends GetxController {
         _updateCanPost();
       }
     } catch (e) {
-      print('Error picking images: $e');
+      debugPrint('Error picking images: $e');
       Get.snackbar(
         'Error',
         'Failed to pick images',
@@ -169,7 +169,7 @@ class CreatePostController extends GetxController {
         );
       }
     } catch (e) {
-      print('Error creating post: $e');
+      debugPrint('Error creating post: $e');
       Get.snackbar(
         'Error',
         'Failed to create post: $e',

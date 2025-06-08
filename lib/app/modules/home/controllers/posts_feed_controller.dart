@@ -4,11 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
-import 'package:yapster/app/startup/feed_loader/feed_loader_service.dart';
+
 import 'package:yapster/app/core/services/user_interaction_service.dart';
 import 'package:yapster/app/core/services/intelligent_feed_service.dart';
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
-import 'package:yapster/app/startup/preloader/cache_manager.dart';
+
 import 'dart:async';
 
 class PostsFeedController extends GetxController {
@@ -18,7 +18,6 @@ class PostsFeedController extends GetxController {
       Get.find<UserInteractionService>();
   IntelligentFeedService get _feedService => Get.find<IntelligentFeedService>();
   UserPostsCacheService get _cacheService => Get.find<UserPostsCacheService>();
-  CacheManager get _cacheManager => Get.find<CacheManager>();
 
   // Observable lists
   final RxList<PostModel> posts = <PostModel>[].obs;
@@ -52,31 +51,31 @@ class PostsFeedController extends GetxController {
     currentUserId.value = _supabase.client.auth.currentUser?.id ?? '';
 
     // Detect if this is a hot reload (not app restart)
-    final isHotReload = !_isAppRestart;
     if (_isAppRestart) {
       _isAppRestart = false; // Mark that app has been initialized
     }
 
     // Always try to load posts, even if preloaded data exists
     // This ensures consistency on hot reload
-    _initializeFeed(filterViewedPosts: isHotReload);
+    // Always filter viewed posts to prevent duplicates
+    _initializeFeed(filterViewedPosts: true);
     _setupRealtimeSubscription();
   }
 
   /// Initialize feed with proper fallback handling
-  Future<void> _initializeFeed({bool filterViewedPosts = false}) async {
+  Future<void> _initializeFeed({bool filterViewedPosts = true}) async {
     try {
       debugPrint('Initializing posts feed...');
 
-      // Load posts normally without clearing caches
-      await loadPosts(filterViewedPosts: filterViewedPosts);
+      // Load posts normally without clearing caches and always filter viewed posts
+      await loadPosts(filterViewedPosts: true);
 
       // Start periodic refresh if feed is empty
       _startPeriodicRefreshIfNeeded();
     } catch (e) {
       debugPrint('Error initializing feed: $e');
       // Fallback to loading posts normally
-      await loadPosts(filterViewedPosts: filterViewedPosts);
+      await loadPosts(filterViewedPosts: true);
     }
   }
 
@@ -369,6 +368,7 @@ class PostsFeedController extends GetxController {
             'p_user_id': currentUserId.value,
             'p_limit': _postsPerPage,
             'p_offset': forceRefresh ? 0 : _currentOffset,
+            'p_filter_viewed': true, // Always filter viewed posts
           },
         );
         newPosts =
@@ -398,6 +398,7 @@ class PostsFeedController extends GetxController {
               'p_user_id': currentUserId.value,
               'p_limit': _postsPerPage,
               'p_offset': forceRefresh ? 0 : _currentOffset,
+              'p_filter_viewed': true, // Always filter viewed posts
             },
           );
           newPosts =
@@ -453,34 +454,52 @@ class PostsFeedController extends GetxController {
         await _feedService.addPostsToFeed(newPosts, currentUserId.value);
         debugPrint('Successfully added posts to feed service');
 
-        if (forceRefresh) {
-          var postsToShow = newPosts;
+        // Always filter out viewed posts to prevent duplicates and already interacted posts
+        // Use synchronous version for filtering
+        var postsToShow =
+            newPosts
+                .where(
+                  (post) => !_interactionService.hasViewedPostSync(post.id),
+                )
+                .toList();
 
-          // Filter out viewed posts if requested (hot reload)
-          if (filterViewedPosts) {
-            postsToShow =
-                newPosts
-                    .where(
-                      (post) => !_interactionService.hasViewedPost(post.id),
-                    )
-                    .toList();
-            debugPrint(
-              'Filtered ${newPosts.length - postsToShow.length} viewed posts on hot reload',
-            );
-          }
-
-          debugPrint(
-            'Refresh: Adding ${postsToShow.length} posts${filterViewedPosts ? ' (filtered)' : ''}',
+        // Then do an additional async check for posts not in local cache
+        final futures = <Future<void>>[];
+        for (final post in postsToShow.toList()) {
+          futures.add(
+            _interactionService.hasViewedPost(post.id).then((hasViewed) {
+              if (hasViewed && postsToShow.contains(post)) {
+                postsToShow.remove(post);
+              }
+            }),
           );
+        }
+        await Future.wait(futures);
+
+        // Filter out duplicates that might already be in the posts list
+        if (!forceRefresh) {
+          final existingPostIds = posts.map((p) => p.id).toSet();
+          postsToShow =
+              postsToShow
+                  .where((post) => !existingPostIds.contains(post.id))
+                  .toList();
+        }
+
+        debugPrint(
+          'Filtered ${newPosts.length - postsToShow.length} viewed/duplicate posts',
+        );
+
+        if (forceRefresh) {
+          debugPrint('Refresh: Adding ${postsToShow.length} posts (filtered)');
           posts.assignAll(postsToShow);
           _currentOffset = postsToShow.length;
           debugPrint('Refreshed posts list with ${postsToShow.length} posts');
         } else {
-          // When loading more posts, don't filter viewed posts - just append them
-          posts.addAll(newPosts);
-          _currentOffset += newPosts.length;
+          // Append filtered posts
+          posts.addAll(postsToShow);
+          _currentOffset += postsToShow.length;
           debugPrint(
-            'Added ${newPosts.length} posts to existing list. Total: ${posts.length}',
+            'Added ${postsToShow.length} posts to existing list. Total: ${posts.length}',
           );
         }
       }
@@ -534,10 +553,44 @@ class PostsFeedController extends GetxController {
         );
         await _loadEngagementStates(newPosts);
 
-        posts.addAll(newPosts);
-        _currentOffset += newPosts.length;
+        // Filter out already viewed posts using synchronous check first
+        final postsToShow =
+            newPosts
+                .where(
+                  (post) => !_interactionService.hasViewedPostSync(post.id),
+                )
+                .toList();
+
+        // Then do an additional async check for posts not in local cache
+        final futures = <Future<void>>[];
+        for (final post in postsToShow.toList()) {
+          futures.add(
+            _interactionService.hasViewedPost(post.id).then((hasViewed) {
+              if (hasViewed && postsToShow.contains(post)) {
+                postsToShow.remove(post);
+              }
+            }),
+          );
+        }
+        await Future.wait(futures);
+
+        // Filter out duplicates that might already be in the posts list
+        final existingPostIds = posts.map((p) => p.id).toSet();
+        final uniquePostsToShow =
+            postsToShow
+                .where((post) => !existingPostIds.contains(post.id))
+                .toList();
+
         debugPrint(
-          'Added ${newPosts.length} more posts. Total: ${posts.length}',
+          'Filtered ${newPosts.length - uniquePostsToShow.length} viewed/duplicate posts from pagination',
+        );
+
+        posts.addAll(uniquePostsToShow);
+        _currentOffset +=
+            newPosts
+                .length; // Still increment by original count to maintain pagination
+        debugPrint(
+          'Added ${uniquePostsToShow.length} more posts. Total: ${posts.length}',
         );
       }
 
@@ -554,7 +607,7 @@ class PostsFeedController extends GetxController {
   Future<void> refreshPosts() async {
     debugPrint('Refreshing posts feed...');
 
-    await loadPosts(forceRefresh: true);
+    await loadPosts(forceRefresh: true, filterViewedPosts: true);
 
     // Force update of reactive variables
     posts.refresh();
@@ -889,16 +942,20 @@ class PostsFeedController extends GetxController {
     await loadPosts(forceRefresh: true);
   }
 
-  /// Load engagement states for posts
+  /// Load engagement states for posts (likes and favorites)
   Future<void> _loadEngagementStates(List<PostModel> postsList) async {
     final userId = _supabase.client.auth.currentUser?.id;
     if (userId == null) return;
 
     try {
+      // Batch load favorites for performance
+      final userFavorites = await _loadUserFavorites(userId);
+      debugPrint('Loaded ${userFavorites.length} favorites for user $userId');
+
       for (int i = 0; i < postsList.length; i++) {
         final post = postsList[i];
 
-        // Get like state using the new optimized function
+        // Get like state using the optimized function
         final likeState = await _postRepository.getUserPostLikeState(
           post.id,
           userId,
@@ -907,8 +964,14 @@ class PostsFeedController extends GetxController {
         // Update metadata with engagement state
         final updatedMetadata = Map<String, dynamic>.from(post.metadata);
         updatedMetadata['isLiked'] = likeState?['isLiked'] ?? false;
-        // Note: Removed isFavorited since we're not using user_post_engagements anymore
-        // If you need favorites/stars functionality, implement a separate post_favorites table
+
+        // Check if post is favorited using pre-loaded user_favorites data
+        final isFavorited = userFavorites.contains(post.id);
+        updatedMetadata['isFavorited'] = isFavorited;
+
+        debugPrint(
+          'Post ${post.id} - isLiked: ${updatedMetadata['isLiked']}, isFavorited: $isFavorited',
+        );
 
         // Update the post in the list with correct likes count from database
         final updatedLikesCount = likeState?['likesCount'] ?? post.likesCount;
@@ -919,6 +982,21 @@ class PostsFeedController extends GetxController {
       }
     } catch (e) {
       debugPrint('Error loading engagement states: $e');
+    }
+  }
+
+  /// Load user favorites for batch processing
+  Future<Set<String>> _loadUserFavorites(String userId) async {
+    try {
+      final response = await _supabase.client
+          .from('user_favorites')
+          .select('post_id')
+          .eq('user_id', userId);
+
+      return response.map((item) => item['post_id'] as String).toSet();
+    } catch (e) {
+      debugPrint('Error loading user favorites: $e');
+      return {};
     }
   }
 

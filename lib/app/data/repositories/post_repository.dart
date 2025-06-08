@@ -387,8 +387,16 @@ class PostRepository extends GetxService {
 
       if (response != null && response is List && response.isNotEmpty) {
         final result = response.first;
+        final status = result['status'] as String?;
+        final message = result['message'] as String?;
+
+        if (status == 'error') {
+          debugPrint('Error toggling post like: $message');
+          return null;
+        }
+
         debugPrint(
-          'Successfully toggled like for post $postId by user $userId. New state: ${result['is_liked']}, Count: ${result['new_likes_count']}',
+          'Successfully toggled like for post $postId by user $userId. New state: ${result['is_liked']}, Count: ${result['new_likes_count']}, Message: $message',
         );
         return {
           'isLiked': result['is_liked'] as bool,
@@ -402,7 +410,8 @@ class PostRepository extends GetxService {
     }
   }
 
-  /// Toggle post engagement (stars) using the existing SQL function
+  /// Toggle post engagement (stars) using user_interactions table
+  /// Also updates user_favorites table
   Future<bool> togglePostEngagement(
     String postId,
     String userId,
@@ -416,12 +425,80 @@ class PostRepository extends GetxService {
         );
       }
 
-      await _supabase.client.rpc(
-        'toggle_post_engagement',
-        params: {'p_post_id': postId, 'p_user_id': userId, 'p_column': 'stars'},
-      );
+      // Check if interaction exists
+      final existingInteraction =
+          await _supabase.client
+              .from('user_interactions')
+              .select('id, metadata')
+              .eq('user_id', userId)
+              .eq('post_id', postId)
+              .maybeSingle();
+
+      bool isAddingStar = false;
+
+      if (existingInteraction != null) {
+        // Update existing interaction
+        final metadata = existingInteraction['metadata'] ?? {};
+        if (metadata is Map) {
+          // Toggle star status
+          final Map<String, dynamic> updatedMetadata =
+              Map<String, dynamic>.from(metadata);
+          if (updatedMetadata.containsKey('star')) {
+            updatedMetadata.remove('star');
+            isAddingStar = false;
+          } else {
+            updatedMetadata['star'] = true;
+            isAddingStar = true;
+          }
+
+          await _supabase.client
+              .from('user_interactions')
+              .update({'metadata': updatedMetadata})
+              .eq('id', existingInteraction['id']);
+        }
+      } else {
+        // Create new interaction with star
+        await _supabase.client.from('user_interactions').insert({
+          'user_id': userId,
+          'post_id': postId,
+          'metadata': {'star': true},
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        isAddingStar = true;
+      }
+
+      // Also update user_favorites table
+      if (isAddingStar) {
+        // Check if favorite already exists to avoid duplicates
+        final existingFavorite =
+            await _supabase.client
+                .from('user_favorites')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('post_id', postId)
+                .maybeSingle();
+
+        if (existingFavorite == null) {
+          // Add to favorites
+          await _supabase.client.from('user_favorites').insert({
+            'user_id': userId,
+            'post_id': postId,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+          debugPrint('Added post $postId to user_favorites for user $userId');
+        }
+      } else {
+        // Remove from favorites
+        await _supabase.client
+            .from('user_favorites')
+            .delete()
+            .eq('user_id', userId)
+            .eq('post_id', postId);
+        debugPrint('Removed post $postId from user_favorites for user $userId');
+      }
+
       debugPrint(
-        'Successfully toggled $engagementType for post $postId by user $userId',
+        'Successfully toggled $engagementType for post $postId by user $userId using user_interactions table',
       );
       return true;
     } catch (e) {
@@ -436,6 +513,8 @@ class PostRepository extends GetxService {
     String userId,
   ) async {
     try {
+      // Use the same system as toggle_post_like to check like state
+      // This should use a SQL function that checks the post_likes table or similar
       final response = await _supabase.client.rpc(
         'get_user_post_like_state',
         params: {'p_post_id': postId, 'p_user_id': userId},
@@ -444,11 +523,34 @@ class PostRepository extends GetxService {
       if (response != null && response is List && response.isNotEmpty) {
         final result = response.first;
         return {
-          'isLiked': result['is_liked'] as bool,
-          'likesCount': result['likes_count'] as int,
+          'isLiked': result['is_liked'] as bool? ?? false,
+          'likesCount': result['likes_count'] as int? ?? 0,
         };
       }
-      return {'isLiked': false, 'likesCount': 0};
+
+      // Fallback: get likes count from posts table and check post_likes table directly
+      final postResponse =
+          await _supabase.client
+              .from('posts')
+              .select('likes_count')
+              .eq('id', postId)
+              .maybeSingle();
+
+      final likesCount =
+          postResponse != null ? postResponse['likes_count'] ?? 0 : 0;
+
+      // Check if user has liked this post in post_likes table
+      final likeResponse =
+          await _supabase.client
+              .from('post_likes')
+              .select('id')
+              .eq('user_id', userId)
+              .eq('post_id', postId)
+              .maybeSingle();
+
+      final isLiked = likeResponse != null;
+
+      return {'isLiked': isLiked, 'likesCount': likesCount};
     } catch (e) {
       debugPrint('Error getting user post like state: $e');
       return {'isLiked': false, 'likesCount': 0};
@@ -456,8 +558,8 @@ class PostRepository extends GetxService {
   }
 
   /// Check if user has interacted with a post (like or star)
-  /// @deprecated This method uses the old user_post_engagements table
-  /// Use getUserPostLikeState() for likes and implement separate methods for other engagements
+  /// Uses the new user_interactions table
+  /// Use getUserPostLikeState() for likes specifically
   Future<Map<String, bool>> getUserPostEngagement(
     String postId,
     String userId,
@@ -465,8 +567,8 @@ class PostRepository extends GetxService {
     try {
       final response =
           await _supabase.client
-              .from('user_post_engagements')
-              .select('likes, stars')
+              .from('user_interactions')
+              .select('metadata')
               .eq('post_id', postId)
               .eq('user_id', userId)
               .maybeSingle();
@@ -475,9 +577,14 @@ class PostRepository extends GetxService {
         return {'isLiked': false, 'isFavorited': false};
       }
 
+      final metadata = response['metadata'];
+      if (metadata is! Map) {
+        return {'isLiked': false, 'isFavorited': false};
+      }
+
       return {
-        'isLiked': response['likes'] == true,
-        'isFavorited': response['stars'] == true,
+        'isLiked': metadata.containsKey('like'),
+        'isFavorited': metadata.containsKey('star'),
       };
     } catch (e) {
       debugPrint('Error checking user post engagement: $e');

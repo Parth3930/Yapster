@@ -187,13 +187,51 @@ class UserInteractionService extends GetxService {
       final userId = _supabase.client.auth.currentUser?.id;
       if (userId == null) return;
 
-      await _supabase.client.from('user_interactions').upsert({
-        'user_id': userId,
-        'post_id': postId,
-        'interaction_type': interactionType,
-        'metadata': metadata,
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      // First check if there's an existing record for this user-post pair
+      final existingRecord =
+          await _supabase.client
+              .from('user_interactions')
+              .select()
+              .eq('user_id', userId)
+              .eq('post_id', postId)
+              .maybeSingle();
+
+      if (existingRecord != null) {
+        // Update existing record by adding the new interaction to the JSON
+        Map<String, dynamic> existingMetadata =
+            existingRecord['metadata'] is Map
+                ? Map<String, dynamic>.from(existingRecord['metadata'])
+                : {};
+
+        // Add the new interaction to the existing metadata
+        existingMetadata[interactionType] = metadata;
+        existingMetadata['last_updated'] = DateTime.now().toIso8601String();
+
+        // Update the record
+        await _supabase.client
+            .from('user_interactions')
+            .update({
+              'metadata': existingMetadata,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('user_id', userId)
+            .eq('post_id', postId);
+      } else {
+        // Create a new record with this interaction as the first in JSON
+        final interactionsJson = {
+          interactionType: metadata,
+          'created_at': DateTime.now().toIso8601String(),
+          'last_updated': DateTime.now().toIso8601String(),
+        };
+
+        // Insert new record
+        await _supabase.client.from('user_interactions').insert({
+          'user_id': userId,
+          'post_id': postId,
+          'metadata': interactionsJson,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
     } catch (e) {
       debugPrint('Error tracking interaction in database: $e');
     }
@@ -209,8 +247,41 @@ class UserInteractionService extends GetxService {
     return _userPreferences['authors']?[authorId] ?? 0.0;
   }
 
-  /// Check if user has viewed a post
-  bool hasViewedPost(String postId) {
+  /// Check if user has viewed a post - checks both local cache and database
+  Future<bool> hasViewedPost(String postId) async {
+    // First check local cache for quick response
+    if (_viewedPosts.contains(postId)) {
+      return true;
+    }
+
+    // Then check database for interactions
+    try {
+      final userId = _supabase.client.auth.currentUser?.id;
+      if (userId == null) return false;
+
+      final record =
+          await _supabase.client
+              .from('user_interactions')
+              .select()
+              .eq('user_id', userId)
+              .eq('post_id', postId)
+              .maybeSingle();
+
+      if (record != null) {
+        // If we found an interaction record, add it to local cache
+        _viewedPosts.add(postId);
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('Error checking if post was viewed: $e');
+      return false;
+    }
+  }
+
+  /// Synchronous version that only checks local cache (for filtering operations)
+  bool hasViewedPostSync(String postId) {
     return _viewedPosts.contains(postId);
   }
 

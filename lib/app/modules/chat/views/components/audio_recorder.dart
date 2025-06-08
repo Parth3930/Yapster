@@ -48,7 +48,8 @@ class _AudioRecorderState extends State<AudioRecorder> {
     }
 
     try {
-      final recordingData = await audioService.stopRecording(); // This now returns a Map
+      final recordingData =
+          await audioService.stopRecording(); // This now returns a Map
       if (recordingData != null) {
         final String path = recordingData['path'] as String;
 
@@ -59,10 +60,13 @@ class _AudioRecorderState extends State<AudioRecorder> {
         // or an error occurred that it already reported.
         // So, we might not need to throw another exception or show another snackbar here.
         // However, to maintain previous behavior of onCancelRecording being called:
-        widget.onCancelRecording(); // Or simply return if snackbars are handled in AudioService
+        widget
+            .onCancelRecording(); // Or simply return if snackbars are handled in AudioService
         // For now, let's assume if null, it's an error/cancel scenario from AudioService's POV
         // and AudioRecorder should reflect that by calling its onCancelRecording.
-        debugPrint('AudioRecorder: audioService.stopRecording returned null. Treating as cancellation/failure.');
+        debugPrint(
+          'AudioRecorder: audioService.stopRecording returned null. Treating as cancellation/failure.',
+        );
         // Get.snackbar('Error', 'Failed to save recording'); // This might be redundant
       }
     } catch (e) {
@@ -76,7 +80,7 @@ class _AudioRecorderState extends State<AudioRecorder> {
     try {
       // Stop recording and discard the result.
       // The AudioService's stopRecording now handles cleanup and state reset.
-      await audioService.stopRecording(); 
+      await audioService.stopRecording();
       widget.onCancelRecording(); // Notify parent about cancellation.
     } catch (e) {
       // This catch block might be redundant if audioService.stopRecording() handles its own errors.
@@ -102,8 +106,8 @@ class _AudioRecorderState extends State<AudioRecorder> {
             child: IconButton(
               icon: const Icon(Icons.delete, color: Colors.red, size: 24),
               onPressed: cancelRecording,
-              splashColor: Colors.red.withOpacity(0.1),
-              highlightColor: Colors.red.withOpacity(0.05),
+              splashColor: Colors.red.withValues(alpha: 0.1),
+              highlightColor: Colors.red.withValues(alpha: 0.05),
             ),
           ),
 
@@ -112,11 +116,12 @@ class _AudioRecorderState extends State<AudioRecorder> {
             child: Container(
               height: 50,
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
+                color: Colors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Obx(() {
-                if (!audioService.isRecording.value || audioService.recorderController == null) {
+                if (!audioService.isRecording.value ||
+                    audioService.recorderController == null) {
                   return const Center(
                     child: Text(
                       'Starting recording...',
@@ -172,8 +177,8 @@ class _AudioRecorderState extends State<AudioRecorder> {
             child: IconButton(
               icon: const Icon(Icons.send, color: Colors.blue, size: 24),
               onPressed: stopRecording,
-              splashColor: Colors.blue.withOpacity(0.1),
-              highlightColor: Colors.blue.withOpacity(0.05),
+              splashColor: Colors.blue.withValues(alpha: 0.1),
+              highlightColor: Colors.blue.withValues(alpha: 0.05),
             ),
           ),
         ],

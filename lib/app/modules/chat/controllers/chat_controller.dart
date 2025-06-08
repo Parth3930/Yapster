@@ -22,8 +22,12 @@ class ChatController extends GetxController
   List<MessageModel> get sortedMessages =>
       List.from(messages)..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-  // Active conversation state
-  late RxList<MessageModel> messages = <MessageModel>[].obs;
+  // Active conversation state - use static for persistence across navigations
+  static final RxMap<String, List<MessageModel>> _messageCache =
+      <String, List<MessageModel>>{}.obs;
+  final RxList<MessageModel> messages =
+      <MessageModel>[].obs; // Remove 'late' keyword
+
   // Message input control
   final TextEditingController messageController = TextEditingController();
   final FocusNode messageFocusNode = FocusNode();
@@ -34,6 +38,26 @@ class ChatController extends GetxController
   final RxBool isLoadingMore = false.obs;
   final RxBool hasMoreMessages = true.obs;
   final int messagesPerPage = 20;
+
+  // Cache the messages to persist state across navigation
+  void cacheMessages(String chatId, List<MessageModel> msgs) {
+    if (chatId.isNotEmpty) {
+      _messageCache[chatId] = List.from(msgs);
+      debugPrint('Cached ${msgs.length} messages for chat $chatId');
+    }
+  }
+
+  // Get cached messages if available
+  List<MessageModel>? getCachedMessages(String chatId) {
+    if (_messageCache.containsKey(chatId)) {
+      final cachedMessages = _messageCache[chatId];
+      debugPrint(
+        'Retrieved ${cachedMessages?.length} cached messages for chat $chatId',
+      );
+      return cachedMessages;
+    }
+    return null;
+  }
 
   // Added properties needed by views
   final RxString selectedChatId = ''.obs;
@@ -57,18 +81,18 @@ class ChatController extends GetxController
 
   // Static flag to track controller initialization state
   static bool _isInitialized = false;
-  
+
   @override
   void onInit() {
     super.onInit();
-    
+
     // Only preload chats once on first initialization
     if (!_isInitialized) {
       _isInitialized = true;
       // Preload recent chats on controller initialization
       preloadRecentChats();
     }
-    
+
     searchController.addListener(handleSearchInputChanged);
   }
 
@@ -86,58 +110,68 @@ class ChatController extends GetxController
   }
 
   Future<void> uploadAndSendAudio(
-  String chatId,
-  String audioPath, {
-  Duration? duration,
-}) async {
-  final senderId = _supabaseService.client.auth.currentUser?.id;
-  
-  if (senderId == null) {
-    Get.snackbar('Error', 'Not authenticated');
-    return;
-  }
+    String chatId,
+    String audioPath, {
+    Duration? duration,
+  }) async {
+    final senderId = _supabaseService.client.auth.currentUser?.id;
 
-  try {
-    // Get recipient ID from the chat (using existing data or fetching from db)
-    String recipientId = '';
-    
-    // Try to find it in the recent chats data first
-    final chatIndex = recentChats.indexWhere((chat) => chat['chat_id'] == chatId);
-    if (chatIndex != -1) {
-      // Get recipient from the existing chat data
-      final chat = recentChats[chatIndex];
-      final String currentUserId = _supabaseService.currentUser.value?.id ?? '';
-      if (chat['user_one_id'] == currentUserId) {
-        recipientId = chat['user_two_id'];
-      } else {
-        recipientId = chat['user_one_id'];
-      }
-    } else {
-      // If not found in recent chats, fetch from database
-      final response = await _supabaseService.client
-          .from('chats')
-          .select('user_one_id, user_two_id')
-          .eq('chat_id', chatId)
-          .single();
-      final String currentUserId = _supabaseService.currentUser.value?.id ?? '';
-      recipientId = response['user_two_id'] == currentUserId ? response['user_one_id'] : response['user_two_id'];
+    if (senderId == null) {
+      Get.snackbar('Error', 'Not authenticated');
+      return;
     }
-    
-    // Set default expiration time (7 days from now)
-    final DateTime expiresAt = DateTime.now().toUtc().add(const Duration(days: 7));
-    
-    // Call the service with all required parameters
-    await Get.find<ChatMessageService>().uploadAndSendAudio(
-      chatId: chatId,
-      recipientId: recipientId,
-      audioFile: File(audioPath),
-      expiresAt: expiresAt,
-    );
-  } catch (e) {
-    debugPrint('Error uploading and sending audio: $e');
-    Get.snackbar('Error', 'Failed to send audio message');
+
+    try {
+      // Get recipient ID from the chat (using existing data or fetching from db)
+      String recipientId = '';
+
+      // Try to find it in the recent chats data first
+      final chatIndex = recentChats.indexWhere(
+        (chat) => chat['chat_id'] == chatId,
+      );
+      if (chatIndex != -1) {
+        // Get recipient from the existing chat data
+        final chat = recentChats[chatIndex];
+        final String currentUserId =
+            _supabaseService.currentUser.value?.id ?? '';
+        if (chat['user_one_id'] == currentUserId) {
+          recipientId = chat['user_two_id'];
+        } else {
+          recipientId = chat['user_one_id'];
+        }
+      } else {
+        // If not found in recent chats, fetch from database
+        final response =
+            await _supabaseService.client
+                .from('chats')
+                .select('user_one_id, user_two_id')
+                .eq('chat_id', chatId)
+                .single();
+        final String currentUserId =
+            _supabaseService.currentUser.value?.id ?? '';
+        recipientId =
+            response['user_two_id'] == currentUserId
+                ? response['user_one_id']
+                : response['user_two_id'];
+      }
+
+      // Set default expiration time (7 days from now)
+      final DateTime expiresAt = DateTime.now().toUtc().add(
+        const Duration(days: 7),
+      );
+
+      // Call the service with all required parameters
+      await Get.find<ChatMessageService>().uploadAndSendAudio(
+        chatId: chatId,
+        recipientId: recipientId,
+        audioFile: File(audioPath),
+        expiresAt: expiresAt,
+      );
+    } catch (e) {
+      debugPrint('Error uploading and sending audio: $e');
+      Get.snackbar('Error', 'Failed to send audio message');
+    }
   }
-}
 
   String? _extractPathFromUrl(String url) {
     try {
@@ -145,14 +179,15 @@ class ChatController extends GetxController
       // Example: /storage/v1/object/public/chat-media/userId/filename.m4a
       // We need "userId/filename.m4a"
       final pathSegments = uri.pathSegments;
-      
+
       // Check if we have enough segments and the path follows the expected structure
-      if (pathSegments.length > 5 && 
-          (pathSegments[4] == 'audio_messages' || pathSegments[4] == 'chat-media')) {
+      if (pathSegments.length > 5 &&
+          (pathSegments[4] == 'audio_messages' ||
+              pathSegments[4] == 'chat-media')) {
         // Return everything after the bucket name (chat-media or audio_messages)
         return pathSegments.sublist(5).join('/');
       }
-      
+
       debugPrint(
         'Error extracting path: URL structure not as expected. Segments: $pathSegments',
       );
@@ -169,7 +204,7 @@ class ChatController extends GetxController
       messages.removeWhere((m) => m.messageId == messageId);
       messages.refresh();
     }
-    
+
     deletingMessageId.value = messageId;
     try {
       // 1. Delete from Supabase Storage
@@ -188,14 +223,15 @@ class ChatController extends GetxController
 
       try {
         // Use the correct bucket name 'chat-media' and ensure proper path formatting
-        final storagePath = filePathInStorage.startsWith('chat-media/')
-            ? filePathInStorage.substring('chat-media/'.length)
-            : filePathInStorage;
-            
+        final storagePath =
+            filePathInStorage.startsWith('chat-media/')
+                ? filePathInStorage.substring('chat-media/'.length)
+                : filePathInStorage;
+
         await _supabaseService.client.storage
             .from('chat-media') // Updated bucket name
             .remove([storagePath]);
-            
+
         debugPrint('Successfully deleted $storagePath from chat-media bucket.');
       } catch (e) {
         debugPrint(
@@ -216,7 +252,7 @@ class ChatController extends GetxController
             .eq('message_id', messageId);
 
         debugPrint('Successfully deleted message $messageId from database.');
-        
+
         // Update the local messages list
         if (messages.any((m) => m.messageId == messageId)) {
           messages.removeWhere((m) => m.messageId == messageId);

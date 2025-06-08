@@ -123,7 +123,7 @@ class AudioMessage extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: Colors.red.withOpacity(0.2),
+            color: Colors.red.withValues(alpha: 0.2),
             shape: BoxShape.circle,
           ),
           child: const Icon(Icons.error_outline, color: Colors.white, size: 20),
@@ -134,7 +134,7 @@ class AudioMessage extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
+          color: Colors.white.withValues(alpha: 0.2),
           shape: BoxShape.circle,
         ),
         child: Center(
@@ -169,7 +169,7 @@ class AudioMessage extends StatelessWidget {
           enableSeekGesture: true,
           waveformType: WaveformType.fitWidth,
           playerWaveStyle: PlayerWaveStyle(
-            fixedWaveColor: Colors.white.withOpacity(0.4),
+            fixedWaveColor: Colors.white.withValues(alpha: 0.4),
             liveWaveColor: Colors.white,
             spacing: 4,
             waveThickness: 2,
@@ -205,7 +205,7 @@ class AudioMessage extends StatelessWidget {
                   height: isPlaying ? waveHeight : 8,
                   margin: const EdgeInsets.symmetric(horizontal: 1.5),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(1.5),
                   ),
                 );
@@ -225,7 +225,7 @@ class AudioMessage extends StatelessWidget {
           Text(
             controller.formatDuration(controller.currentPosition.value),
             style: TextStyle(
-              color: Colors.white.withOpacity(0.8),
+              color: Colors.white.withValues(alpha: 0.8),
               fontSize: 11,
               fontWeight: FontWeight.w500,
             ),
@@ -233,7 +233,7 @@ class AudioMessage extends StatelessWidget {
           Text(
             controller.formatDuration(controller.totalDuration.value),
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
+              color: Colors.white.withValues(alpha: 0.6),
               fontSize: 11,
             ),
           ),
@@ -246,7 +246,7 @@ class AudioMessage extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
+        color: Colors.white.withValues(alpha: 0.15),
         shape: BoxShape.circle,
       ),
       child: const Icon(Icons.mic_rounded, color: Colors.white, size: 14),

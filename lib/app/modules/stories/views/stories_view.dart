@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/stories_controller.dart';
 import 'widgets/story_button.dart';
-import 'create_story_view.dart';
 
 class StoriesView extends GetView<StoriesController> {
   const StoriesView({super.key});

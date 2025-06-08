@@ -63,48 +63,104 @@ class ProfilePostsController extends GetxController {
   /// Toggle post like status
   Future<void> togglePostLike(String postId) async {
     final postIndex = profilePosts.indexWhere((post) => post.id == postId);
-    if (postIndex != -1) {
-      final post = profilePosts[postIndex];
-      final isCurrentlyLiked = post.metadata['isLiked'] == true;
+    if (postIndex == -1) {
+      debugPrint('Post not found in profile posts: $postId');
+      return;
+    }
 
-      // Update in database using the new toggle function
-      final userId = _supabase.client.auth.currentUser?.id;
-      if (userId != null) {
-        try {
-          // Use the new toggle function
-          final success = await _postRepository.togglePostEngagement(
-            postId,
-            userId,
-            'likes',
-          );
+    final post = profilePosts[postIndex];
+    final isCurrentlyLiked = post.metadata['isLiked'] == true;
+    final userId = _supabase.client.auth.currentUser?.id;
 
-          if (success) {
-            // Update metadata
-            final updatedMetadata = Map<String, dynamic>.from(post.metadata);
-            updatedMetadata['isLiked'] = !isCurrentlyLiked;
+    if (userId == null) {
+      debugPrint('User not authenticated');
+      return;
+    }
 
-            // Update post with new metadata and like count
-            final updatedPost = post.copyWith(
-              metadata: updatedMetadata,
-              likesCount: post.likesCount + (isCurrentlyLiked ? -1 : 1),
-            );
+    // Debug current state
+    debugPrint(
+      'Profile like toggle started for $postId: currently liked = $isCurrentlyLiked',
+    );
 
-            profilePosts[postIndex] = updatedPost;
+    // Optimistic UI update - immediately show the expected state
+    final optimisticLiked = !isCurrentlyLiked;
+    final optimisticCount = post.likesCount + (optimisticLiked ? 1 : -1);
 
-            // Update cache with the new post data
-            _cacheService.updatePostInCache(post.userId, updatedPost);
+    debugPrint(
+      'Profile optimistic update: $postId -> liked: $optimisticLiked, count: $optimisticCount',
+    );
 
-            debugPrint(
-              'Successfully ${isCurrentlyLiked ? 'unliked' : 'liked'} post: $postId',
-            );
-          }
-        } catch (e) {
-          debugPrint('Error updating likes in database: $e');
-          // Don't update UI if database operation failed
-        }
+    // Update UI immediately for better UX
+    final optimisticMetadata = Map<String, dynamic>.from(post.metadata);
+    optimisticMetadata['isLiked'] = optimisticLiked;
+
+    final optimisticPost = post.copyWith(
+      likesCount: optimisticCount,
+      metadata: optimisticMetadata,
+    );
+
+    profilePosts[postIndex] = optimisticPost;
+    profilePosts.refresh();
+
+    try {
+      // Use the dedicated togglePostLike function instead of togglePostEngagement
+      final result = await _postRepository.togglePostLike(postId, userId);
+
+      if (result != null) {
+        final newIsLiked = result['isLiked'] as bool;
+        final newLikesCount = result['likesCount'] as int;
+
+        debugPrint(
+          'Profile like toggle successful. Server state: $newIsLiked, Count: $newLikesCount',
+        );
+
+        // Update with actual server response
+        final serverMetadata = Map<String, dynamic>.from(post.metadata);
+        serverMetadata['isLiked'] = newIsLiked;
+
+        final serverPost = post.copyWith(
+          likesCount: newLikesCount,
+          metadata: serverMetadata,
+        );
+
+        profilePosts[postIndex] = serverPost;
+        profilePosts.refresh();
+
+        // Update cache with the new post data
+        _cacheService.updatePostInCache(post.userId, serverPost);
+
+        debugPrint(
+          'Successfully ${newIsLiked ? 'liked' : 'unliked'} post: $postId',
+        );
+      } else {
+        debugPrint('Profile like toggle failed - reverting optimistic update');
+        // Revert optimistic update on failure
+        final revertedMetadata = Map<String, dynamic>.from(post.metadata);
+        revertedMetadata['isLiked'] = isCurrentlyLiked;
+
+        final revertedPost = post.copyWith(
+          likesCount: post.likesCount,
+          metadata: revertedMetadata,
+        );
+
+        profilePosts[postIndex] = revertedPost;
+        profilePosts.refresh();
       }
+    } catch (e) {
+      debugPrint(
+        'Error toggling profile post like: $e - reverting optimistic update',
+      );
 
-      // Force UI update
+      // Revert optimistic update on error
+      final revertedMetadata = Map<String, dynamic>.from(post.metadata);
+      revertedMetadata['isLiked'] = isCurrentlyLiked;
+
+      final revertedPost = post.copyWith(
+        likesCount: post.likesCount,
+        metadata: revertedMetadata,
+      );
+
+      profilePosts[postIndex] = revertedPost;
       profilePosts.refresh();
     }
   }
@@ -248,29 +304,66 @@ class ProfilePostsController extends GetxController {
     }
   }
 
-  /// Load engagement states for posts
+  /// Load engagement states for posts (likes and favorites)
   Future<void> _loadEngagementStates(List<PostModel> postsList) async {
     final userId = _supabase.client.auth.currentUser?.id;
     if (userId == null) return;
 
     try {
+      // Batch load favorites for performance
+      final userFavorites = await _loadUserFavorites(userId);
+      debugPrint(
+        'Loaded ${userFavorites.length} favorites for user $userId in profile',
+      );
+
       for (int i = 0; i < postsList.length; i++) {
         final post = postsList[i];
-        final engagement = await _postRepository.getUserPostEngagement(
+
+        // Get like state using the optimized function
+        final likeState = await _postRepository.getUserPostLikeState(
           post.id,
           userId,
         );
 
         // Update metadata with engagement state
         final updatedMetadata = Map<String, dynamic>.from(post.metadata);
-        updatedMetadata['isLiked'] = engagement['isLiked'];
-        updatedMetadata['isFavorited'] = engagement['isFavorited'];
+        updatedMetadata['isLiked'] = likeState?['isLiked'] ?? false;
 
-        // Update the post in the list
-        postsList[i] = post.copyWith(metadata: updatedMetadata);
+        // Check if post is favorited using pre-loaded user_favorites data
+        final isFavorited = userFavorites.contains(post.id);
+        updatedMetadata['isFavorited'] = isFavorited;
+
+        debugPrint(
+          'Profile - Post ${post.id} - isLiked: ${updatedMetadata['isLiked']}, isFavorited: $isFavorited',
+        );
+
+        // Update the post in the list with correct likes count from database
+        final updatedLikesCount = likeState?['likesCount'] ?? post.likesCount;
+        postsList[i] = post.copyWith(
+          metadata: updatedMetadata,
+          likesCount: updatedLikesCount,
+        );
       }
     } catch (e) {
-      debugPrint('Error loading engagement states: $e');
+      debugPrint('Error loading engagement states in profile: $e');
+    }
+  }
+
+  /// Load user favorites for batch processing
+  Future<Set<String>> _loadUserFavorites(String userId) async {
+    try {
+      final response = await _supabase.client
+          .from('user_favorites')
+          .select('post_id')
+          .eq('user_id', userId);
+
+      if (response is List) {
+        return response.map((item) => item['post_id'] as String).toSet();
+      }
+      return {};
+    } catch (e) {
+      debugPrint('Error loading user favorites in profile: $e');
+      return {};
     }
   }
 

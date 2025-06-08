@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/repositories/story_repository.dart';
@@ -34,7 +35,7 @@ class StoriesHomeController extends GetxController {
       if (!forceRefresh && _lastStoriesLoad != null && hasLoadedOnce.value) {
         final timeSinceLastLoad = DateTime.now().difference(_lastStoriesLoad!);
         if (timeSinceLastLoad < _storiesCacheDuration) {
-          print('Using cached stories data');
+          debugPrint('Using cached stories data');
           return;
         }
       }
@@ -53,7 +54,7 @@ class StoriesHomeController extends GetxController {
       hasLoadedOnce.value = true;
       _lastStoriesLoad = DateTime.now();
     } catch (e) {
-      print('Error loading stories data: $e');
+      debugPrint('Error loading stories data: $e');
     } finally {
       isLoading.value = false;
     }
@@ -156,7 +157,7 @@ class StoriesHomeController extends GetxController {
 
       usersWithStories.assignAll(users);
     } catch (e) {
-      print('Error loading followers with stories: $e');
+      debugPrint('Error loading followers with stories: $e');
     }
   }
 
@@ -185,7 +186,7 @@ class StoriesHomeController extends GetxController {
         hasCurrentUserUnseenStory.value = false;
       }
     } catch (e) {
-      print('Error checking current user story: $e');
+      debugPrint('Error checking current user story: $e');
       // If there's an error, assume user has unseen stories if they have stories
       hasCurrentUserUnseenStory.value = hasCurrentUserStory.value;
     }

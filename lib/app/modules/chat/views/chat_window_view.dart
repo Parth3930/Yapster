@@ -40,8 +40,7 @@ class _KeyboardVisibilityObserver extends WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
-    final keyboardVisible =
-        WidgetsBinding.instance.window.viewInsets.bottom > 0;
+    final keyboardVisible = View.of(Get.context!).viewInsets.bottom > 0;
     if (keyboardVisible && !_wasVisible) {
       onShow();
     } else if (!keyboardVisible && _wasVisible) {
@@ -120,6 +119,18 @@ class ChatWindowView extends GetView<ChatController> {
             // Reset initialization when leaving chat
             _isInitialized = false;
             _currentChatId = null;
+
+            // Ensure we refresh the chat list when returning
+            try {
+              final controller = Get.find<ChatController>();
+              // Force clear any loading state
+              controller.isLoading.value = false;
+              // Trigger background refresh of chats when returning
+              controller.preloadRecentChats();
+            } catch (e) {
+              debugPrint('Error refreshing chats on back: $e');
+            }
+
             Get.back();
           },
         ),
@@ -249,7 +260,19 @@ class ChatWindowView extends GetView<ChatController> {
     try {
       debugPrint('Initial load of messages for chat: $chatId');
 
-      // Load messages first
+      // Reset messages state to avoid showing old messages temporarily
+      controller.messages.clear();
+
+      // Check for persistent cached messages first to show immediately
+      final cachedMessages = controller.getCachedMessages(chatId);
+      if (cachedMessages != null && cachedMessages.isNotEmpty) {
+        debugPrint(
+          'Using ${cachedMessages.length} cached messages for chat: $chatId',
+        );
+        controller.messages.assignAll(cachedMessages);
+      }
+
+      // Load messages (will use cache if available, or load from database)
       await controller.preloadMessages(chatId);
 
       // Mark as read only if we haven't done so for this chat

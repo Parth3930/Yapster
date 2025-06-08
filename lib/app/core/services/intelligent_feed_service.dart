@@ -129,7 +129,7 @@ class IntelligentFeedService extends GetxService {
     }
 
     // Remove posts user has already interacted with
-    if (_interactionService.hasViewedPost(scoredPost.post.id)) {
+    if (_interactionService.hasViewedPostSync(scoredPost.post.id)) {
       return false;
     }
 
@@ -210,7 +210,7 @@ class IntelligentFeedService extends GetxService {
             .where(
               (post) =>
                   post.userId != currentUserId &&
-                  !_interactionService.hasViewedPost(post.id),
+                  !_interactionService.hasViewedPostSync(post.id),
             )
             .map(
               (post) => ScoredPost(

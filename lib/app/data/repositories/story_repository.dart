@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -37,7 +38,7 @@ class StoryRepository extends GetxService {
 
       return publicUrl;
     } catch (e) {
-      print('Error uploading story image: $e');
+      debugPrint('Error uploading story image: $e');
       return null;
     }
   }
@@ -46,12 +47,12 @@ class StoryRepository extends GetxService {
   Future<String?> createStory(StoryModel story) async {
     try {
       final storyData = story.toMap();
-      print('Creating story with data: $storyData');
+      debugPrint('Creating story with data: $storyData');
 
       // Validate user_id is not empty
       if (storyData['user_id'] == null ||
           storyData['user_id'].toString().isEmpty) {
-        print('Error: user_id is null or empty');
+        debugPrint('Error: user_id is null or empty');
         return null;
       }
 
@@ -62,10 +63,10 @@ class StoryRepository extends GetxService {
               .select('id')
               .single();
 
-      print('Story created successfully with ID: ${response['id']}');
+      debugPrint('Story created successfully with ID: ${response['id']}');
       return response['id'] as String;
     } catch (e) {
-      print('Error creating story: $e');
+      debugPrint('Error creating story: $e');
       return null;
     }
   }
@@ -92,7 +93,7 @@ class StoryRepository extends GetxService {
           .map((story) => StoryModel.fromMap(story))
           .toList();
     } catch (e) {
-      print('Error getting all active stories: $e');
+      debugPrint('Error getting all active stories: $e');
       return [];
     }
   }
@@ -111,7 +112,7 @@ class StoryRepository extends GetxService {
           .map((story) => StoryModel.fromMap(story))
           .toList();
     } catch (e) {
-      print('Error getting user stories: $e');
+      debugPrint('Error getting user stories: $e');
       return [];
     }
   }
@@ -122,7 +123,7 @@ class StoryRepository extends GetxService {
       final response = await _supabase.client.rpc('cleanup_expired_stories');
       return response as int? ?? 0;
     } catch (e) {
-      print('Error deleting expired stories: $e');
+      debugPrint('Error deleting expired stories: $e');
       return 0;
     }
   }
@@ -137,7 +138,7 @@ class StoryRepository extends GetxService {
           .eq('user_id', userId);
       return true;
     } catch (e) {
-      print('Error deleting story: $e');
+      debugPrint('Error deleting story: $e');
       return false;
     }
   }
@@ -158,7 +159,7 @@ class StoryRepository extends GetxService {
 
       return response;
     } catch (e) {
-      print('Error getting story analytics: $e');
+      debugPrint('Error getting story analytics: $e');
       return null;
     }
   }
@@ -176,7 +177,7 @@ class StoryRepository extends GetxService {
       final viewers = response['viewers'] as List<dynamic>? ?? [];
       return viewers.contains(userId);
     } catch (e) {
-      print('Error checking story view status: $e');
+      debugPrint('Error checking story view status: $e');
       return false;
     }
   }

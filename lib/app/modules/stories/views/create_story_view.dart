@@ -5,7 +5,6 @@ import 'package:yapster/app/modules/stories/controllers/doodle_controller.dart';
 import 'package:yapster/app/modules/stories/controllers/text_controller.dart';
 import 'package:yapster/app/modules/stories/widgets/doodle_widget.dart';
 import 'package:yapster/app/modules/stories/widgets/text_widget.dart';
-import 'package:yapster/app/modules/stories/widgets/text_editing_controls.dart';
 
 enum DrawingMode { none, text, doodle }
 

@@ -79,29 +79,6 @@ class FeedLoaderService {
     return posts;
   }
 
-  /// Load preloaded posts from cache
-  static Future<void> _loadFromCache() async {
-    try {
-      final cacheManager = Get.find<CacheManager>();
-      final cachedData = await cacheManager.getCachedHomeData();
-
-      if (cachedData != null && cachedData['preloaded_posts'] != null) {
-        final cachedPosts = cachedData['preloaded_posts'] as List;
-        preloadedPosts =
-            cachedPosts
-                .map(
-                  (postData) =>
-                      PostModel.fromMap(Map<String, dynamic>.from(postData)),
-                )
-                .toList();
-        debugPrint('Loaded ${preloadedPosts.length} posts from cache');
-      }
-    } catch (e) {
-      debugPrint('Error loading preloaded posts from cache: $e');
-      preloadedPosts = [];
-    }
-  }
-
   /// Save preloaded posts to cache
   static Future<void> _saveToCache() async {
     try {
@@ -132,29 +109,5 @@ class FeedLoaderService {
     } catch (e) {
       debugPrint('Error clearing cache: $e');
     }
-  }
-
-  /// Check if posts have valid user data (username, nickname, or avatar)
-  static bool _hasValidUserData(List<PostModel> posts) {
-    if (posts.isEmpty) return false;
-
-    // Check if at least some posts have user data
-    int postsWithUserData = 0;
-    for (final post in posts) {
-      if ((post.username != null && post.username!.isNotEmpty) ||
-          (post.nickname != null && post.nickname!.isNotEmpty) ||
-          (post.avatar != null && post.avatar!.isNotEmpty)) {
-        postsWithUserData++;
-      }
-    }
-
-    // Consider valid if at least 80% of posts have user data
-    final validPercentage = postsWithUserData / posts.length;
-    final isValid = validPercentage >= 0.8;
-
-    debugPrint(
-      'User data validation: $postsWithUserData/${posts.length} posts have user data (${(validPercentage * 100).toStringAsFixed(1)}%) - ${isValid ? 'VALID' : 'INVALID'}',
-    );
-    return isValid;
   }
 }

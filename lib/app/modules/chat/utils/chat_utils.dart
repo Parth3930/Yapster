@@ -147,7 +147,7 @@ class ChatUtils {
       'Text copied to clipboard',
       snackPosition: SnackPosition.BOTTOM,
       duration: const Duration(seconds: 1),
-      backgroundColor: Colors.black.withOpacity(0.7),
+      backgroundColor: Colors.black.withValues(alpha: 0.7),
       colorText: Colors.white,
       margin: const EdgeInsets.all(8),
     );

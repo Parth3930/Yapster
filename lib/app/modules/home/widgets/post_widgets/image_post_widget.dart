@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
+import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_avatar_widget.dart';
@@ -13,8 +14,8 @@ class ImagePostWidget extends StatelessWidget {
     required this.controller,
   });
 
-  final post;
-  final controller;
+  final PostModel post;
+  final dynamic controller;
 
   @override
   Widget build(BuildContext context) {
@@ -153,7 +154,7 @@ class ImagePostWidget extends StatelessWidget {
                       Text(
                         _formatTimeAgo(post.createdAt),
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.85),
+                          color: Colors.white.withValues(alpha: 0.85),
                           fontSize: 13,
                           fontWeight: FontWeight.w400,
                         ),
@@ -169,7 +170,7 @@ class ImagePostWidget extends StatelessWidget {
                     bottom: 60,
                     child: Text(
                       post.content.length > 50
-                          ? post.content.substring(0, 50) + '... More'
+                          ? '${post.content.substring(0, 50)}... More'
                           : post.content,
                       style: TextStyle(
                         color: Colors.white,

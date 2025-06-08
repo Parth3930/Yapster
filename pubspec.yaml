@@ -1,7 +1,7 @@
 name: yapster
 description: "A Flutter application with GetX architecture."
 publish_to: "none"
-version: 0.1.0
+version: 0.1.2
 
 environment:
   sdk: ^3.7.2
@@ -35,6 +35,7 @@ dependencies:
   photo_manager: ^3.4.0
   flutter_colorpicker: ^1.1.0
   font_awesome_flutter: ^10.8.0
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:

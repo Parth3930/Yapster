@@ -71,7 +71,7 @@ class UserPostsCacheService extends GetxService {
       final currentUserId = _supabase?.client.auth.currentUser?.id;
       if (currentUserId != null && _storage != null) {
         final cachedData = _storage!.getString(
-          '${_cacheKeyPrefix}$currentUserId',
+          '$_cacheKeyPrefix$currentUserId',
         );
         if (cachedData != null) {
           final List<dynamic> postsJson = json.decode(cachedData);
@@ -199,7 +199,7 @@ class UserPostsCacheService extends GetxService {
 
       final postsJson = posts.map((post) => post.toMap()).toList();
       await _storage!.saveString(
-        '${_cacheKeyPrefix}$userId',
+        '$_cacheKeyPrefix$userId',
         json.encode(postsJson),
       );
     } catch (e) {
@@ -276,7 +276,7 @@ class UserPostsCacheService extends GetxService {
     _isLoading.remove(userId);
 
     // Remove from local storage
-    _storage?.remove('${_cacheKeyPrefix}$userId');
+    _storage?.remove('$_cacheKeyPrefix$userId');
     debugPrint('Cleared cache for user: $userId');
   }
 

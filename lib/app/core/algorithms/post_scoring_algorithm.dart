@@ -168,7 +168,7 @@ class PostScoringAlgorithm {
     }
 
     // Penalty for already viewed posts
-    if (_interactionService.hasViewedPost(post.id)) {
+    if (!_interactionService.hasViewedPostSync(post.id)) {
       personalizedScore *= 0.05; // Very heavy penalty for already seen posts
     }
 

@@ -23,7 +23,7 @@ class GroupController extends GetxController {
   // Caching variables
   static final Map<String, Map<String, dynamic>> _groupCache = {};
   static final Map<String, List<GroupMessageModel>> _messagesCache = {};
-  static DateTime? _lastGroupFetchTime;
+
   static DateTime? _lastMessageFetchTime;
   static const Duration _groupCacheDuration = Duration(minutes: 5);
   static const Duration _messageCacheDuration = Duration(minutes: 2);
@@ -228,7 +228,6 @@ class GroupController extends GetxController {
       'groups': groupsList.map((g) => g.toJson()).toList(),
       'timestamp': DateTime.now().toIso8601String(),
     };
-    _lastGroupFetchTime = DateTime.now();
   }
 
   /// Load messages for a specific group with caching

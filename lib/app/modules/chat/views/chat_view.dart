@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
@@ -21,6 +22,7 @@ class _ChatViewState extends State<ChatView> {
   // Get the controller
   final ChatController controller = Get.find<ChatController>();
   late final GroupController groupController;
+  RealtimeChannel? _chatListSubscription;
 
   @override
   void initState() {
@@ -41,7 +43,60 @@ class _ChatViewState extends State<ChatView> {
 
       // Load user groups
       groupController.loadUserGroups();
+
+      // Set up real-time subscription for chat updates
+      _setupRealtimeSubscription();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // Refresh chat list when returning to this view
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        debugPrint('ChatView: didChangeDependencies - refreshing chat list');
+        controller.fetchUsersRecentChats(forceRefresh: true);
+      }
+    });
+  }
+
+  // Set up real-time subscription to update chat list when messages are sent/received
+  void _setupRealtimeSubscription() {
+    final currentUserId = controller.supabaseService.currentUser.value?.id;
+    if (currentUserId == null) return;
+
+    // Subscribe to messages table changes to update recent chats
+    // We'll listen to all message inserts and filter in the callback
+    _chatListSubscription = controller.supabaseService.client
+        .channel('chat_list_updates_$currentUserId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          callback: (payload) {
+            final senderId = payload.newRecord['sender_id'];
+            final recipientId = payload.newRecord['recipient_id'];
+
+            // Only refresh if current user is involved in this message
+            if (senderId == currentUserId || recipientId == currentUserId) {
+              debugPrint('New message detected for user, refreshing chat list');
+              // Clear cache and force refresh recent chats when a new message is sent/received
+              controller.clearCache();
+              Future.delayed(const Duration(milliseconds: 500), () {
+                controller.fetchUsersRecentChats(forceRefresh: true);
+              });
+            }
+          },
+        );
+    _chatListSubscription?.subscribe();
+  }
+
+  @override
+  void dispose() {
+    _chatListSubscription?.unsubscribe();
+    super.dispose();
   }
 
   // Show create group dialog
@@ -420,18 +475,33 @@ class _ChatViewState extends State<ChatView> {
     if (chat['last_message'] == null ||
         chat['last_message'].toString().isEmpty) {
       messagePreview = "No messages yet - tap to start chatting";
-    } else if (chat['last_message'].toString().length > 15) {
-      // For long messages, just show a generic indication instead of the content
-      messagePreview =
-          didUserSendLastMessage
-              ? "You sent a message"
-              : "You received a message";
     } else {
-      // For short messages, show the content with prefix
-      messagePreview =
-          didUserSendLastMessage
-              ? "Sent: ${chat['last_message']}"
-              : "Received: ${chat['last_message']}";
+      final String lastMessage = chat['last_message'].toString();
+      final String? messageType = chat['last_message_type']?.toString();
+
+      // Check if it's a shared post by message type or content
+      bool isSharedPost =
+          messageType == 'shared_post' ||
+          lastMessage.contains('"type":"shared_post"') ||
+          lastMessage.contains('"type": "shared_post"') ||
+          lastMessage.contains('shard_post'); // Handle typo in your data
+
+      if (isSharedPost) {
+        messagePreview =
+            didUserSendLastMessage ? "Sent a post" : "Received a post";
+      } else {
+        // Handle regular text messages
+        if (lastMessage.length > 30) {
+          // For long messages, truncate but still show content
+          final truncated = lastMessage.substring(0, 30);
+          messagePreview =
+              didUserSendLastMessage ? "Sent: $truncated..." : "$truncated...";
+        } else {
+          // For short messages, show the full content with prefix
+          messagePreview =
+              didUserSendLastMessage ? "Sent: $lastMessage" : lastMessage;
+        }
+      }
     }
 
     return ListTile(
@@ -469,8 +539,8 @@ class _ChatViewState extends State<ChatView> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          // Show unread indicator if messages are unread
-          if (unreadCount > 0)
+          // Show unread indicator only if messages are unread AND user didn't send the last message
+          if (unreadCount > 0 && !didUserSendLastMessage)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
