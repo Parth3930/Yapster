@@ -409,9 +409,16 @@ class ExploreController extends GetxController {
           .select()
           .eq('follower_id', userId);
 
+      final followerCount = followerResponse.length;
+      final followingCount = followingResponse.length;
+
+      debugPrint('ExploreController: _fetchFollowCounts for user $userId');
+      debugPrint('  - Followers: $followerCount');
+      debugPrint('  - Following: $followingCount');
+
       return {
-        'follower_count': followerResponse.length,
-        'following_count': followingResponse.length,
+        'follower_count': followerCount,
+        'following_count': followingCount,
       };
     } catch (e) {
       debugPrint('Error fetching follow counts: $e');
@@ -646,17 +653,28 @@ class ExploreController extends GetxController {
   bool isFollowingUser(String userId) {
     if (userId.isEmpty) return false;
 
-    // First check in the AccountDataProvider for cached state (fast check)
+    // First check our own follow state cache (most recent)
+    if (_followStateCache.containsKey(userId)) {
+      final cachedState = _followStateCache[userId] ?? false;
+      debugPrint(
+        'Following check for $userId: $cachedState (map size: ${_followStateCache.length})',
+      );
+      return cachedState;
+    }
+
+    // Then check in the AccountDataProvider for cached state (fast check)
     if (_accountDataProvider.isFollowing(userId)) {
       debugPrint('User $userId found in following cache - already following');
+      // Update our cache to match
+      _followStateCache[userId] = true;
       return true;
     }
 
-    // If not found in cache, we need to ensure we have the most up-to-date data
-    // This will be handled by refreshFollowState which is called when the view is built
+    // If not found in either cache, we need to ensure we have the most up-to-date data
     debugPrint(
       'User $userId not found in following cache - not following or needs refresh',
     );
+    _followStateCache[userId] = false;
     return false;
   }
 
@@ -726,6 +744,122 @@ class ExploreController extends GetxController {
     debugPrint('Marked follow state as refreshed for user: $userId');
   }
 
+  /// Clear follow state cache for a specific user
+  void clearFollowStateCache(String userId) {
+    _followStateCache.remove(userId);
+    _followStateFetchTime.remove(userId);
+    debugPrint('Cleared follow state cache for user: $userId');
+  }
+
+  /// Clear all follow state caches
+  void clearAllFollowStateCaches() {
+    _followStateCache.clear();
+    _followStateFetchTime.clear();
+    debugPrint('Cleared all follow state caches');
+  }
+
+  /// Check if follow state is cached for a user
+  bool hasFollowStateCached(String userId) {
+    return _followStateCache.containsKey(userId);
+  }
+
+  /// Update all caches after a follow/unfollow operation
+  Future<void> _updateCachesAfterFollowChange(
+    String currentUserId,
+    String targetUserId,
+    bool newFollowState,
+  ) async {
+    try {
+      debugPrint('Updating caches after follow change: $newFollowState');
+
+      // 1. Clear stale caches first
+      _accountDataProvider.clearFollowCaches(currentUserId);
+      clearFollowStateCache(targetUserId);
+
+      // 2. Update ExploreController's follow state cache
+      _followStateCache[targetUserId] = newFollowState;
+      _followStateFetchTime[targetUserId] = DateTime.now();
+
+      // 3. Refresh AccountDataProvider's following list to update cache
+      await _accountDataProvider.loadFollowing(currentUserId);
+
+      // 4. If we're viewing this user's profile, update the profile cache
+      if (selectedUserProfile.isNotEmpty &&
+          selectedUserProfile['user_id'] == targetUserId) {
+        await _refreshSelectedUserProfile(targetUserId);
+      }
+
+      debugPrint('Cache update completed');
+    } catch (e) {
+      debugPrint('Error updating caches after follow change: $e');
+    }
+  }
+
+  /// Refresh the selected user profile data and update cache
+  Future<void> _refreshSelectedUserProfile(String userId) async {
+    try {
+      // Get updated follower count for the target user
+      final updatedFollowerCount =
+          (await _supabaseService.client
+              .from('follows')
+              .select()
+              .eq('following_id', userId)).length;
+
+      // SMART CACHE UPDATE: Only update if count has changed
+      final currentCount = selectedUserProfile['follower_count'] as int? ?? 0;
+
+      if (currentCount != updatedFollowerCount) {
+        debugPrint(
+          'Follower count changed for $userId: $currentCount -> $updatedFollowerCount',
+        );
+
+        // Create a new map to trigger reactive updates
+        final updatedProfile = Map<String, dynamic>.from(selectedUserProfile);
+        updatedProfile['follower_count'] = updatedFollowerCount;
+        selectedUserProfile.value = updatedProfile;
+
+        debugPrint(
+          'Updated selectedUserProfile follower count to: $updatedFollowerCount',
+        );
+      } else {
+        debugPrint('Follower count unchanged for $userId: $currentCount');
+      }
+    } catch (e) {
+      debugPrint('Error refreshing selected user profile: $e');
+    }
+  }
+
+  /// Update cache when profile data changes (called when opening profile page)
+  Future<void> updateProfileCache(String userId) async {
+    try {
+      debugPrint('Checking profile cache for user: $userId');
+
+      // Only load fresh data if we don't have recent profile data
+      final hasRecentProfile =
+          selectedUserProfile.isNotEmpty &&
+          selectedUserProfile['user_id'] == userId;
+
+      if (!hasRecentProfile) {
+        debugPrint('Loading fresh profile data for user: $userId');
+        await loadUserProfile(userId);
+      } else {
+        debugPrint('Using cached profile data for user: $userId');
+      }
+
+      // Only update follow state if not recently cached
+      if (!hasFollowStateCached(userId) || shouldRefreshFollowState(userId)) {
+        debugPrint('Updating follow state cache for user: $userId');
+        await refreshFollowState(userId, forceRefresh: false);
+      } else {
+        debugPrint('Using cached follow state for user: $userId');
+      }
+
+      debugPrint('Profile cache check completed for user: $userId');
+    } catch (e) {
+      debugPrint('Error updating profile cache: $e');
+    }
+  }
+
   // Refresh the follow state for a specific user - can be called when a view is built to ensure accurate UI
   Future<bool> refreshFollowState(
     String userId, {
@@ -743,9 +877,31 @@ class ExploreController extends GetxController {
         return _followStateCache[userId] ?? false;
       }
 
-      debugPrint('Refreshing follow state for target user: $userId');
+      // OPTIMIZATION: Only refresh from database if forced or cache is very old
+      if (!forceRefresh) {
+        // Check if we have any cached state from AccountDataProvider
+        final accountProviderState = _accountDataProvider.isFollowing(userId);
+        if (accountProviderState) {
+          _followStateCache[userId] = true;
+          markFollowStateRefreshed(userId);
+          debugPrint(
+            'Using AccountDataProvider cached state for user: $userId',
+          );
+          return true;
+        }
 
-      // Check directly in the follows table
+        // If no cached state and not forced, assume not following
+        _followStateCache[userId] = false;
+        markFollowStateRefreshed(userId);
+        debugPrint(
+          'No cached state found, assuming not following user: $userId',
+        );
+        return false;
+      }
+
+      debugPrint('Force refreshing follow state for target user: $userId');
+
+      // Check directly in the follows table (only when forced)
       final response = await _supabaseService.client
           .from('follows')
           .select()
@@ -758,18 +914,15 @@ class ExploreController extends GetxController {
       _followStateCache[userId] = isFollowing;
       markFollowStateRefreshed(userId);
 
-      // If we're following but it's not in our cache, update the cache
+      // Sync with AccountDataProvider cache
       if (isFollowing && !_accountDataProvider.isFollowing(userId)) {
-        debugPrint(
-          'Found follow relationship in DB that was missing from cache',
-        );
-
         final followingData = {
           'following_id': userId,
           'created_at': DateTime.now().toIso8601String(),
         };
-
         _accountDataProvider.addFollowing(followingData);
+      } else if (!isFollowing && _accountDataProvider.isFollowing(userId)) {
+        _accountDataProvider.removeFollowing(userId);
       }
 
       debugPrint('Current follow state for $userId: $isFollowing');
@@ -802,7 +955,10 @@ class ExploreController extends GetxController {
       // Update the local UI state to reflect the new count
       if (selectedUserProfile.isNotEmpty &&
           selectedUserProfile['user_id'] == targetUserId) {
-        selectedUserProfile['follower_count'] = newCount;
+        // Create a new map to trigger reactive updates
+        final updatedProfile = Map<String, dynamic>.from(selectedUserProfile);
+        updatedProfile['follower_count'] = newCount;
+        selectedUserProfile.value = updatedProfile;
         debugPrint('Updated selectedUserProfile follower count to: $newCount');
       }
 
@@ -815,7 +971,10 @@ class ExploreController extends GetxController {
       // since the follows table has the correct count
       if (selectedUserProfile.isNotEmpty &&
           selectedUserProfile['user_id'] == targetUserId) {
-        selectedUserProfile['follower_count'] = newCount;
+        // Create a new map to trigger reactive updates
+        final updatedProfile = Map<String, dynamic>.from(selectedUserProfile);
+        updatedProfile['follower_count'] = newCount;
+        selectedUserProfile.value = updatedProfile;
         debugPrint('Updated UI follower count despite server error: $newCount');
       }
     }
@@ -829,10 +988,8 @@ class ExploreController extends GetxController {
       debugPrint('========== FOLLOW/UNFOLLOW START ==========');
       debugPrint('Target userId: $userId');
 
-      // Get current state
-      final isFollowing = isFollowingUser(userId);
+      // CRITICAL: Always check database state, not cache, for follow operations
       final currentUserId = _supabaseService.currentUser.value?.id;
-
       if (currentUserId == null) {
         EasyLoading.showError('User not authenticated');
         return;
@@ -845,9 +1002,15 @@ class ExploreController extends GetxController {
         return;
       }
 
-      debugPrint(
-        'Current user: $currentUserId, currently following: $isFollowing',
-      );
+      // Get ACTUAL current state from database, not cache
+      final dbResponse = await _supabaseService.client
+          .from('follows')
+          .select()
+          .eq('follower_id', currentUserId)
+          .eq('following_id', userId);
+
+      final isFollowing = dbResponse.isNotEmpty;
+      debugPrint('Database state: currently following $userId: $isFollowing');
 
       // Show a loading indicator
       EasyLoading.show(status: 'Processing...');
@@ -865,17 +1028,8 @@ class ExploreController extends GetxController {
       // Close loading indicator
       EasyLoading.dismiss();
 
-      // Update local follow state cache
-      _followStateCache[userId] = !isFollowing;
-      _followStateFetchTime[userId] = DateTime.now();
-
-      // CRITICAL: Clear stale caches first
-      _accountDataProvider.clearFollowCaches(currentUserId);
-      _followStateCache.remove(userId);
-      _followStateFetchTime.remove(userId);
-
-      // CRITICAL: Refresh the AccountDataProvider's following list to update the cache
-      await _accountDataProvider.loadFollowing(currentUserId);
+      // CRITICAL: Update all caches with new state
+      await _updateCachesAfterFollowChange(currentUserId, userId, !isFollowing);
 
       // Refresh the current user's follow data
       await refreshUserFollowData(currentUserId);
@@ -890,7 +1044,10 @@ class ExploreController extends GetxController {
                 .select()
                 .eq('following_id', userId)).length;
 
-        selectedUserProfile['follower_count'] = updatedFollowerCount;
+        // Create a new map to trigger reactive updates
+        final updatedProfile = Map<String, dynamic>.from(selectedUserProfile);
+        updatedProfile['follower_count'] = updatedFollowerCount;
+        selectedUserProfile.value = updatedProfile;
         debugPrint(
           'Updated target user follower count to: $updatedFollowerCount',
         );
@@ -1009,9 +1166,11 @@ class ExploreController extends GetxController {
         final prevFollowerCount = selectedUserProfile['follower_count'] ?? 0;
         final prevFollowingCount = selectedUserProfile['following_count'] ?? 0;
 
-        // Update with new values
-        selectedUserProfile['follower_count'] = followerCount;
-        selectedUserProfile['following_count'] = followingCount;
+        // Update with new values - create new map to trigger reactive updates
+        final updatedProfile = Map<String, dynamic>.from(selectedUserProfile);
+        updatedProfile['follower_count'] = followerCount;
+        updatedProfile['following_count'] = followingCount;
+        selectedUserProfile.value = updatedProfile;
 
         debugPrint('CRITICAL: Updated UI state for user $userId');
         debugPrint(
@@ -1204,7 +1363,10 @@ class ExploreController extends GetxController {
           debugPrint(
             'Updating selectedUserProfile follower count from ${selectedUserProfile['follower_count']} to $followerCount',
           );
-          selectedUserProfile['follower_count'] = followerCount;
+          // Create a new map to trigger reactive updates
+          final updatedProfile = Map<String, dynamic>.from(selectedUserProfile);
+          updatedProfile['follower_count'] = followerCount;
+          selectedUserProfile.value = updatedProfile;
         }
       }
 

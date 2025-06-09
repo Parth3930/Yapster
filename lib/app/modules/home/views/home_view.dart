@@ -8,6 +8,8 @@ import 'package:yapster/app/modules/home/widgets/stories_list_widget.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_widget_factory.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:yapster/app/core/services/push_notification_service.dart';
 import 'dart:async';
 
 class HomeView extends StatefulWidget {
@@ -31,7 +33,133 @@ class _HomeViewState extends State<HomeView> {
     // Check if we need to scroll to a specific post
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleScrollToPost();
+      _checkNotificationPermission();
     });
+  }
+
+  /// Check and request notification permission if not granted
+  Future<void> _checkNotificationPermission() async {
+    try {
+      final status = await Permission.notification.status;
+
+      if (status.isDenied) {
+        // Show a dialog asking for permission
+        _showNotificationPermissionDialog();
+      } else if (status.isPermanentlyDenied) {
+        // Permission was permanently denied, show settings dialog
+        _showNotificationSettingsDialog();
+      }
+    } catch (e) {
+      debugPrint('Error checking notification permission: $e');
+    }
+  }
+
+  /// Show dialog to request notification permission
+  void _showNotificationPermissionDialog() {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: Row(
+          children: [
+            Icon(Icons.notifications, color: Colors.white, size: 24),
+            SizedBox(width: 8),
+            Text(
+              'Stay Updated',
+              style: TextStyle(color: Colors.white, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          'Get notified when someone follows you, likes your posts, or sends you a message. You can change this anytime in settings.',
+          style: TextStyle(color: Colors.grey[300], fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: Text('Not Now', style: TextStyle(color: Colors.grey[400])),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Get.back();
+              await _requestNotificationPermission();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+            ),
+            child: Text('Allow'),
+          ),
+        ],
+      ),
+      barrierDismissible: false,
+    );
+  }
+
+  /// Show dialog to open app settings for notification permission
+  void _showNotificationSettingsDialog() {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: Row(
+          children: [
+            Icon(Icons.settings, color: Colors.white, size: 24),
+            SizedBox(width: 8),
+            Text(
+              'Enable Notifications',
+              style: TextStyle(color: Colors.white, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          'Notifications are disabled. To receive updates about follows, likes, and messages, please enable notifications in your device settings.',
+          style: TextStyle(color: Colors.grey[300], fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Get.back();
+              await openAppSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+            ),
+            child: Text('Open Settings'),
+          ),
+        ],
+      ),
+      barrierDismissible: false,
+    );
+  }
+
+  /// Request notification permission
+  Future<void> _requestNotificationPermission() async {
+    try {
+      final status = await Permission.notification.request();
+
+      if (status.isGranted) {
+        // Permission granted, initialize push notification service
+        final pushService = Get.find<PushNotificationService>();
+        await pushService.init();
+
+        Get.snackbar(
+          'Notifications Enabled',
+          'You\'ll now receive notifications for follows, likes, and messages',
+          backgroundColor: Colors.green[700],
+          colorText: Colors.white,
+          duration: Duration(seconds: 3),
+          snackPosition: SnackPosition.TOP,
+        );
+      } else if (status.isPermanentlyDenied) {
+        _showNotificationSettingsDialog();
+      }
+    } catch (e) {
+      debugPrint('Error requesting notification permission: $e');
+    }
   }
 
   void _handleScrollToPost() {

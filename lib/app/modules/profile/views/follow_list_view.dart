@@ -112,11 +112,70 @@ class _FollowListViewState extends State<FollowListView> {
         }
         users.value = userList.take(pageSize).toList();
         debugPrint('Loaded ${users.length} users');
+
+        // CRITICAL: Update cache with actual database counts
+        await _updateCacheWithActualCounts(userList.length);
       }
     } catch (e) {
       debugPrint('Error loading users: $e');
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  /// Update cache with actual database counts to prevent mismatches
+  Future<void> _updateCacheWithActualCounts(int actualCount) async {
+    try {
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId == null) return;
+
+      // Only update cache if this is the current user's follow list
+      if (widget.userId == currentUserId) {
+        if (widget.type == FollowType.following) {
+          // Update following count in cache if it's different
+          if (_accountDataProvider.followingCount.value != actualCount) {
+            debugPrint(
+              'Updating following count cache: ${_accountDataProvider.followingCount.value} -> $actualCount',
+            );
+            _accountDataProvider.followingCount.value = actualCount;
+
+            // Also update the database to keep it in sync
+            await _supabaseService.client
+                .from('profiles')
+                .update({'following_count': actualCount})
+                .eq('user_id', currentUserId);
+          }
+
+          // CRITICAL: Also refresh the AccountDataProvider's following list cache
+          // to match the actual database state
+          debugPrint('Refreshing AccountDataProvider following list cache');
+          await _accountDataProvider.loadFollowing(currentUserId);
+
+          // Also clear ExploreController's follow state cache to force fresh checks
+          _exploreController.clearAllFollowStateCaches();
+          debugPrint('Cleared ExploreController follow state cache');
+        } else if (widget.type == FollowType.followers) {
+          // Update follower count in cache if it's different
+          if (_accountDataProvider.followerCount.value != actualCount) {
+            debugPrint(
+              'Updating follower count cache: ${_accountDataProvider.followerCount.value} -> $actualCount',
+            );
+            _accountDataProvider.followerCount.value = actualCount;
+
+            // Also update the database to keep it in sync
+            await _supabaseService.client
+                .from('profiles')
+                .update({'follower_count': actualCount})
+                .eq('user_id', currentUserId);
+          }
+
+          // CRITICAL: Also refresh the AccountDataProvider's followers list cache
+          debugPrint('Refreshing AccountDataProvider followers list cache');
+          await _accountDataProvider.loadFollowers(currentUserId);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error updating cache with actual counts: $e');
     }
   }
 
@@ -547,8 +606,10 @@ class _FollowListViewState extends State<FollowListView> {
         await _exploreController.verifyDatabaseCounts(currentUserId, userId);
       }
 
-      // Refresh the list
-      await loadUsers();
+      // GETX REACTIVE UPDATE: No need to reload the entire list
+      // The GetX<ExploreController> widget will automatically update
+      // when the follow state changes
+      debugPrint('Follow action completed - UI will update reactively');
     } catch (e) {
       debugPrint('Error following user: $e');
       Get.snackbar('Error', 'Failed to follow user');
@@ -569,8 +630,14 @@ class _FollowListViewState extends State<FollowListView> {
         await _exploreController.verifyDatabaseCounts(currentUserId, userId);
       }
 
-      // Refresh the list and ensure UI is updated
-      await loadUsers();
+      // GETX REACTIVE UPDATE: For following list, remove the user from the list
+      // since they're no longer being followed
+      if (widget.type == FollowType.following) {
+        users.removeWhere((user) => user['user_id'] == userId);
+        debugPrint('Removed unfollowed user from following list');
+      }
+
+      debugPrint('Unfollow action completed - UI updated reactively');
     } catch (e) {
       debugPrint('Error unfollowing user: $e');
       Get.snackbar('Error', 'Failed to unfollow user');

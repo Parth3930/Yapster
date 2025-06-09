@@ -20,6 +20,7 @@ import 'package:yapster/app/data/repositories/story_repository.dart';
 import 'package:yapster/app/data/repositories/notification_repository.dart';
 import 'package:yapster/app/data/repositories/device_token_repository.dart';
 import 'package:yapster/app/core/services/push_notification_service.dart';
+import 'package:yapster/app/core/services/notification_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Handles initialization of all application services
@@ -68,7 +69,7 @@ class ServiceInitializer {
       Get.put(DeviceTokenRepository(), permanent: true);
     }
 
-    // Note: UserInteractionService and IntelligentFeedService moved to initializeRemainingServices
+    // Note: NotificationService, UserInteractionService and IntelligentFeedService moved to initializeRemainingServices
     // because they depend on SupabaseService which is initialized later
   }
 
@@ -123,6 +124,14 @@ class ServiceInitializer {
         Get.put(UserPostsCacheService(), permanent: true);
         debugPrint(
           'UserPostsCacheService initialized in ${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
+
+      // Initialize notification service after SupabaseService is ready
+      if (!Get.isRegistered<NotificationService>()) {
+        await Get.putAsync(() => NotificationService().init());
+        debugPrint(
+          'NotificationService initialized in ${stopwatch.elapsedMilliseconds}ms',
         );
       }
 
@@ -305,6 +314,12 @@ class ServiceInitializer {
           'DeviceTokenRepository not found on hot reload, initializing',
         );
         Get.put(DeviceTokenRepository(), permanent: true);
+      }
+
+      // Check if notification service is available
+      if (!Get.isRegistered<NotificationService>()) {
+        debugPrint('NotificationService not found on hot reload, initializing');
+        await Get.putAsync(() => NotificationService().init());
       }
 
       // Check if Supabase notification service is available

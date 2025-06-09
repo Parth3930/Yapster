@@ -13,13 +13,26 @@ import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
 
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_post_widget_factory.dart';
+import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 
 class ProfileView extends GetView<ProfileController> {
   final String? userId;
   final RxInt selectedTabIndex = 0.obs;
 
+  // Track counts loading state per user to prevent "..." flicker
+  static final Map<String, RxBool> _countsLoadedCache = <String, RxBool>{};
+
   // Track if initial data has been loaded to avoid repeated database calls
   static final Map<String, bool> _initialDataLoaded = <String, bool>{};
+
+  // Get reactive counts loaded state for current user
+  RxBool get countsLoaded {
+    final key = userId ?? 'current';
+    if (!_countsLoadedCache.containsKey(key)) {
+      _countsLoadedCache[key] = RxBool(false);
+    }
+    return _countsLoadedCache[key]!;
+  }
 
   ProfileView({super.key, this.userId});
 
@@ -67,18 +80,57 @@ class ProfileView extends GetView<ProfileController> {
               await accountDataProvider.preloadUserData();
             }
 
-            // Check cache timestamps in accountDataProvider before loading
-            if (accountDataProvider.shouldRefreshFollowers(currentUserId)) {
-              await accountDataProvider.loadFollowers(currentUserId);
+            // OPTIMIZATION: Check if we have any cached counts
+            final hasFollowerCount =
+                accountDataProvider.followerCount.value >= 0;
+            final hasFollowingCount =
+                accountDataProvider.followingCount.value >= 0;
+            final hasCachedCounts = hasFollowerCount && hasFollowingCount;
+
+            // Show counts immediately if we have cached data
+            if (hasCachedCounts) {
+              countsLoaded.value = true;
+              debugPrint('Using cached follower/following counts immediately');
             }
 
-            if (accountDataProvider.shouldRefreshFollowing(currentUserId)) {
+            // Only refresh from database if we have no cached data
+            if (!hasCachedCounts) {
+              debugPrint('No cached counts found, loading fresh data');
+              // Clear stale caches first to prevent showing wrong values
+              accountDataProvider.clearFollowCaches(currentUserId);
+
+              // Refresh follow counts from accurate source
+              await accountDataProvider.refreshFollowCounts(currentUserId);
+
+              // Force load fresh data to update caches
+              await accountDataProvider.loadFollowers(currentUserId);
               await accountDataProvider.loadFollowing(currentUserId);
+
+              // Mark counts as loaded after fresh data is loaded
+              countsLoaded.value = true;
             }
 
             // CRITICAL FIX: Ensure posts are loaded
             if (accountDataProvider.posts.isEmpty) {
               await accountDataProvider.loadUserPosts(currentUserId);
+            }
+          }
+        } else {
+          // For other users, check if we have cached profile data
+          if (userId != null) {
+            // Check if we already have profile data cached
+            final hasProfileData =
+                exploreController.selectedUserProfile.isNotEmpty &&
+                exploreController.selectedUserProfile['user_id'] == userId;
+
+            if (hasProfileData) {
+              // Show counts immediately if we have cached profile data
+              countsLoaded.value = true;
+              debugPrint('Using cached profile data for user: $userId');
+            } else {
+              // Load fresh profile data if not cached
+              await exploreController.loadUserProfile(userId!);
+              countsLoaded.value = true;
             }
           }
         }
@@ -89,7 +141,7 @@ class ProfileView extends GetView<ProfileController> {
     }
 
     // Optimized loading - only preload essential data
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    Future.microtask(() {
       final cacheKey = userId ?? 'current';
       if (!_initialDataLoaded.containsKey(cacheKey)) {
         // Mark as loaded immediately to prevent duplicate loading
@@ -353,6 +405,15 @@ class ProfileView extends GetView<ProfileController> {
                   Expanded(
                     child: Center(
                       child: Obx(() {
+                        // Only show counts after they're properly loaded to prevent stutter
+                        if (!countsLoaded.value) {
+                          return _buildStatColumn(
+                            '...',
+                            'Followers',
+                            onTap: () {},
+                          );
+                        }
+
                         // Get the followers count from the appropriate source
                         final followersCount =
                             isCurrentUser
@@ -361,6 +422,19 @@ class ProfileView extends GetView<ProfileController> {
                                             .selectedUserProfile['follower_count']
                                         as int?) ??
                                     0;
+
+                        debugPrint(
+                          'ProfileView: Displaying followers count for ${isCurrentUser ? "current user" : "user $userId"}: $followersCount',
+                        );
+                        if (isCurrentUser) {
+                          debugPrint(
+                            '  - Source: AccountDataProvider.followerCount = ${accountDataProvider.followerCount.value}',
+                          );
+                        } else {
+                          debugPrint(
+                            '  - Source: ExploreController.selectedUserProfile[follower_count] = ${exploreController.selectedUserProfile['follower_count']}',
+                          );
+                        }
 
                         return _buildStatColumn(
                           followersCount.toString(),
@@ -391,6 +465,15 @@ class ProfileView extends GetView<ProfileController> {
                   Expanded(
                     child: Center(
                       child: Obx(() {
+                        // Only show counts after they're properly loaded to prevent stutter
+                        if (!countsLoaded.value) {
+                          return _buildStatColumn(
+                            '...',
+                            'Following',
+                            onTap: () {},
+                          );
+                        }
+
                         // Get the following count from the appropriate source
                         final followingCount =
                             isCurrentUser
@@ -399,6 +482,19 @@ class ProfileView extends GetView<ProfileController> {
                                             .selectedUserProfile['following_count']
                                         as int?) ??
                                     0;
+
+                        debugPrint(
+                          'ProfileView: Displaying following count for ${isCurrentUser ? "current user" : "user $userId"}: $followingCount',
+                        );
+                        if (isCurrentUser) {
+                          debugPrint(
+                            '  - Source: AccountDataProvider.followingCount = ${accountDataProvider.followingCount.value}',
+                          );
+                        } else {
+                          debugPrint(
+                            '  - Source: ExploreController.selectedUserProfile[following_count] = ${exploreController.selectedUserProfile['following_count']}',
+                          );
+                        }
 
                         return _buildStatColumn(
                           followingCount.toString(),
@@ -601,33 +697,38 @@ class ProfileView extends GetView<ProfileController> {
     final exploreController = Get.find<ExploreController>();
 
     // Use cached state first
-    final RxBool isFollowing = RxBool(
-      exploreController.isFollowingUser(userId!),
+    final initialFollowState = exploreController.isFollowingUser(userId!);
+    debugPrint(
+      'ProfileView: Initial follow state for $userId: $initialFollowState',
     );
+
+    final RxBool isFollowing = RxBool(initialFollowState);
     final RxBool isLoadingFollow = RxBool(false);
 
-    // Only check database state once when view is first built and not already cached
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Only refresh follow state if we don't have this user's complete profile data cached
-      final shouldRefreshFollowState =
-          !exploreController.selectedUserProfile.containsKey('user_id') ||
-          exploreController.shouldRefreshFollowState(userId!);
+    // OPTIMIZATION: Only refresh follow state if absolutely necessary
+    Future.microtask(() async {
+      // Only refresh if we have no cached data at all
+      final hasCachedFollowState =
+          exploreController.isFollowingUser(userId!) != false ||
+          exploreController.hasFollowStateCached(userId!);
 
-      if (!isLoadingFollow.value &&
-          userId != null &&
-          shouldRefreshFollowState) {
+      if (!isLoadingFollow.value && userId != null && !hasCachedFollowState) {
         try {
+          debugPrint(
+            'No cached follow state found, refreshing for user: $userId',
+          );
           final actualFollowState = await exploreController.refreshFollowState(
             userId!,
+            forceRefresh: false, // Use cache-friendly refresh
           );
           if (actualFollowState != isFollowing.value) {
             isFollowing.value = actualFollowState;
           }
-          // Mark this follow state as refreshed recently
-          exploreController.markFollowStateRefreshed(userId!);
         } catch (e) {
           debugPrint('Error refreshing follow state in ProfileView: $e');
         }
+      } else {
+        debugPrint('Using cached follow state for user: $userId');
       }
     });
 
@@ -644,28 +745,40 @@ class ProfileView extends GetView<ProfileController> {
                         : () async {
                           if (userId == null) return;
                           isLoadingFollow.value = true;
+
+                          final initialState = isFollowing.value;
+                          debugPrint(
+                            'ProfileView: Follow button pressed. Initial state: $initialState',
+                          );
+
                           try {
                             // Update local state immediately for better UX
                             isFollowing.value = !isFollowing.value;
+                            debugPrint(
+                              'ProfileView: Optimistically updated to: ${isFollowing.value}',
+                            );
 
                             // Update follow status in database
                             await exploreController.toggleFollowUser(userId!);
 
-                            // Get current user's ID
-                            final currentUserId =
-                                Get.find<SupabaseService>()
-                                    .currentUser
-                                    .value
-                                    ?.id;
-                            if (currentUserId != null) {
-                              // Asynchronously verify counts in database without blocking UI
-                              Future.delayed(Duration.zero, () {
-                                exploreController.verifyDatabaseCounts(
-                                  currentUserId,
-                                  userId!,
-                                );
-                              });
-                            }
+                            // After the operation, get the actual follow state from the controller
+                            final actualFollowState = exploreController
+                                .isFollowingUser(userId!);
+                            debugPrint(
+                              'ProfileView: Actual state after operation: $actualFollowState',
+                            );
+
+                            // Update local state to match the actual state
+                            isFollowing.value = actualFollowState;
+                            debugPrint(
+                              'ProfileView: Final state set to: ${isFollowing.value}',
+                            );
+
+                            // SMART CACHE MANAGEMENT: Counts will be updated automatically
+                            // by the ExploreController's cache management system
+                            debugPrint(
+                              'ProfileView: Follow action completed - cache updated automatically',
+                            );
                           } catch (e) {
                             // Revert local state if there was an error
                             debugPrint('Error toggling follow: $e');
@@ -689,19 +802,28 @@ class ProfileView extends GetView<ProfileController> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                child: Text(
-                  isLoadingFollow.value
-                      ? "Processing..."
-                      : isFollowing.value
-                      ? "Following"
-                      : "Follow",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontFamily: GoogleFonts.inter().fontFamily,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                child: Obx(() {
+                  final buttonText =
+                      isLoadingFollow.value
+                          ? "Processing..."
+                          : isFollowing.value
+                          ? "Following"
+                          : "Follow";
+
+                  debugPrint(
+                    'ProfileView: Button text for $userId: $buttonText (isFollowing: ${isFollowing.value})',
+                  );
+
+                  return Text(
+                    buttonText,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontFamily: GoogleFonts.inter().fontFamily,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  );
+                }),
               ),
             ),
           ),
@@ -798,17 +920,29 @@ class ProfileView extends GetView<ProfileController> {
             ? Get.find<SupabaseService>().currentUser.value?.id ?? ''
             : userId ?? '';
 
-    // Load posts immediately without FutureBuilder to avoid loading state
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // OPTIMIZATION: Check if posts are already cached using the cache service
+    final cacheService = Get.find<UserPostsCacheService>();
+    final hasCachedPosts =
+        cacheService.hasCachedPosts(targetUserId) ||
+        profilePostsController.profilePosts.isNotEmpty;
+
+    if (!hasCachedPosts && !profilePostsController.isLoading.value) {
+      // Only load posts if not cached and not already loading
+      Future.microtask(() {
+        profilePostsController.loadUserPosts(targetUserId);
+      });
+    } else if (hasCachedPosts && profilePostsController.profilePosts.isEmpty) {
+      // If we have cached posts but controller is empty, load them immediately
       profilePostsController.loadUserPosts(targetUserId);
-    });
+    }
 
     return Obx(() {
-      if (profilePostsController.isLoading.value) {
+      final posts = profilePostsController.profilePosts;
+
+      // Show loading only if we have no cached posts and are currently loading
+      if (posts.isEmpty && profilePostsController.isLoading.value) {
         return Center(child: CircularProgressIndicator(color: Colors.white));
       }
-
-      final posts = profilePostsController.profilePosts;
 
       if (posts.isEmpty) {
         return Center(
@@ -833,6 +967,7 @@ class ProfileView extends GetView<ProfileController> {
         );
       }
 
+      // Show cached posts immediately
       return ListView.builder(
         padding: EdgeInsets.all(16),
         itemCount: posts.length,

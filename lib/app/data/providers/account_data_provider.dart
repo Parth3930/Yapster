@@ -662,8 +662,17 @@ class AccountDataProvider extends GetxController {
         debugPrint('  Google Avatar: ${googleAvatar.value}');
       }
 
-      // CRITICAL FIX: Load counts from profiles table first for immediate display
-      await _loadCountsFromProfiles(userId);
+      // OPTIMIZATION: Only load counts if they're not already cached or very old
+      final now = DateTime.now();
+      final lastCountsUpdate = _followersFetchTime[userId];
+
+      if (lastCountsUpdate == null ||
+          now.difference(lastCountsUpdate) > Duration(minutes: 5)) {
+        debugPrint('Loading fresh counts from follows table');
+        await _loadCountsFromFollowsTable(userId);
+      } else {
+        debugPrint('Using cached follower/following counts');
+      }
 
       // Preload followers and following data in parallel
       await Future.wait([
@@ -727,6 +736,83 @@ class AccountDataProvider extends GetxController {
     _followingFetchTime[userId] = DateTime.now();
   }
 
+  /// Refresh follower and following counts from the accurate source (follows table)
+  Future<void> refreshFollowCounts(String userId) async {
+    await _loadCountsFromFollowsTable(userId);
+  }
+
+  /// Load counts directly from follows table for accurate display
+  Future<void> _loadCountsFromFollowsTable(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+
+      // Get accurate counts from follows table
+      final followerResponse = await supabaseService.client
+          .from('follows')
+          .select()
+          .eq('following_id', userId);
+
+      final followingResponse = await supabaseService.client
+          .from('follows')
+          .select()
+          .eq('follower_id', userId);
+
+      final actualFollowerCount = followerResponse.length;
+      final actualFollowingCount = followingResponse.length;
+
+      debugPrint(
+        'AccountDataProvider: _loadCountsFromFollowsTable for user $userId',
+      );
+      debugPrint('  - Actual Followers: $actualFollowerCount');
+      debugPrint('  - Actual Following: $actualFollowingCount');
+
+      // SMART CACHE UPDATE: Only update if values have changed
+      bool countsChanged = false;
+
+      if (followerCount.value != actualFollowerCount) {
+        debugPrint(
+          'Follower count changed: ${followerCount.value} -> $actualFollowerCount',
+        );
+        followerCount.value = actualFollowerCount;
+        countsChanged = true;
+      }
+
+      if (followingCount.value != actualFollowingCount) {
+        debugPrint(
+          'Following count changed: ${followingCount.value} -> $actualFollowingCount',
+        );
+        followingCount.value = actualFollowingCount;
+        countsChanged = true;
+      }
+
+      if (!countsChanged) {
+        debugPrint('Counts unchanged, using cached values');
+      }
+
+      // Only update the profiles table if counts actually changed
+      if (countsChanged) {
+        await supabaseService.client.from('profiles').upsert({
+          'user_id': userId,
+          'follower_count': actualFollowerCount,
+          'following_count': actualFollowingCount,
+        });
+        debugPrint(
+          'AccountDataProvider: Updated profiles table with new counts',
+        );
+      } else {
+        debugPrint(
+          'AccountDataProvider: Skipped profiles table update - no changes',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'AccountDataProvider: Error loading counts from follows table: $e',
+      );
+      // Fallback to profiles table
+      await _loadCountsFromProfiles(userId);
+    }
+  }
+
   /// Load counts directly from profiles table for immediate display
   Future<void> _loadCountsFromProfiles(String userId) async {
     try {
@@ -742,6 +828,12 @@ class AccountDataProvider extends GetxController {
 
       final dbFollowerCount = response['follower_count'] as int? ?? 0;
       final dbFollowingCount = response['following_count'] as int? ?? 0;
+
+      debugPrint(
+        'AccountDataProvider: _loadCountsFromProfiles for user $userId',
+      );
+      debugPrint('  - DB Followers: $dbFollowerCount');
+      debugPrint('  - DB Following: $dbFollowingCount');
 
       // Update the reactive counts immediately
       followerCount.value = dbFollowerCount;

@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
+import 'package:yapster/app/core/services/notification_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AccountRepository {
@@ -193,6 +195,19 @@ class AccountRepository {
       'follow_user',
       params: {'p_follower_id': userId, 'p_following_id': targetUserId},
     );
+
+    // Create follow notification
+    try {
+      final notificationService = Get.find<NotificationService>();
+      await notificationService.createFollowNotification(
+        followerId: userId,
+        followingId: targetUserId,
+      );
+    } catch (e) {
+      debugPrint('Error creating follow notification: $e');
+      // Don't throw error - follow operation should still succeed
+    }
+
     await _provider.loadFollowing(userId);
   }
 
