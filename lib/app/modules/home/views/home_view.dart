@@ -262,17 +262,21 @@ class _HomeViewState extends State<HomeView> {
                         child: Stack(
                           children: [
                             // Centered Yapster text
-                            Center(
-                              child: Text(
-                                "Yapster",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 40,
-                                  fontWeight: FontWeight.w500,
-                                  fontFamily: GoogleFonts.dongle().fontFamily,
+                            Row(
+                              children: [
+                                SizedBox(width: 20),
+                                Text(
+                                  "Yapster",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 40,
+                                    fontWeight: FontWeight.w500,
+                                    fontFamily: GoogleFonts.dongle().fontFamily,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
+
                             // Right-aligned icons
                             Positioned(
                               right: 0,

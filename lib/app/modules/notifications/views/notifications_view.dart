@@ -17,7 +17,8 @@ class NotificationsView extends GetView<NotificationsController> {
           "Notifications",
           style: TextStyle(
             fontFamily: GoogleFonts.dongle().fontFamily,
-            fontSize: 32,
+            fontSize: 40,
+            fontWeight: FontWeight.w500,
           ),
         ),
         backgroundColor: Colors.transparent,

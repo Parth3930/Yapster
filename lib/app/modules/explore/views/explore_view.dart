@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import '../controllers/explore_controller.dart';
 
 class ExploreView extends StatefulWidget {
@@ -34,7 +33,17 @@ class _ExploreViewState extends State<ExploreView> {
     // No need to call onExplorePageOpened() here since we do it in initState
 
     return Scaffold(
-      appBar: CustomAppBar(title: "Explore"),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        title: Text(
+          "Explore",
+          style: TextStyle(
+            fontFamily: GoogleFonts.dongle().fontFamily,
+            fontSize: 40,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
       body: Column(
         children: [
           _buildSearchBar(),
