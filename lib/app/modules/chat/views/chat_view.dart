@@ -149,31 +149,6 @@ class _ChatViewState extends State<ChatView> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Color(0xFf171717),
-                    borderRadius: BorderRadius.circular(40),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black,
-                        blurRadius: 2,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  width: 36,
-                  height: 36,
-                  child: IconButton(
-                    onPressed: () {},
-                    icon: const Icon(
-                      Icons.more_vert,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ),
               ],
             ),
           ],
@@ -184,7 +159,7 @@ class _ChatViewState extends State<ChatView> {
         children: [
           // Search bar
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
             child: TextField(
               controller: controller.searchController,
               decoration: InputDecoration(

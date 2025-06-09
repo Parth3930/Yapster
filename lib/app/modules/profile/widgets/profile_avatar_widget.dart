@@ -41,8 +41,8 @@ class ProfileAvatarWidget extends StatelessWidget {
         borderColors = [Colors.black, Color(0xff666666)];
       }
     } else {
-      // No story - transparent border
-      borderColors = [Colors.black, Color(0xff666666)];
+      // No story - black border
+      borderColors = [Colors.black, Colors.black];
     }
 
     // Calculate border width

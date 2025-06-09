@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/data/models/notification_model.dart';
-import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 import '../controllers/notifications_controller.dart';
 
 class NotificationsView extends GetView<NotificationsController> {
@@ -118,7 +118,6 @@ class NotificationsView extends GetView<NotificationsController> {
           ),
         );
       }),
-      bottomNavigationBar: const BottomNavigation(),
     );
   }
 }
@@ -165,17 +164,9 @@ class NotificationItem extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Avatar
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: Colors.grey[200],
-                backgroundImage:
-                    notification.actorAvatar.isNotEmpty
-                        ? CachedNetworkImageProvider(notification.actorAvatar)
-                        : null,
-                child:
-                    notification.actorAvatar.isEmpty
-                        ? const Icon(Icons.person, size: 30, color: Colors.grey)
-                        : null,
+              NotificationAvatarWidget(
+                actorId: notification.actorId,
+                actorAvatar: notification.actorAvatar,
               ),
               const SizedBox(width: 12),
 
@@ -248,5 +239,120 @@ class NotificationItem extends StatelessWidget {
     } else {
       return '${dateTime.month}/${dateTime.day}/${dateTime.year}';
     }
+  }
+}
+
+class NotificationAvatarWidget extends StatefulWidget {
+  final String actorId;
+  final String actorAvatar;
+
+  const NotificationAvatarWidget({
+    super.key,
+    required this.actorId,
+    required this.actorAvatar,
+  });
+
+  @override
+  State<NotificationAvatarWidget> createState() =>
+      _NotificationAvatarWidgetState();
+}
+
+class _NotificationAvatarWidgetState extends State<NotificationAvatarWidget> {
+  String? googleAvatar;
+  bool isLoading = false;
+
+  // Static cache to avoid repeated database calls for the same user
+  static final Map<String, String?> _googleAvatarCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.actorAvatar == 'skiped' || widget.actorAvatar.isEmpty) {
+      // Check cache first
+      if (_googleAvatarCache.containsKey(widget.actorId)) {
+        googleAvatar = _googleAvatarCache[widget.actorId];
+      } else {
+        _fetchGoogleAvatar();
+      }
+    }
+  }
+
+  Future<void> _fetchGoogleAvatar() async {
+    if (isLoading) return;
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final supabase = Get.find<SupabaseService>();
+      final response =
+          await supabase.client
+              .from('profiles')
+              .select('google_avatar')
+              .eq('user_id', widget.actorId)
+              .single();
+
+      final fetchedGoogleAvatar = response['google_avatar'];
+
+      // Cache the result
+      _googleAvatarCache[widget.actorId] = fetchedGoogleAvatar;
+
+      if (mounted) {
+        setState(() {
+          googleAvatar = fetchedGoogleAvatar;
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching google avatar for notification: $e');
+      // Cache null result to avoid repeated failed requests
+      _googleAvatarCache[widget.actorId] = null;
+
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Determine which avatar to use
+    String? avatarUrl;
+
+    if (widget.actorAvatar != 'skiped' &&
+        widget.actorAvatar.isNotEmpty &&
+        widget.actorAvatar != 'null') {
+      avatarUrl = widget.actorAvatar;
+    } else if (googleAvatar != null &&
+        googleAvatar!.isNotEmpty &&
+        googleAvatar != 'null') {
+      avatarUrl = googleAvatar;
+    }
+
+    // Validate URL before using it
+    bool isValidUrl = false;
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      try {
+        final uri = Uri.parse(avatarUrl);
+        isValidUrl =
+            uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+      } catch (e) {
+        isValidUrl = false;
+      }
+    }
+
+    return CircleAvatar(
+      radius: 24,
+      backgroundColor: Colors.grey[200],
+      backgroundImage:
+          isValidUrl ? CachedNetworkImageProvider(avatarUrl!) : null,
+      child:
+          !isValidUrl
+              ? const Icon(Icons.person, size: 30, color: Colors.grey)
+              : null,
+    );
   }
 }

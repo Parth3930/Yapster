@@ -6,10 +6,14 @@ import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/home/widgets/stories_list_widget.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_widget_factory.dart';
-import 'package:yapster/app/routes/app_pages.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:yapster/app/core/services/push_notification_service.dart';
+import 'package:yapster/app/modules/notifications/controllers/notifications_controller.dart';
+import 'package:yapster/app/modules/explore/views/explore_view.dart';
+import 'package:yapster/app/modules/explore/bindings/explore_binding.dart';
+import 'package:yapster/app/modules/notifications/views/notifications_view.dart';
+import 'package:yapster/app/modules/notifications/bindings/notifications_binding.dart';
 import 'dart:async';
 
 class HomeView extends StatefulWidget {
@@ -256,28 +260,98 @@ class _HomeViewState extends State<HomeView> {
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 0),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            // Empty container to balance the layout
-                            Container(width: 48), // Same width as IconButton
-                            Text(
-                              "Yapster",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 40,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: GoogleFonts.dongle().fontFamily,
+                            Expanded(
+                              child: Center(
+                                child: Text(
+                                  "Yapster",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 40,
+                                    fontWeight: FontWeight.w500,
+                                    fontFamily: GoogleFonts.dongle().fontFamily,
+                                  ),
+                                ),
                               ),
                             ),
                             IconButton(
                               icon: Image.asset(
-                                'assets/icons/bell.png',
+                                'assets/icons/explore.png',
                                 width: 24,
                                 height: 24,
                                 color: Colors.white,
                               ),
                               onPressed:
-                                  () => Get.toNamed(Routes.NOTIFICATIONS),
+                                  () => Get.to(
+                                    () => const ExploreView(),
+                                    transition: Transition.rightToLeft,
+                                    duration: const Duration(milliseconds: 300),
+                                    binding: ExploreBinding(),
+                                  ),
+                            ),
+                            GetX<NotificationsController>(
+                              init: NotificationsController(),
+                              builder: (notificationController) {
+                                return Stack(
+                                  children: [
+                                    IconButton(
+                                      icon: Image.asset(
+                                        'assets/icons/bell.png',
+                                        width: 24,
+                                        height: 24,
+                                        color: Colors.white,
+                                      ),
+                                      onPressed:
+                                          () => Get.to(
+                                            () => const NotificationsView(),
+                                            transition: Transition.rightToLeft,
+                                            duration: const Duration(
+                                              milliseconds: 300,
+                                            ),
+                                            binding: NotificationsBinding(),
+                                          ),
+                                    ),
+                                    if (notificationController
+                                            .unreadCount
+                                            .value >
+                                        0)
+                                      Positioned(
+                                        right: 8,
+                                        top: 8,
+                                        child: Container(
+                                          padding: EdgeInsets.all(2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red,
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          constraints: BoxConstraints(
+                                            minWidth: 16,
+                                            minHeight: 16,
+                                          ),
+                                          child: Text(
+                                            notificationController
+                                                        .unreadCount
+                                                        .value >
+                                                    99
+                                                ? '99+'
+                                                : notificationController
+                                                    .unreadCount
+                                                    .value
+                                                    .toString(),
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                );
+                              },
                             ),
                           ],
                         ),

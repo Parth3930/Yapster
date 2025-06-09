@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/models/notification_model.dart';
 import 'package:yapster/app/data/repositories/device_token_repository.dart';
+import 'package:yapster/app/modules/notifications/controllers/notifications_controller.dart';
 
 /// Service to handle push notifications using Supabase Realtime
 class PushNotificationService extends GetxService {
@@ -209,13 +210,29 @@ class PushNotificationService extends GetxService {
       // Convert the payload to a notification model
       final notification = NotificationModel.fromMap(payload.newRecord);
 
-      // Show a local notification if app is in foreground
+      debugPrint(
+        'Received new notification: ${notification.type} from ${notification.actorNickname}',
+      );
+
+      // Always show a local notification for immediate feedback
       _showLocalNotification(
         id: notification.id.hashCode,
         title: _getNotificationTitle(notification),
         body: _getNotificationBody(notification),
         payload: _createNotificationPayload(notification),
       );
+
+      // Also update the notifications controller if it exists
+      try {
+        if (Get.isRegistered<NotificationsController>()) {
+          final notificationsController = Get.find<NotificationsController>();
+          notificationsController.notifications.insert(0, notification);
+          notificationsController.unreadCount.value++;
+          debugPrint('Updated notifications controller with new notification');
+        }
+      } catch (e) {
+        debugPrint('Error updating notifications controller: $e');
+      }
     } catch (e) {
       debugPrint('Error handling new notification: $e');
     }

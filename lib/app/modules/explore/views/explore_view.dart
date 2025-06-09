@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/global_widgets/custom_app_bar.dart';
 import '../controllers/explore_controller.dart';
 
 class ExploreView extends StatefulWidget {
   const ExploreView({super.key});
-  
+
   @override
   State<ExploreView> createState() => _ExploreViewState();
 }
@@ -15,14 +14,14 @@ class ExploreView extends StatefulWidget {
 class _ExploreViewState extends State<ExploreView> {
   // Get the controller
   final ExploreController controller = Get.find<ExploreController>();
-  
+
   @override
   void initState() {
     super.initState();
     // Notify the controller that we're on the explore page
     controller.onExplorePageOpened();
   }
-  
+
   @override
   void dispose() {
     // Notify the controller that we're leaving the explore page
@@ -33,7 +32,7 @@ class _ExploreViewState extends State<ExploreView> {
   @override
   Widget build(BuildContext context) {
     // No need to call onExplorePageOpened() here since we do it in initState
-    
+
     return Scaffold(
       appBar: CustomAppBar(title: "Explore"),
       body: Column(
@@ -49,7 +48,6 @@ class _ExploreViewState extends State<ExploreView> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigation(),
     );
   }
 
@@ -219,13 +217,14 @@ class UserListItem extends StatelessWidget {
     bool isValidUrl(String? url) {
       if (url == null) return false;
       final uri = Uri.tryParse(url);
-      return uri != null && 
-             uri.isAbsolute &&
-             (uri.scheme == 'http' || uri.scheme == 'https');
+      return uri != null &&
+          uri.isAbsolute &&
+          (uri.scheme == 'http' || uri.scheme == 'https');
     }
 
     // Check if user has regular avatar
-    final hasRegularAvatar = user['avatar'] != null &&
+    final hasRegularAvatar =
+        user['avatar'] != null &&
         user['avatar'].toString().isNotEmpty &&
         user['avatar'] != "skiped" &&
         user['avatar'].toString() != "skiped" &&
@@ -233,7 +232,8 @@ class UserListItem extends StatelessWidget {
         isValidUrl(user['avatar'].toString());
 
     // Check if user has Google avatar
-    final hasGoogleAvatar = user['google_avatar'] != null &&
+    final hasGoogleAvatar =
+        user['google_avatar'] != null &&
         user['google_avatar'].toString().isNotEmpty &&
         user['google_avatar'].toString() != "null" &&
         isValidUrl(user['google_avatar'].toString());
@@ -241,14 +241,16 @@ class UserListItem extends StatelessWidget {
     return CircleAvatar(
       radius: 24,
       backgroundColor: Colors.grey[300],
-      backgroundImage: hasRegularAvatar
-          ? NetworkImage(user['avatar'].toString())
-          : hasGoogleAvatar
+      backgroundImage:
+          hasRegularAvatar
+              ? NetworkImage(user['avatar'].toString())
+              : hasGoogleAvatar
               ? NetworkImage(user['google_avatar'].toString())
               : null,
-      child: !hasRegularAvatar && !hasGoogleAvatar
-          ? const Icon(Icons.person, color: Colors.white)
-          : null,
+      child:
+          !hasRegularAvatar && !hasGoogleAvatar
+              ? const Icon(Icons.person, color: Colors.white)
+              : null,
     );
   }
 }

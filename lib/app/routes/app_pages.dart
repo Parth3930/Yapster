@@ -18,6 +18,8 @@ import 'package:yapster/app/modules/profile/bindings/profile_binding.dart';
 import 'package:yapster/app/modules/profile/views/edit_profile_view.dart';
 import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
 import 'package:yapster/app/modules/profile/views/profile_view.dart';
+import 'package:yapster/app/modules/videos/views/videos_view.dart';
+import 'package:yapster/app/modules/videos/bindings/videos_binding.dart';
 
 import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -176,6 +178,18 @@ class AppPages {
       name: _Paths.CREATE,
       page: () => const CreateView(),
       binding: OptimizedCreateBinding(),
+      transition: Transition.noTransition,
+      transitionDuration: Duration.zero,
+      curve: Curves.linear,
+      fullscreenDialog: false,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: false,
+    ),
+    GetPage(
+      name: _Paths.VIDEOS,
+      page: () => const VideosView(),
+      binding: VideosBinding(),
       transition: Transition.noTransition,
       transitionDuration: Duration.zero,
       curve: Curves.linear,

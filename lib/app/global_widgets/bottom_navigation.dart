@@ -42,10 +42,6 @@ class _BottomNavigationState extends State<BottomNavigation>
   late AnimationController _addButtonController;
   late Animation<double> _addButtonAnimation;
 
-  // Ripple animation for explore icon
-  late AnimationController _exploreRippleController;
-  late Animation<double> _exploreRippleAnimation;
-
   // Home animation controllers
   late AnimationController _homeController;
   late Animation<double> _homeScaleAnimation;
@@ -65,19 +61,40 @@ class _BottomNavigationState extends State<BottomNavigation>
 
     // Create different animations for each icon (excluding home)
     _animations = [
-      // Placeholder for explore (not used directly)
-      Tween<double>(begin: 0.0, end: 1.0).animate(
+      // Chat icon - rotational shake animation (tilt left, tilt right, back to center)
+      TweenSequence<double>([
+        TweenSequenceItem(
+          tween: Tween(begin: 0.0, end: -0.3), // Tilt left (up-left)
+          weight: 25,
+        ),
+        TweenSequenceItem(
+          tween: Tween(begin: -0.3, end: 0.3), // Tilt right (up-right)
+          weight: 30,
+        ),
+        TweenSequenceItem(
+          tween: Tween(begin: 0.3, end: -0.15), // Small tilt left
+          weight: 25,
+        ),
+        TweenSequenceItem(
+          tween: Tween(begin: -0.15, end: 0.0), // Back to center
+          weight: 20,
+        ),
+      ]).animate(
         CurvedAnimation(parent: _controllers[0], curve: Curves.easeInOut),
       ),
 
-      // Chat icon - improved shake with restricted rotation values
+      // Videos icon - simple bounce animation
       TweenSequence<double>([
-        TweenSequenceItem(tween: Tween(begin: 0.0, end: -0.2), weight: 20),
-        TweenSequenceItem(tween: Tween(begin: -0.2, end: 0.2), weight: 30),
-        TweenSequenceItem(tween: Tween(begin: 0.2, end: -0.1), weight: 30),
-        TweenSequenceItem(tween: Tween(begin: -0.1, end: 0.0), weight: 20),
+        TweenSequenceItem(
+          tween: Tween(begin: 1.0, end: 1.2), // Scale up
+          weight: 50,
+        ),
+        TweenSequenceItem(
+          tween: Tween(begin: 1.2, end: 1.0), // Return to normal
+          weight: 50,
+        ),
       ]).animate(
-        CurvedAnimation(parent: _controllers[1], curve: Curves.easeInOut),
+        CurvedAnimation(parent: _controllers[1], curve: Curves.bounceOut),
       ),
 
       // Profile icon - improved squeeze with safe transform values
@@ -109,38 +126,29 @@ class _BottomNavigationState extends State<BottomNavigation>
       vsync: this,
     );
 
-    // Simple scale animation for home icon
+    // Wobble animation for home icon (different from videos)
     _homeScaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.2), weight: 40),
-      TweenSequenceItem(tween: Tween(begin: 1.2, end: 0.95), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 30),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.1),
+        weight: 50,
+      ), // Scale up
+      TweenSequenceItem(
+        tween: Tween(begin: 1.1, end: 1.0),
+        weight: 50,
+      ), // Scale back
     ]).animate(
-      CurvedAnimation(parent: _homeController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _homeController, curve: Curves.easeInOutCubic),
     );
 
-    // Initialize special controller for add button with longer duration for smoother animation
+    // Initialize special controller for add button with enhanced animation
     _addButtonController = AnimationController(
-      duration: const Duration(milliseconds: 800), // Slower rotation
+      duration: const Duration(milliseconds: 600), // Optimized duration
       vsync: this,
     );
 
     // Simple smooth rotation animation for add button
     _addButtonAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _addButtonController,
-        curve: Curves.linear, // Using linear for consistent rotation speed
-      ),
-    );
-
-    // Initialize explore ripple controller
-    _exploreRippleController = AnimationController(
-      duration: const Duration(milliseconds: 600), // Slower ripple effect
-      vsync: this,
-    );
-
-    // Create ripple animation for explore icon
-    _exploreRippleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _exploreRippleController, curve: Curves.easeOut),
+      CurvedAnimation(parent: _addButtonController, curve: Curves.easeInOut),
     );
 
     // Listen for animation triggers from navigation
@@ -160,10 +168,10 @@ class _BottomNavigationState extends State<BottomNavigation>
       case Routes.HOME:
         controller = _homeController;
         break;
-      case Routes.EXPLORE:
-        controller = _exploreRippleController;
-        break;
       case Routes.CHAT:
+        controller = _controllers[0];
+        break;
+      case Routes.VIDEOS:
         controller = _controllers[1];
         break;
       case Routes.PROFILE:
@@ -192,7 +200,6 @@ class _BottomNavigationState extends State<BottomNavigation>
     }
     _homeController.dispose();
     _addButtonController.dispose();
-    _exploreRippleController.dispose();
     super.dispose();
   }
 
@@ -213,113 +220,93 @@ class _BottomNavigationState extends State<BottomNavigation>
     }
   }
 
-  // Build the home icon with simple scale animation
+  // Build the home icon with wobble and rotation animation
   Widget _buildHomeIcon() {
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.HOME),
       child: Container(
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         alignment: Alignment.center,
         child: AnimatedBuilder(
           animation: _homeScaleAnimation,
           builder: (context, child) {
+            // Create wobble effect with scale and slight rotation
+            final scaleValue = _homeScaleAnimation.value;
+            final rotationValue =
+                (scaleValue - 1.0) * 0.3; // Slight rotation based on scale
+
             return Transform.scale(
-              scale: _homeScaleAnimation.value,
-              child: child,
+              scale: scaleValue,
+              child: Transform.rotate(angle: rotationValue, child: child),
             );
           },
-          child: Image.asset('assets/icons/home.png', width: 28, height: 28),
+          child: Image.asset(
+            'assets/icons/home.png',
+            width: 24,
+            height: 24,
+            color: Colors.white,
+          ),
         ),
       ),
     );
   }
 
-  // Build the explore icon with fixed animation
-  Widget _buildExploreIcon() {
+  // Build the videos icon with simple bounce animation
+  Widget _buildVideosIcon() {
     return GestureDetector(
-      onTap: () => _navigateToPage(Routes.EXPLORE),
-      child: Stack(
+      onTap: () => _navigateToPage(Routes.VIDEOS),
+      child: Container(
+        width: 44,
+        height: 44,
         alignment: Alignment.center,
-        children: [
-          // Base icon
-          Image.asset('assets/icons/explore.png', width: 25, height: 25),
+        child: AnimatedBuilder(
+          animation: _animations[1],
+          builder: (context, child) {
+            // Simple bounce animation with subtle rotation
+            final scaleValue = _animations[1].value as double;
+            final rotationValue =
+                (scaleValue - 1.0) * 0.05; // Very subtle rotation
 
-          // Ripple effect - fixed to be invisible at start
-          AnimatedBuilder(
-            animation: _exploreRippleAnimation,
-            builder: (context, child) {
-              // Only show container when animation is active
-              if (_exploreRippleAnimation.value == 0) {
-                return SizedBox.shrink();
-              }
-
-              return Opacity(
-                opacity: (1.0 - _exploreRippleAnimation.value) * 0.8,
-                child: Transform.scale(
-                  scale: 1.0 + _exploreRippleAnimation.value,
-                  child: Container(
-                    width: 25,
-                    height: 25,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white70,
-                        width: 2.0 * (1.0 - _exploreRippleAnimation.value),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
+            return Transform.scale(
+              scale: scaleValue,
+              child: Transform.rotate(angle: rotationValue, child: child),
+            );
+          },
+          child: Image.asset(
+            'assets/icons/videos.png',
+            width: 24,
+            height: 24,
+            color: Colors.white,
           ),
-
-          // Rotating compass needle effect - fixed to be invisible at start
-          AnimatedBuilder(
-            animation: _exploreRippleAnimation,
-            builder: (context, child) {
-              // Only show needle when animation is active
-              if (_exploreRippleAnimation.value == 0) {
-                return SizedBox.shrink();
-              }
-
-              return Transform.rotate(
-                angle: _exploreRippleAnimation.value * 2.0 * 3.14159,
-                child: Opacity(
-                  opacity: (1.0 - _exploreRippleAnimation.value) * 0.7,
-                  child: Container(
-                    width: 2,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.white],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  // Build the chat icon with improved shake animation
+  // Build the chat icon with rotational shake animation
   Widget _buildChatIcon() {
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.CHAT),
-      child: AnimatedBuilder(
-        animation: _animations[1],
-        builder: (context, child) {
-          return Transform.scale(
-            scale: 1.0 + (_animations[1].value.abs() * 0.15),
-            child: Transform.rotate(angle: _animations[1].value, child: child),
-          );
-        },
-        child: Image.asset('assets/icons/chat.png', width: 25, height: 25),
+      child: Container(
+        width: 44,
+        height: 44,
+        alignment: Alignment.center,
+        child: AnimatedBuilder(
+          animation: _animations[0],
+          builder: (context, child) {
+            // Use rotation for shake effect (tilt left, tilt right, back to center)
+            final rotationValue = _animations[0].value as double;
+
+            return Transform.rotate(angle: rotationValue, child: child);
+          },
+          child: Image.asset(
+            'assets/icons/chat.png',
+            width: 24,
+            height: 24,
+            color: Colors.white,
+          ),
+        ),
       ),
     );
   }
@@ -328,29 +315,39 @@ class _BottomNavigationState extends State<BottomNavigation>
   Widget _buildProfileIcon() {
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.PROFILE),
-      child: AnimatedBuilder(
-        animation: _animations[2],
-        builder: (context, child) {
-          // Create an improved squeeze with safe values
-          final squeeze = _animations[2].value;
-          final squeezeX = 1.0 - (squeeze.dy * 0.3);
-          final squeezeY = 1.0 - (squeeze.dx * 0.3);
+      child: Container(
+        width: 44,
+        height: 44,
+        alignment: Alignment.center,
+        child: AnimatedBuilder(
+          animation: _animations[2],
+          builder: (context, child) {
+            // Create an improved squeeze with safe values
+            final squeeze = _animations[2].value;
+            final squeezeX = 1.0 - (squeeze.dy * 0.3);
+            final squeezeY = 1.0 - (squeeze.dx * 0.3);
 
-          return Transform(
-            transform:
-                Matrix4.identity()
-                  ..scale(squeezeX, squeezeY, 1.0)
-                  ..rotateZ(squeeze.dx * 0.1),
-            alignment: Alignment.center,
-            child: child,
-          );
-        },
-        child: Image.asset('assets/icons/profile.png', width: 25, height: 25),
+            return Transform(
+              transform:
+                  Matrix4.identity()
+                    ..scale(squeezeX, squeezeY, 1.0)
+                    ..rotateZ(squeeze.dx * 0.1),
+              alignment: Alignment.center,
+              child: child,
+            );
+          },
+          child: Image.asset(
+            'assets/icons/profile.png',
+            width: 24,
+            height: 24,
+            color: Colors.white,
+          ),
+        ),
       ),
     );
   }
 
-  // Build the add button with optimized smooth 360 rotation
+  // Build the add button with smooth rotation animation
   Widget _buildAddButton() {
     return GestureDetector(
       onTap: () {
@@ -365,24 +362,35 @@ class _BottomNavigationState extends State<BottomNavigation>
       child: RepaintBoundary(
         // Use RepaintBoundary for better performance
         child: Container(
-          width: 50,
-          height: 50,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
-            color: Color(0xff101010),
-            borderRadius: BorderRadius.circular(10),
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFF9C27B0), // Purple
+                Color(0xFFE91E63), // Pink
+                Color(0xFFF44336), // Red
+              ],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Colors.black26,
-                blurRadius: 5,
-                offset: Offset(0, 2),
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
           child: AnimatedBuilder(
             animation: _addButtonAnimation,
             builder: (context, child) {
+              // Simple smooth rotation animation
+              final rotationAngle = _addButtonAnimation.value * 2 * 3.14159;
+
               return Transform.rotate(
-                angle: _addButtonAnimation.value * 2 * 3.14159,
+                angle: rotationAngle,
                 alignment: Alignment.center,
                 transformHitTests: false,
                 filterQuality: FilterQuality.high,
@@ -390,7 +398,7 @@ class _BottomNavigationState extends State<BottomNavigation>
               );
             },
             child: const Center(
-              child: Icon(Icons.add, size: 30, color: Colors.white),
+              child: Icon(Icons.add, size: 24, color: Colors.white),
             ),
           ),
         ),
@@ -400,17 +408,28 @@ class _BottomNavigationState extends State<BottomNavigation>
 
   @override
   Widget build(BuildContext context) {
-    return BottomAppBar(
-      color: Colors.transparent,
-      child: SizedBox(
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 40, vertical: 18),
+      child: Container(
+        height: 65,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A).withAlpha(220),
+          borderRadius: BorderRadius.circular(30), // Curved edges
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _buildHomeIcon(),
-            _buildExploreIcon(),
-            // Special handling for add button with improved animation
-            _buildAddButton(),
             _buildChatIcon(),
+            _buildAddButton(),
+            _buildVideosIcon(),
             _buildProfileIcon(),
           ],
         ),

@@ -10,6 +10,7 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
+import 'package:yapster/app/data/repositories/story_repository.dart';
 
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_post_widget_factory.dart';
@@ -24,6 +25,10 @@ class ProfileView extends GetView<ProfileController> {
 
   // Track if initial data has been loaded to avoid repeated database calls
   static final Map<String, bool> _initialDataLoaded = <String, bool>{};
+
+  // Story status tracking
+  final RxBool hasStory = false.obs;
+  final RxBool hasUnseenStory = false.obs;
 
   // Get reactive counts loaded state for current user
   RxBool get countsLoaded {
@@ -135,6 +140,9 @@ class ProfileView extends GetView<ProfileController> {
           }
         }
 
+        // Check story status for the user
+        await _checkStoryStatus();
+
         // Mark initial data as loaded to prevent repeated loading
         _initialDataLoaded[cacheKey] = true;
       });
@@ -235,19 +243,49 @@ class ProfileView extends GetView<ProfileController> {
                                     .selectedUserProfile['google_avatar'] ??
                                 '';
 
-                    return ProfileAvatarWidget(
-                      selectedImage: null,
-                      imageUrl: avatarUrl,
-                      googleAvatarUrl: googleAvatarUrl,
-                      onTap: () {
-                        // You can add profile image tap functionality here if needed
-                      },
-                      radius: 45,
-                      isLoaded: true,
-                      hasStory: false, // No stories functionality
-                      hasUnseenStory: false, // No stories functionality
-                      showAddButton:
-                          false, // Don't show add button on profile page
+                    return Obx(
+                      () => ProfileAvatarWidget(
+                        selectedImage: null,
+                        imageUrl: avatarUrl,
+                        googleAvatarUrl: googleAvatarUrl,
+                        onTap: () {
+                          if (isCurrentUser) {
+                            if (hasStory.value) {
+                              // View own stories
+                              Get.toNamed(
+                                Routes.VIEW_STORIES,
+                                parameters: {
+                                  'userId':
+                                      Get.find<SupabaseService>()
+                                          .currentUser
+                                          .value
+                                          ?.id ??
+                                      '',
+                                },
+                              );
+                            } else {
+                              // Create new story
+                              Get.toNamed(Routes.CREATE_STORY);
+                            }
+                          } else {
+                            if (hasStory.value) {
+                              // View other user's stories
+                              Get.toNamed(
+                                Routes.VIEW_STORIES,
+                                parameters: {'userId': userId ?? ''},
+                              );
+                            }
+                          }
+                        },
+                        radius: 45,
+                        isLoaded: true,
+                        hasStory: hasStory.value,
+                        hasUnseenStory: hasUnseenStory.value,
+                        showAddButton:
+                            isCurrentUser &&
+                            !hasStory
+                                .value, // Show add button only for current user when no story
+                      ),
                     );
                   }),
                 ),
@@ -1106,4 +1144,50 @@ class ProfileView extends GetView<ProfileController> {
   bool get isCurrentUser =>
       userId == null ||
       userId == Get.find<SupabaseService>().currentUser.value?.id;
+
+  // Check story status for the current user or other user
+  Future<void> _checkStoryStatus() async {
+    try {
+      final storyRepository = Get.find<StoryRepository>();
+      final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
+      final targetUserId = isCurrentUser ? currentUserId : userId;
+
+      if (targetUserId == null || targetUserId.isEmpty) {
+        hasStory.value = false;
+        hasUnseenStory.value = false;
+        return;
+      }
+
+      // Get user's stories
+      final stories = await storyRepository.getUserStories(targetUserId);
+      hasStory.value = stories.isNotEmpty;
+
+      if (stories.isNotEmpty) {
+        // Check if any story hasn't been viewed by the current user
+        bool hasUnseen = false;
+        for (final story in stories) {
+          if (isCurrentUser) {
+            // For current user, check if they haven't viewed their own story
+            if (!story.viewers.contains(currentUserId)) {
+              hasUnseen = true;
+              break;
+            }
+          } else {
+            // For other users, check if current user hasn't viewed their stories
+            if (!story.viewers.contains(currentUserId)) {
+              hasUnseen = true;
+              break;
+            }
+          }
+        }
+        hasUnseenStory.value = hasUnseen;
+      } else {
+        hasUnseenStory.value = false;
+      }
+    } catch (e) {
+      debugPrint('Error checking story status: $e');
+      hasStory.value = false;
+      hasUnseenStory.value = false;
+    }
+  }
 }
