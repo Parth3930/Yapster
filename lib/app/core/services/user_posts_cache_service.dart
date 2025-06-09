@@ -100,12 +100,21 @@ class UserPostsCacheService extends GetxService {
     }
   }
 
-  /// Get user posts with intelligent caching
+  /// Get user posts with intelligent caching (only cache current user)
   Future<List<PostModel>> getUserPosts(
     String userId, {
     bool forceRefresh = false,
   }) async {
-    // Check if already loading
+    final currentUserId = _supabase?.client.auth.currentUser?.id;
+    final isCurrentUser = userId == currentUserId;
+
+    // Only use caching for current user, always fetch fresh for other users
+    if (!isCurrentUser) {
+      debugPrint('Loading fresh posts from database for other user: $userId');
+      return await _loadUserPostsFromDatabase(userId, useCache: false);
+    }
+
+    // Check if already loading (only for current user)
     if (_isLoading[userId] == true) {
       // Wait for current loading to complete
       while (_isLoading[userId] == true) {
@@ -114,14 +123,14 @@ class UserPostsCacheService extends GetxService {
       return _userPostsCache[userId] ?? [];
     }
 
-    // Check cache validity
+    // Check cache validity (only for current user)
     if (!forceRefresh && _isCacheValid(userId)) {
-      debugPrint('Using cached posts for user: $userId');
+      debugPrint('Using cached posts for current user: $userId');
       return _userPostsCache[userId] ?? [];
     }
 
-    // Load from database
-    return await _loadUserPostsFromDatabase(userId);
+    // Load from database with caching for current user
+    return await _loadUserPostsFromDatabase(userId, useCache: true);
   }
 
   /// Check if cache is valid
@@ -130,17 +139,25 @@ class UserPostsCacheService extends GetxService {
     if (lastFetch == null) return false;
 
     final cachedPosts = _userPostsCache[userId];
-    if (cachedPosts == null || cachedPosts.isEmpty) return false;
+    // CRITICAL FIX: Empty posts list is a valid cache state (user has no posts)
+    if (cachedPosts == null) return false;
 
     final timeSinceLastFetch = DateTime.now().difference(lastFetch);
     return timeSinceLastFetch < _cacheDuration;
   }
 
   /// Load posts from database
-  Future<List<PostModel>> _loadUserPostsFromDatabase(String userId) async {
+  Future<List<PostModel>> _loadUserPostsFromDatabase(
+    String userId, {
+    bool useCache = true,
+  }) async {
     try {
-      _isLoading[userId] = true;
-      debugPrint('Loading posts from database for user: $userId');
+      if (useCache) {
+        _isLoading[userId] = true;
+      }
+      debugPrint(
+        'Loading posts from database for user: $userId (useCache: $useCache)',
+      );
 
       if (_postRepository == null) {
         debugPrint('PostRepository not available, returning empty list');
@@ -149,43 +166,54 @@ class UserPostsCacheService extends GetxService {
 
       final posts = await _postRepository!.getUserPosts(userId);
 
-      // Validate cached posts against database results
-      // Remove any cached posts that no longer exist in the database
-      final cachedPosts = _userPostsCache[userId];
-      if (cachedPosts != null && cachedPosts.isNotEmpty) {
-        final databasePostIds = posts.map((p) => p.id).toSet();
-        final removedPosts =
-            cachedPosts
-                .where((cachedPost) => !databasePostIds.contains(cachedPost.id))
-                .toList();
+      if (useCache) {
+        // Validate cached posts against database results
+        // Remove any cached posts that no longer exist in the database
+        final cachedPosts = _userPostsCache[userId];
+        if (cachedPosts != null && cachedPosts.isNotEmpty) {
+          final databasePostIds = posts.map((p) => p.id).toSet();
+          final removedPosts =
+              cachedPosts
+                  .where(
+                    (cachedPost) => !databasePostIds.contains(cachedPost.id),
+                  )
+                  .toList();
 
-        if (removedPosts.isNotEmpty) {
-          debugPrint(
-            'Found ${removedPosts.length} posts in cache that no longer exist in database',
-          );
-          for (final removedPost in removedPosts) {
-            debugPrint('Removing deleted post from cache: ${removedPost.id}');
+          if (removedPosts.isNotEmpty) {
+            debugPrint(
+              'Found ${removedPosts.length} posts in cache that no longer exist in database',
+            );
+            for (final removedPost in removedPosts) {
+              debugPrint('Removing deleted post from cache: ${removedPost.id}');
+            }
           }
         }
+
+        // Update cache with fresh database results
+        _userPostsCache[userId] = posts;
+        _lastFetchTime[userId] = DateTime.now();
+
+        // Save to local storage for current user
+        final currentUserId = _supabase?.client.auth.currentUser?.id;
+        if (userId == currentUserId && _storage != null) {
+          await _saveCachedPosts(userId, posts);
+        }
+
+        debugPrint('Loaded and cached ${posts.length} posts for user: $userId');
+      } else {
+        debugPrint(
+          'Loaded ${posts.length} posts for user: $userId (no caching)',
+        );
       }
 
-      // Update cache with fresh database results
-      _userPostsCache[userId] = posts;
-      _lastFetchTime[userId] = DateTime.now();
-
-      // Save to local storage for current user
-      final currentUserId = _supabase?.client.auth.currentUser?.id;
-      if (userId == currentUserId && _storage != null) {
-        await _saveCachedPosts(userId, posts);
-      }
-
-      debugPrint('Loaded and cached ${posts.length} posts for user: $userId');
       return posts;
     } catch (e) {
       debugPrint('Error loading posts from database: $e');
-      return _userPostsCache[userId] ?? [];
+      return useCache ? (_userPostsCache[userId] ?? []) : [];
     } finally {
-      _isLoading[userId] = false;
+      if (useCache) {
+        _isLoading[userId] = false;
+      }
     }
   }
 
@@ -207,23 +235,38 @@ class UserPostsCacheService extends GetxService {
     }
   }
 
-  /// Add a new post to cache
+  /// Add a new post to cache (only for current user)
   void addPostToCache(String userId, PostModel post) {
+    final currentUserId = _supabase?.client.auth.currentUser?.id;
+    final isCurrentUser = userId == currentUserId;
+
+    // Only cache posts for current user
+    if (!isCurrentUser) {
+      debugPrint('Not caching post for other user: $userId');
+      return;
+    }
+
     final cachedPosts = _userPostsCache[userId] ?? [];
     cachedPosts.insert(0, post); // Add to beginning
     _userPostsCache[userId] = cachedPosts;
 
     // Save to local storage for current user
-    final currentUserId = _supabase?.client.auth.currentUser?.id;
-    if (userId == currentUserId) {
-      _saveCachedPosts(userId, cachedPosts);
-    }
+    _saveCachedPosts(userId, cachedPosts);
 
-    debugPrint('Added new post to cache for user: $userId');
+    debugPrint('Added new post to cache for current user: $userId');
   }
 
-  /// Update a post in cache
+  /// Update a post in cache (only for current user)
   void updatePostInCache(String userId, PostModel updatedPost) {
+    final currentUserId = _supabase?.client.auth.currentUser?.id;
+    final isCurrentUser = userId == currentUserId;
+
+    // Only update cache for current user
+    if (!isCurrentUser) {
+      debugPrint('Not updating cache for other user: $userId');
+      return;
+    }
+
     final cachedPosts = _userPostsCache[userId];
     if (cachedPosts != null) {
       final index = cachedPosts.indexWhere((post) => post.id == updatedPost.id);
@@ -232,30 +275,33 @@ class UserPostsCacheService extends GetxService {
         _userPostsCache[userId] = cachedPosts;
 
         // Save to local storage for current user
-        final currentUserId = _supabase?.client.auth.currentUser?.id;
-        if (userId == currentUserId) {
-          _saveCachedPosts(userId, cachedPosts);
-        }
+        _saveCachedPosts(userId, cachedPosts);
 
-        debugPrint('Updated post in cache for user: $userId');
+        debugPrint('Updated post in cache for current user: $userId');
       }
     }
   }
 
-  /// Remove a post from cache
+  /// Remove a post from cache (only for current user)
   void removePostFromCache(String userId, String postId) {
+    final currentUserId = _supabase?.client.auth.currentUser?.id;
+    final isCurrentUser = userId == currentUserId;
+
+    // Only remove from cache for current user
+    if (!isCurrentUser) {
+      debugPrint('Not removing from cache for other user: $userId');
+      return;
+    }
+
     final cachedPosts = _userPostsCache[userId];
     if (cachedPosts != null) {
       cachedPosts.removeWhere((post) => post.id == postId);
       _userPostsCache[userId] = cachedPosts;
 
       // Save to local storage for current user
-      final currentUserId = _supabase?.client.auth.currentUser?.id;
-      if (userId == currentUserId) {
-        _saveCachedPosts(userId, cachedPosts);
-      }
+      _saveCachedPosts(userId, cachedPosts);
 
-      debugPrint('Removed post from cache for user: $userId');
+      debugPrint('Removed post from cache for current user: $userId');
     }
   }
 
@@ -264,9 +310,18 @@ class UserPostsCacheService extends GetxService {
     return _userPostsCache[userId]?.length ?? 0;
   }
 
-  /// Check if user has cached posts
+  /// Check if user has cached posts (only for current user)
   bool hasCachedPosts(String userId) {
-    return _userPostsCache[userId]?.isNotEmpty ?? false;
+    final currentUserId = _supabase?.client.auth.currentUser?.id;
+    final isCurrentUser = userId == currentUserId;
+
+    // Only return cached data for current user, always return false for other users
+    if (!isCurrentUser) {
+      return false;
+    }
+
+    // Check if we have cached data (even if empty) and it's still valid
+    return _userPostsCache.containsKey(userId) && _isCacheValid(userId);
   }
 
   /// Clear cache for a specific user

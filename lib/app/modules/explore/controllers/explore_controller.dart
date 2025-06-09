@@ -41,6 +41,9 @@ class ExploreController extends GetxController {
   final RxMap<String, dynamic> selectedUserProfile = <String, dynamic>{}.obs;
   final RxBool isLoadingUserProfile = false.obs;
 
+  // Track failed profile loads to prevent infinite retries
+  final Set<String> _failedProfileLoads = <String>{};
+
   // Debounce timer for search
   Timer? _debounce;
 
@@ -355,6 +358,15 @@ class ExploreController extends GetxController {
       return;
     }
 
+    // Check if this profile has already failed to load
+    if (_failedProfileLoads.contains(userId)) {
+      debugPrint(
+        '❌ Profile load previously failed for user: $userId - skipping retry',
+      );
+      debugPrint('=== loadUserProfile END (failed before) ===\n');
+      return;
+    }
+
     if (_isLoadingProfile.value) {
       debugPrint(
         '⏳ Already loading profile for ${_currentLoadingUserId.value}, requested: $userId',
@@ -644,7 +656,28 @@ class ExploreController extends GetxController {
 
       debugPrint('=== _loadFreshProfileData END ===\n');
     } catch (e) {
-      debugPrint('Error in _loadFreshProfileData: $e');
+      debugPrint('❌ Error in _loadFreshProfileData: $e');
+
+      // Mark this profile as failed to prevent infinite retries
+      _failedProfileLoads.add(userId);
+      debugPrint('🚫 Marked profile as failed for user: $userId');
+
+      // Set a minimal profile to prevent UI issues
+      selectedUserProfile.value = {
+        'user_id': userId,
+        'username': 'User',
+        'nickname': 'User',
+        'bio': '',
+        'avatar': null,
+        'banner': null,
+        'google_avatar': null,
+        'follower_count': 0,
+        'following_count': 0,
+        'post_count': 0,
+        'is_verified': false,
+        'created_at': DateTime.now().toIso8601String(),
+      };
+
       // Don't throw, just log the error
     }
   }
@@ -761,6 +794,18 @@ class ExploreController extends GetxController {
   /// Check if follow state is cached for a user
   bool hasFollowStateCached(String userId) {
     return _followStateCache.containsKey(userId);
+  }
+
+  /// Clear failed profile loads to allow retry
+  void clearFailedProfileLoads() {
+    _failedProfileLoads.clear();
+    debugPrint('Cleared failed profile loads cache');
+  }
+
+  /// Remove specific user from failed profile loads
+  void clearFailedProfileLoad(String userId) {
+    _failedProfileLoads.remove(userId);
+    debugPrint('Cleared failed profile load for user: $userId');
   }
 
   /// Update all caches after a follow/unfollow operation

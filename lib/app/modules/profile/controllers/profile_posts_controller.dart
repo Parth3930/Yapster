@@ -17,6 +17,12 @@ class ProfilePostsController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxString currentUserId = ''.obs;
 
+  // Track failed post loads to prevent infinite retries
+  final Set<String> _failedPostLoads = <String>{};
+
+  // Track load attempts to prevent infinite loops
+  final Set<String> _loadAttempts = <String>{};
+
   @override
   void onInit() {
     super.onInit();
@@ -26,6 +32,28 @@ class ProfilePostsController extends GetxController {
   /// Load posts for a specific user profile using cache
   Future<void> loadUserPosts(String userId, {bool forceRefresh = false}) async {
     try {
+      // Check if this user's posts have already failed to load
+      if (!forceRefresh && _failedPostLoads.contains(userId)) {
+        debugPrint(
+          'Posts load previously failed for user: $userId - skipping retry',
+        );
+        return;
+      }
+
+      // For other users (non-cached), check if we've already attempted to load
+      final currentUserId = _supabase.client.auth.currentUser?.id;
+      final isCurrentUser = userId == currentUserId;
+
+      if (!isCurrentUser && !forceRefresh && _loadAttempts.contains(userId)) {
+        debugPrint(
+          'Posts already attempted to load for other user: $userId - skipping retry',
+        );
+        return;
+      }
+
+      // Mark this load attempt
+      _loadAttempts.add(userId);
+
       // Check if we have cached posts and don't need to show loading
       final hasCachedPosts = _cacheService.hasCachedPosts(userId);
 
@@ -53,8 +81,19 @@ class ProfilePostsController extends GetxController {
       debugPrint(
         'Loaded ${posts.length} profile posts for user: $userId (cached: $hasCachedPosts)',
       );
+
+      // If no posts found, ensure we don't keep reloading
+      if (posts.isEmpty) {
+        debugPrint(
+          'No posts found for user $userId - cache updated with empty result',
+        );
+      }
     } catch (e) {
       debugPrint('Error loading profile posts: $e');
+
+      // Mark this user's posts as failed to prevent infinite retries
+      _failedPostLoads.add(userId);
+      debugPrint('Marked posts as failed for user: $userId');
     } finally {
       isLoading.value = false;
     }
@@ -378,5 +417,34 @@ class ProfilePostsController extends GetxController {
   Future<void> invalidateAndReloadUserPosts(String userId) async {
     _cacheService.invalidateUserCache(userId);
     await loadUserPosts(userId);
+  }
+
+  /// Clear failed post loads to allow retry
+  void clearFailedPostLoads() {
+    _failedPostLoads.clear();
+    debugPrint('Cleared failed post loads cache');
+  }
+
+  /// Remove specific user from failed post loads
+  void clearFailedPostLoad(String userId) {
+    _failedPostLoads.remove(userId);
+    debugPrint('Cleared failed post load for user: $userId');
+  }
+
+  /// Clear load attempts to allow retry
+  void clearLoadAttempts() {
+    _loadAttempts.clear();
+    debugPrint('Cleared load attempts cache');
+  }
+
+  /// Remove specific user from load attempts
+  void clearLoadAttempt(String userId) {
+    _loadAttempts.remove(userId);
+    debugPrint('Cleared load attempt for user: $userId');
+  }
+
+  /// Check if load was attempted for user
+  bool hasLoadAttempted(String userId) {
+    return _loadAttempts.contains(userId);
   }
 }

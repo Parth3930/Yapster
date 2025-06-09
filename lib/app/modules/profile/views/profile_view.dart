@@ -915,25 +915,52 @@ class ProfileView extends GetView<ProfileController> {
       tag: 'profile_posts_${userId ?? 'current'}',
     );
 
-    final targetUserId =
-        isCurrentUser
-            ? Get.find<SupabaseService>().currentUser.value?.id ?? ''
-            : userId ?? '';
+    final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
+    final targetUserId = isCurrentUser ? currentUserId ?? '' : userId ?? '';
 
     // OPTIMIZATION: Check if posts are already cached using the cache service
     final cacheService = Get.find<UserPostsCacheService>();
-    final hasCachedPosts =
-        cacheService.hasCachedPosts(targetUserId) ||
-        profilePostsController.profilePosts.isNotEmpty;
+    final hasCachedPosts = cacheService.hasCachedPosts(targetUserId);
+    final hasPostsInController = profilePostsController.profilePosts.isNotEmpty;
+    final isTargetCurrentUser = targetUserId == currentUserId;
 
-    if (!hasCachedPosts && !profilePostsController.isLoading.value) {
-      // Only load posts if not cached and not already loading
-      Future.microtask(() {
+    // For other users, only load once and don't cache
+    if (!isTargetCurrentUser) {
+      // Check if we've already attempted to load posts for this user
+      final hasAttempted = profilePostsController.hasLoadAttempted(
+        targetUserId,
+      );
+      if (!hasPostsInController &&
+          !profilePostsController.isLoading.value &&
+          !hasAttempted) {
+        debugPrint('Loading posts once for other user: $targetUserId');
+        Future.microtask(() {
+          profilePostsController.loadUserPosts(targetUserId);
+        });
+      } else {
+        debugPrint(
+          'Posts already loaded, loading, or attempted for other user: $targetUserId (attempted: $hasAttempted)',
+        );
+      }
+    } else {
+      // For current user, use caching logic
+      if (!hasCachedPosts &&
+          !hasPostsInController &&
+          !profilePostsController.isLoading.value) {
+        debugPrint(
+          'No cached posts found, loading for current user: $targetUserId',
+        );
+        Future.microtask(() {
+          profilePostsController.loadUserPosts(targetUserId);
+        });
+      } else if (hasCachedPosts && !hasPostsInController) {
+        debugPrint('Loading cached posts for current user: $targetUserId');
         profilePostsController.loadUserPosts(targetUserId);
-      });
-    } else if (hasCachedPosts && profilePostsController.profilePosts.isEmpty) {
-      // If we have cached posts but controller is empty, load them immediately
-      profilePostsController.loadUserPosts(targetUserId);
+      } else {
+        debugPrint(
+          'Using existing posts data for current user: $targetUserId (cached: $hasCachedPosts, controller: $hasPostsInController)',
+        );
+      }
     }
 
     return Obx(() {

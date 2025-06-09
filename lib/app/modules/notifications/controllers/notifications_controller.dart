@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -179,9 +179,63 @@ class NotificationsController extends GetxController {
 
   /// Delete notification
   Future<void> deleteNotification(String notificationId) async {
-    await _notificationRepository.deleteNotification(notificationId);
+    try {
+      debugPrint('Deleting notification: $notificationId');
 
-    // Update local state
-    notifications.removeWhere((n) => n.id == notificationId);
+      // First remove from UI for immediate feedback
+      final notificationIndex = notifications.indexWhere(
+        (n) => n.id == notificationId,
+      );
+      NotificationModel? deletedNotification;
+
+      if (notificationIndex != -1) {
+        deletedNotification = notifications[notificationIndex];
+        notifications.removeAt(notificationIndex);
+
+        // Update unread count if the deleted notification was unread
+        if (!deletedNotification.isRead && unreadCount.value > 0) {
+          unreadCount.value--;
+        }
+      }
+
+      // Delete from database
+      final success = await _notificationRepository.deleteNotification(
+        notificationId,
+      );
+
+      if (success) {
+        debugPrint('Notification deleted successfully from database');
+      } else {
+        debugPrint('Failed to delete notification from database');
+
+        // If database deletion failed, restore the notification to UI
+        if (deletedNotification != null && notificationIndex != -1) {
+          notifications.insert(notificationIndex, deletedNotification);
+          if (!deletedNotification.isRead) {
+            unreadCount.value++;
+          }
+        }
+
+        // Show error message to user
+        Get.snackbar(
+          'Error',
+          'Failed to delete notification',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red.withValues(alpha: 0.8),
+          colorText: Colors.white,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error deleting notification: $e');
+
+      // Show error message to user
+      Get.snackbar(
+        'Error',
+        'Failed to delete notification',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
+        colorText: Colors.white,
+      );
+    }
   }
 }
