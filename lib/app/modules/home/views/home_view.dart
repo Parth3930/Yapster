@@ -259,99 +259,113 @@ class _HomeViewState extends State<HomeView> {
                       bottom: false,
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 0),
-                        child: Row(
+                        child: Stack(
                           children: [
-                            Expanded(
-                              child: Center(
-                                child: Text(
-                                  "Yapster",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.w500,
-                                    fontFamily: GoogleFonts.dongle().fontFamily,
-                                  ),
+                            // Centered Yapster text
+                            Center(
+                              child: Text(
+                                "Yapster",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 40,
+                                  fontWeight: FontWeight.w500,
+                                  fontFamily: GoogleFonts.dongle().fontFamily,
                                 ),
                               ),
                             ),
-                            IconButton(
-                              icon: Image.asset(
-                                'assets/icons/explore.png',
-                                width: 24,
-                                height: 24,
-                                color: Colors.white,
-                              ),
-                              onPressed:
-                                  () => Get.to(
-                                    () => const ExploreView(),
-                                    transition: Transition.rightToLeft,
-                                    duration: const Duration(milliseconds: 300),
-                                    binding: ExploreBinding(),
-                                  ),
-                            ),
-                            GetX<NotificationsController>(
-                              init: NotificationsController(),
-                              builder: (notificationController) {
-                                return Stack(
-                                  children: [
-                                    IconButton(
-                                      icon: Image.asset(
-                                        'assets/icons/bell.png',
-                                        width: 24,
-                                        height: 24,
-                                        color: Colors.white,
-                                      ),
-                                      onPressed:
-                                          () => Get.to(
-                                            () => const NotificationsView(),
-                                            transition: Transition.rightToLeft,
-                                            duration: const Duration(
-                                              milliseconds: 300,
-                                            ),
-                                            binding: NotificationsBinding(),
-                                          ),
+                            // Right-aligned icons
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              bottom: 0,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: Image.asset(
+                                      'assets/icons/explore.png',
+                                      width: 24,
+                                      height: 24,
+                                      color: Colors.white,
                                     ),
-                                    if (notificationController
-                                            .unreadCount
-                                            .value >
-                                        0)
-                                      Positioned(
-                                        right: 8,
-                                        top: 8,
-                                        child: Container(
-                                          padding: EdgeInsets.all(2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.red,
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
+                                    onPressed:
+                                        () => Get.to(
+                                          () => const ExploreView(),
+                                          transition: Transition.rightToLeft,
+                                          duration: const Duration(
+                                            milliseconds: 300,
                                           ),
-                                          constraints: BoxConstraints(
-                                            minWidth: 16,
-                                            minHeight: 16,
-                                          ),
-                                          child: Text(
-                                            notificationController
-                                                        .unreadCount
-                                                        .value >
-                                                    99
-                                                ? '99+'
-                                                : notificationController
-                                                    .unreadCount
-                                                    .value
-                                                    .toString(),
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
+                                          binding: ExploreBinding(),
                                         ),
-                                      ),
-                                  ],
-                                );
-                              },
+                                  ),
+                                  GetX<NotificationsController>(
+                                    init: NotificationsController(),
+                                    builder: (notificationController) {
+                                      return Stack(
+                                        children: [
+                                          IconButton(
+                                            icon: Image.asset(
+                                              'assets/icons/bell.png',
+                                              width: 24,
+                                              height: 24,
+                                              color: Colors.white,
+                                            ),
+                                            onPressed:
+                                                () => Get.to(
+                                                  () =>
+                                                      const NotificationsView(),
+                                                  transition:
+                                                      Transition.rightToLeft,
+                                                  duration: const Duration(
+                                                    milliseconds: 300,
+                                                  ),
+                                                  binding:
+                                                      NotificationsBinding(),
+                                                ),
+                                          ),
+                                          if (notificationController
+                                                  .unreadCount
+                                                  .value >
+                                              0)
+                                            Positioned(
+                                              right: 8,
+                                              top: 8,
+                                              child: Container(
+                                                padding: EdgeInsets.all(2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red,
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                ),
+                                                constraints: BoxConstraints(
+                                                  minWidth: 16,
+                                                  minHeight: 16,
+                                                ),
+                                                child: Text(
+                                                  notificationController
+                                                              .unreadCount
+                                                              .value >
+                                                          99
+                                                      ? '99+'
+                                                      : notificationController
+                                                          .unreadCount
+                                                          .value
+                                                          .toString(),
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
