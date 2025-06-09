@@ -324,6 +324,24 @@ class UserPostsCacheService extends GetxService {
     return _userPostsCache.containsKey(userId) && _isCacheValid(userId);
   }
 
+  /// Get cached posts synchronously (only for current user)
+  List<PostModel> getCachedPosts(String userId) {
+    final currentUserId = _supabase?.client.auth.currentUser?.id;
+    final isCurrentUser = userId == currentUserId;
+
+    // Only return cached data for current user
+    if (!isCurrentUser) {
+      return [];
+    }
+
+    // Return cached posts if valid, otherwise empty list
+    if (_userPostsCache.containsKey(userId) && _isCacheValid(userId)) {
+      return List<PostModel>.from(_userPostsCache[userId] ?? []);
+    }
+
+    return [];
+  }
+
   /// Clear cache for a specific user
   void clearUserCache(String userId) {
     _userPostsCache.remove(userId);

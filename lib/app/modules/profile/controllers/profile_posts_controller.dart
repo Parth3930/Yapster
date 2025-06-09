@@ -388,6 +388,30 @@ class ProfilePostsController extends GetxController {
     }
   }
 
+  /// Load engagement states for cached posts and update the controller
+  Future<void> loadEngagementStatesForCachedPosts(
+    List<PostModel> cachedPosts,
+  ) async {
+    final userId = _supabase.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      // Create a copy of the cached posts to update
+      final updatedPosts = List<PostModel>.from(cachedPosts);
+
+      // Load engagement states
+      await _loadEngagementStates(updatedPosts);
+
+      // Update the controller with the posts that have engagement states
+      profilePosts.assignAll(updatedPosts);
+      debugPrint(
+        'Updated ${updatedPosts.length} cached posts with engagement states',
+      );
+    } catch (e) {
+      debugPrint('Error loading engagement states for cached posts: $e');
+    }
+  }
+
   /// Load user favorites for batch processing
   Future<Set<String>> _loadUserFavorites(String userId) async {
     try {

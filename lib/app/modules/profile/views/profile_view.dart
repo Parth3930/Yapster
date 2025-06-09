@@ -992,8 +992,15 @@ class ProfileView extends GetView<ProfileController> {
           profilePostsController.loadUserPosts(targetUserId);
         });
       } else if (hasCachedPosts && !hasPostsInController) {
-        debugPrint('Loading cached posts for current user: $targetUserId');
-        profilePostsController.loadUserPosts(targetUserId);
+        debugPrint(
+          'Loading cached posts instantly for current user: $targetUserId',
+        );
+        // Load cached posts immediately and synchronously
+        _loadCachedPostsInstantly(
+          profilePostsController,
+          cacheService,
+          targetUserId,
+        );
       } else {
         debugPrint(
           'Using existing posts data for current user: $targetUserId (cached: $hasCachedPosts, controller: $hasPostsInController)',
@@ -1124,6 +1131,43 @@ class ProfileView extends GetView<ProfileController> {
         });
       },
     );
+  }
+
+  // Helper method to load cached posts instantly without async delay
+  void _loadCachedPostsInstantly(
+    ProfilePostsController profilePostsController,
+    UserPostsCacheService cacheService,
+    String targetUserId,
+  ) {
+    try {
+      // Get cached posts synchronously from the cache service
+      final cachedPosts = cacheService.getCachedPosts(targetUserId);
+      if (cachedPosts.isNotEmpty) {
+        // Load posts immediately into the controller
+        profilePostsController.profilePosts.assignAll(cachedPosts);
+        debugPrint(
+          'Instantly loaded ${cachedPosts.length} cached posts for user: $targetUserId',
+        );
+
+        // Load engagement states in background without blocking UI
+        Future.microtask(() async {
+          await profilePostsController.loadEngagementStatesForCachedPosts(
+            cachedPosts,
+          );
+        });
+      } else {
+        // If no cached posts, fall back to async loading
+        Future.microtask(() {
+          profilePostsController.loadUserPosts(targetUserId);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading cached posts instantly: $e');
+      // Fall back to async loading on error
+      Future.microtask(() {
+        profilePostsController.loadUserPosts(targetUserId);
+      });
+    }
   }
 
   // Helper method to get display nickname for other users
