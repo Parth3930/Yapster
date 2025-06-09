@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/data/models/notification_model.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
+import 'package:yapster/app/modules/profile/views/profile_view.dart';
+import 'package:yapster/app/startup/preloader/optimized_bindings.dart';
 import '../controllers/notifications_controller.dart';
 
 class NotificationsView extends GetView<NotificationsController> {
@@ -80,45 +82,161 @@ class NotificationsView extends GetView<NotificationsController> {
               }
               return false;
             },
-            child: ListView.builder(
-              itemCount:
-                  controller.notifications.length +
-                  (controller.hasMore.value ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == controller.notifications.length) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
-
-                final notification = controller.notifications[index];
-                return NotificationItem(
-                  notification: notification,
-                  onTap: () {
-                    // Mark as read when tapped
-                    controller.markAsRead(notification.id);
-
-                    // Navigate based on notification type
-                    if (notification.type == 'follow') {
-                      Get.toNamed('/profile/${notification.actorId}');
-                    } else if (notification.type == 'like' ||
-                        notification.type == 'comment') {
-                      if (notification.postId != null) {
-                        Get.toNamed('/post/${notification.postId}');
-                      }
-                    }
-                  },
-                  onDismiss:
-                      () => controller.deleteNotification(notification.id),
-                );
-              },
-            ),
+            child: _buildGroupedNotifications(),
           ),
         );
       }),
+    );
+  }
+
+  /// Build notifications grouped by time periods (Today, Yesterday, Older)
+  Widget _buildGroupedNotifications() {
+    final groupedNotifications = _groupNotificationsByTime(
+      controller.notifications,
+    );
+
+    return ListView.builder(
+      itemCount: _calculateTotalItems(groupedNotifications),
+      itemBuilder: (context, index) {
+        return _buildGroupedItem(groupedNotifications, index);
+      },
+    );
+  }
+
+  /// Group notifications by time periods
+  Map<String, List<NotificationModel>> _groupNotificationsByTime(
+    List<NotificationModel> notifications,
+  ) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    final Map<String, List<NotificationModel>> grouped = {
+      'Today': [],
+      'Yesterday': [],
+      'Older': [],
+    };
+
+    for (final notification in notifications) {
+      final notificationDate = DateTime(
+        notification.createdAt.year,
+        notification.createdAt.month,
+        notification.createdAt.day,
+      );
+
+      if (notificationDate.isAtSameMomentAs(today)) {
+        grouped['Today']!.add(notification);
+      } else if (notificationDate.isAtSameMomentAs(yesterday)) {
+        grouped['Yesterday']!.add(notification);
+      } else {
+        grouped['Older']!.add(notification);
+      }
+    }
+
+    // Remove empty groups
+    grouped.removeWhere((key, value) => value.isEmpty);
+
+    return grouped;
+  }
+
+  /// Calculate total items including headers and loading indicator
+  int _calculateTotalItems(
+    Map<String, List<NotificationModel>> groupedNotifications,
+  ) {
+    int totalItems = 0;
+
+    for (final entry in groupedNotifications.entries) {
+      totalItems += 1; // Header
+      totalItems += entry.value.length; // Notifications in this group
+    }
+
+    // Add loading indicator if there are more notifications
+    if (controller.hasMore.value) {
+      totalItems += 1;
+    }
+
+    return totalItems;
+  }
+
+  /// Build individual items (headers, notifications, loading indicator)
+  Widget _buildGroupedItem(
+    Map<String, List<NotificationModel>> groupedNotifications,
+    int index,
+  ) {
+    int currentIndex = 0;
+
+    for (final entry in groupedNotifications.entries) {
+      final groupName = entry.key;
+      final groupNotifications = entry.value;
+
+      // Check if this index is the header for this group
+      if (currentIndex == index) {
+        return _buildGroupHeader(groupName);
+      }
+      currentIndex++;
+
+      // Check if this index is within this group's notifications
+      if (index < currentIndex + groupNotifications.length) {
+        final notificationIndex = index - currentIndex;
+        final notification = groupNotifications[notificationIndex];
+
+        return NotificationItem(
+          notification: notification,
+          onTap: () {
+            // Mark as read when tapped
+            controller.markAsRead(notification.id);
+
+            // Navigate based on notification type
+            if (notification.type == 'follow') {
+              // Navigate to the actor's profile
+              Get.to(
+                () => ProfileView(userId: notification.actorId),
+                binding: OptimizedProfileBinding(),
+                transition: Transition.noTransition,
+                duration: Duration.zero,
+              );
+            } else if (notification.type == 'like' ||
+                notification.type == 'comment') {
+              if (notification.postId != null) {
+                // Navigate to the specific post (implement post detail view if needed)
+                debugPrint('Navigate to post: ${notification.postId}');
+                // For now, navigate to the actor's profile
+                Get.to(
+                  () => ProfileView(userId: notification.actorId),
+                  binding: OptimizedProfileBinding(),
+                  transition: Transition.noTransition,
+                  duration: Duration.zero,
+                );
+              }
+            }
+          },
+          onDismiss: () => controller.deleteNotification(notification.id),
+        );
+      }
+      currentIndex += groupNotifications.length;
+    }
+
+    // If we reach here, it must be the loading indicator
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(8.0),
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+
+  /// Build group header (Today, Yesterday, Older)
+  Widget _buildGroupHeader(String groupName) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      child: Text(
+        groupName,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 }
@@ -191,13 +309,6 @@ class NotificationItem extends StatelessWidget {
                       notification.getNotificationText(),
                       style: const TextStyle(fontSize: 14),
                     ),
-
-                    // Timestamp
-                    const SizedBox(height: 4),
-                    Text(
-                      _getTimeAgo(notification.createdAt),
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
                   ],
                 ),
               ),
@@ -223,22 +334,6 @@ class NotificationItem extends StatelessWidget {
         return const Icon(Icons.message, color: Colors.blueGrey);
       default:
         return const Icon(Icons.notifications, color: Colors.grey);
-    }
-  }
-
-  String _getTimeAgo(DateTime dateTime) {
-    final difference = DateTime.now().difference(dateTime);
-
-    if (difference.inSeconds < 60) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return '${dateTime.month}/${dateTime.day}/${dateTime.year}';
     }
   }
 }
