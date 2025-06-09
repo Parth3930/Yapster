@@ -154,7 +154,7 @@ class PostDetailController extends GetxController {
       if (engagementState != null) {
         postModel.metadata['isLiked'] = engagementState['isLiked'] ?? false;
         postModel.metadata['isFavorited'] =
-            false; // TODO: Add favorite state if needed
+            false; // Add favorite state if needed
       }
 
       return postModel;

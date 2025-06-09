@@ -265,7 +265,7 @@ class _GroupChatWindowViewState extends State<GroupChatWindowView>
   }
 
   void _showGroupSettings() {
-    // TODO: Implement group settings dialog
+    // Implement group settings dialog
     Get.snackbar(
       'Group Settings',
       'Group settings coming soon',

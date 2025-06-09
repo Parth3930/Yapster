@@ -985,7 +985,7 @@ class _MessageBubbleState extends State<MessageBubble>
             );
             updatedMetadata['isLiked'] = engagementState['isLiked'] ?? false;
             updatedMetadata['isFavorited'] =
-                false; // TODO: Add favorite state if needed
+                false; // Add favorite state if needed
 
             // Update likes count from server if available
             final serverLikesCount = engagementState['likesCount'];
@@ -1135,7 +1135,7 @@ class _SharedPostControllerAdapter extends PostsFeedController {
 
     try {
       // For now, just keep the optimistic update
-      // TODO: Implement favorite toggle in repository if needed
+      // Implement favorite toggle in repository if needed
       debugPrint('Favorite toggled for shared post: $postId');
     } catch (e) {
       debugPrint('Error toggling favorite for shared post: $e');

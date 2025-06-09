@@ -100,7 +100,7 @@ class _TextWidgetState extends State<TextWidget> {
                         : Border.all(color: Colors.grey.shade300, width: 1.0),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),

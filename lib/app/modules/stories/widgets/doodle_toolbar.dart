@@ -15,7 +15,7 @@ class DoodleToolbar extends GetView<DoodleController> {
         margin: const EdgeInsets.symmetric(horizontal: 16),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7),
+          color: Colors.black.withValues(alpha: 0.7),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
@@ -55,7 +55,7 @@ class DoodleToolbar extends GetView<DoodleController> {
                 border: Border.all(color: Colors.white, width: 2),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withValues(alpha: 0.3),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -85,7 +85,7 @@ class DoodleToolbar extends GetView<DoodleController> {
                           min: 0,
                           max: 255,
                           activeColor: Colors.red,
-                          inactiveColor: Colors.red.withOpacity(0.3),
+                          inactiveColor: Colors.red.withValues(alpha: 0.3),
                           onChanged: (value) {
                             controller.red.value = value;
                             controller.updateColorFromRgb();
@@ -120,7 +120,7 @@ class DoodleToolbar extends GetView<DoodleController> {
                           min: 0,
                           max: 255,
                           activeColor: Colors.green,
-                          inactiveColor: Colors.green.withOpacity(0.3),
+                          inactiveColor: Colors.green.withValues(alpha: 0.3),
                           onChanged: (value) {
                             controller.green.value = value;
                             controller.updateColorFromRgb();
@@ -155,7 +155,7 @@ class DoodleToolbar extends GetView<DoodleController> {
                           min: 0,
                           max: 255,
                           activeColor: Colors.blue,
-                          inactiveColor: Colors.blue.withOpacity(0.3),
+                          inactiveColor: Colors.blue.withValues(alpha: 0.3),
                           onChanged: (value) {
                             controller.blue.value = value;
                             controller.updateColorFromRgb();

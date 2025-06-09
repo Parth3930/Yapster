@@ -8,11 +8,7 @@ class PostViewTracker extends StatefulWidget {
   final PostModel post;
   final Widget child;
 
-  const PostViewTracker({
-    super.key,
-    required this.post,
-    required this.child,
-  });
+  const PostViewTracker({super.key, required this.post, required this.child});
 
   @override
   State<PostViewTracker> createState() => _PostViewTrackerState();
@@ -46,7 +42,7 @@ class _PostViewTrackerState extends State<PostViewTracker> {
     if (!_hasTrackedView) {
       _hasTrackedView = true;
       _viewStartTime = DateTime.now();
-      
+
       // Track the view
       _controller.trackPostView(widget.post.id);
     }
@@ -63,7 +59,7 @@ class _PostViewTrackerState extends State<PostViewTracker> {
       key: Key('post_${widget.post.id}'),
       onVisibilityChanged: (visibilityInfo) {
         final visiblePercentage = visibilityInfo.visibleFraction;
-        
+
         // Consider post visible if at least 50% is visible
         if (visiblePercentage >= 0.5) {
           _onPostVisible();
@@ -78,15 +74,14 @@ class _PostViewTrackerState extends State<PostViewTracker> {
 
 /// Simple visibility detector implementation
 class VisibilityDetector extends StatefulWidget {
-  final Key key;
   final Widget child;
   final Function(VisibilityInfo) onVisibilityChanged;
 
   const VisibilityDetector({
-    required this.key,
+    super.key,
     required this.child,
     required this.onVisibilityChanged,
-  }) : super(key: key);
+  });
 
   @override
   State<VisibilityDetector> createState() => _VisibilityDetectorState();
@@ -107,9 +102,9 @@ class _VisibilityDetectorState extends State<VisibilityDetector> {
   void _checkVisibility() {
     if (!mounted) return;
 
-    final RenderBox? renderBox = 
+    final RenderBox? renderBox =
         _widgetKey.currentContext?.findRenderObject() as RenderBox?;
-    
+
     if (renderBox == null) return;
 
     final size = renderBox.size;
@@ -118,14 +113,14 @@ class _VisibilityDetectorState extends State<VisibilityDetector> {
 
     // Calculate visible area
     final visibleTop = position.dy < 0 ? 0 : position.dy;
-    final visibleBottom = position.dy + size.height > screenSize.height 
-        ? screenSize.height 
-        : position.dy + size.height;
-    
+    final visibleBottom =
+        position.dy + size.height > screenSize.height
+            ? screenSize.height
+            : position.dy + size.height;
+
     final visibleHeight = visibleBottom - visibleTop;
-    final visibleFraction = visibleHeight > 0 
-        ? (visibleHeight / size.height).clamp(0.0, 1.0)
-        : 0.0;
+    final visibleFraction =
+        visibleHeight > 0 ? (visibleHeight / size.height).clamp(0.0, 1.0) : 0.0;
 
     // Only notify if visibility changed significantly
     if ((visibleFraction - _lastVisibleFraction).abs() > 0.1) {
@@ -141,10 +136,7 @@ class _VisibilityDetectorState extends State<VisibilityDetector> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      key: _widgetKey,
-      child: widget.child,
-    );
+    return Container(key: _widgetKey, child: widget.child);
   }
 }
 

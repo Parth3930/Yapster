@@ -54,19 +54,25 @@ class TextEditingControls extends StatelessWidget {
                     (context) => [
                       _buildColorMenuItem(Colors.transparent, 'Transparent'),
                       _buildColorMenuItem(
-                        Colors.black.withOpacity(0.5),
+                        Colors.black.withValues(alpha: 0.5),
                         'Black',
                       ),
                       _buildColorMenuItem(
-                        Colors.white.withOpacity(0.5),
+                        Colors.white.withValues(alpha: 0.5),
                         'White',
                       ),
-                      _buildColorMenuItem(Colors.red.withOpacity(0.5), 'Red'),
                       _buildColorMenuItem(
-                        Colors.green.withOpacity(0.5),
+                        Colors.red.withValues(alpha: 0.5),
+                        'Red',
+                      ),
+                      _buildColorMenuItem(
+                        Colors.green.withValues(alpha: 0.5),
                         'Green',
                       ),
-                      _buildColorMenuItem(Colors.blue.withOpacity(0.5), 'Blue'),
+                      _buildColorMenuItem(
+                        Colors.blue.withValues(alpha: 0.5),
+                        'Blue',
+                      ),
                     ],
               ),
 

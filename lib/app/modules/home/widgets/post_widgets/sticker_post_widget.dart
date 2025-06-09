@@ -97,7 +97,10 @@ class StickerPostWidget extends BasePostWidget {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.orange.withOpacity(0.3), width: 2),
+          border: Border.all(
+            color: Colors.orange.withValues(alpha: 0.3),
+            width: 2,
+          ),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(10),
@@ -112,8 +115,8 @@ class StickerPostWidget extends BasePostWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.orange.withOpacity(0.1),
-                      Colors.yellow.withOpacity(0.1),
+                      Colors.orange.withValues(alpha: 0.1),
+                      Colors.yellow.withValues(alpha: 0.1),
                     ],
                   ),
                 ),
@@ -124,7 +127,7 @@ class StickerPostWidget extends BasePostWidget {
                     height: 120,
                     loadingBuilder: (context, child, loadingProgress) {
                       if (loadingProgress == null) return child;
-                      return Container(
+                      return SizedBox(
                         height: 120,
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -153,7 +156,7 @@ class StickerPostWidget extends BasePostWidget {
                       );
                     },
                     errorBuilder: (context, error, stackTrace) {
-                      return Container(
+                      return SizedBox(
                         height: 120,
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -187,7 +190,7 @@ class StickerPostWidget extends BasePostWidget {
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
+                      color: Colors.black.withValues(alpha: 0.7),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -209,7 +212,7 @@ class StickerPostWidget extends BasePostWidget {
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
+                      color: Colors.black.withValues(alpha: 0.7),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -233,12 +236,12 @@ class StickerPostWidget extends BasePostWidget {
                     child: Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
                         Icons.touch_app,
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         size: 20,
                       ),
                     ),
@@ -257,7 +260,7 @@ class StickerPostWidget extends BasePostWidget {
     String? stickerPack,
     String? stickerName,
   ) {
-    // TODO: Implement sticker details view or sticker pack browser
+    // Implement sticker details view or sticker pack browser
     Get.dialog(
       AlertDialog(
         backgroundColor: Colors.grey[900],

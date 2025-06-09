@@ -357,10 +357,7 @@ class ProfilePostsController extends GetxController {
           .select('post_id')
           .eq('user_id', userId);
 
-      if (response is List) {
-        return response.map((item) => item['post_id'] as String).toSet();
-      }
-      return {};
+      return response.map((item) => item['post_id'] as String).toSet();
     } catch (e) {
       debugPrint('Error loading user favorites in profile: $e');
       return {};

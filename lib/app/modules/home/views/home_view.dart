@@ -163,11 +163,11 @@ class _HomeViewState extends State<HomeView> {
                   // Posts Feed - Handle different states
                   if (controller.isLoading.value &&
                       !controller.hasLoadedOnce.value)
-                    // Initial loading state
+                    // Initial loading state - reduced shimmer count for faster loading
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) => _buildShimmerEffect(context),
-                        childCount: 3, // Show 3 shimmer items
+                        childCount: 1, // Reduced from 3 to 1 for faster loading
                       ),
                     )
                   else if (controller.posts.isEmpty &&

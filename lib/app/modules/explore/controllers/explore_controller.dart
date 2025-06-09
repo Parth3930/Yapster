@@ -296,7 +296,7 @@ class ExploreController extends GetxController {
     };
 
     // Navigate immediately for speed
-    Get.toNamed("${Routes.PROFILE}/${userId}");
+    Get.toNamed("${Routes.PROFILE}/$userId");
 
     // Load detailed profile data in background
     loadUserProfile(userId);

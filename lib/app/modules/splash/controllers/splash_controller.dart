@@ -29,7 +29,9 @@ class SplashController extends GetxController {
       if (!await _ensureServicesReady()) {
         // Services not ready yet, retry in a moment
         await Future.delayed(const Duration(milliseconds: 500));
-        checkAuthAndNavigate();
+        if (Get.isRegistered<SplashController>()) {
+          checkAuthAndNavigate();
+        }
         return;
       }
 
@@ -155,7 +157,9 @@ class SplashController extends GetxController {
       } else {
         // If services not ready yet, retry after a delay
         await Future.delayed(const Duration(milliseconds: 500));
-        checkAuthAndNavigate();
+        if (Get.isRegistered<SplashController>()) {
+          checkAuthAndNavigate();
+        }
       }
     } finally {
       isLoading.value = false;

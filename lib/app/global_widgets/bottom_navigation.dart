@@ -9,12 +9,12 @@ class BottomNavAnimationController extends GetxController {
 
   // Trigger animation for specific icon
   void triggerAnimation(String route) {
-    print('BottomNavAnimationController: Triggering animation for $route');
+    debugPrint('BottomNavAnimationController: Triggering animation for $route');
     animateIcon.value = route;
     // Reset after longer animation duration
     Future.delayed(const Duration(milliseconds: 800), () {
       animateIcon.value = '';
-      print('BottomNavAnimationController: Animation reset for $route');
+      debugPrint('BottomNavAnimationController: Animation reset for $route');
     });
   }
 }
@@ -153,7 +153,7 @@ class _BottomNavigationState extends State<BottomNavigation>
 
   // Play animation for specific route
   void _playAnimationForRoute(String route) {
-    print('_playAnimationForRoute called for: $route');
+    debugPrint('_playAnimationForRoute called for: $route');
     AnimationController? controller;
 
     switch (route) {
@@ -176,11 +176,11 @@ class _BottomNavigationState extends State<BottomNavigation>
 
     // Play animation if controller exists
     if (controller != null) {
-      print('Playing animation for $route');
+      debugPrint('Playing animation for $route');
       controller.reset();
       controller.forward();
     } else {
-      print('No controller found for $route');
+      debugPrint('No controller found for $route');
     }
   }
 

@@ -16,12 +16,12 @@ class PostInteractionButtons extends StatelessWidget {
   final Function(String)? onCommentTap;
 
   const PostInteractionButtons({
-    Key? key,
+    super.key,
     required this.post,
     required this.controller,
     this.glassy = true,
     this.onCommentTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

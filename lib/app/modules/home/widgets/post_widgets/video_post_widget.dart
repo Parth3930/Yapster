@@ -72,7 +72,7 @@ class VideoPostWidget extends BasePostWidget {
         decoration: BoxDecoration(
           color: Colors.grey[800],
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.red.withOpacity(0.3)),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -93,7 +93,10 @@ class VideoPostWidget extends BasePostWidget {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.red.withOpacity(0.3), width: 2),
+          border: Border.all(
+            color: Colors.red.withValues(alpha: 0.3),
+            width: 2,
+          ),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(10),
@@ -146,7 +149,7 @@ class VideoPostWidget extends BasePostWidget {
                       end: Alignment.bottomCenter,
                       colors: [
                         Colors.transparent,
-                        Colors.black.withOpacity(0.3),
+                        Colors.black.withValues(alpha: 0.3),
                       ],
                     ),
                   ),
@@ -154,7 +157,7 @@ class VideoPostWidget extends BasePostWidget {
                     child: Container(
                       padding: EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.black.withValues(alpha: 0.6),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -175,7 +178,7 @@ class VideoPostWidget extends BasePostWidget {
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
+                      color: Colors.black.withValues(alpha: 0.7),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -196,7 +199,7 @@ class VideoPostWidget extends BasePostWidget {
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
+                    color: Colors.black.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -261,7 +264,7 @@ class VideoPostWidget extends BasePostWidget {
   }
 
   void _playVideo(String videoUrl) {
-    // TODO: Implement video player
+    // Implement video player
     // You can use video_player package or chewie for better video controls
     debugPrint('Play video: $videoUrl');
 

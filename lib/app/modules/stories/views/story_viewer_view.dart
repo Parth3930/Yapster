@@ -103,7 +103,7 @@ class StoryViewerView extends GetView<StoryViewerController> {
                         color:
                             index <= controller.currentStoryIndex.value
                                 ? Colors.white
-                                : Colors.white.withOpacity(0.3),
+                                : Colors.white.withValues(alpha: 0.3),
                         borderRadius: BorderRadius.circular(1.5),
                       ),
                     ),
@@ -122,11 +122,11 @@ class StoryViewerView extends GetView<StoryViewerController> {
                   CircleAvatar(
                     radius: 16,
                     backgroundImage:
-                        controller.userAvatar.value != null
+                        controller.userAvatar.value.isNotEmpty
                             ? NetworkImage(controller.userAvatar.value)
                             : null,
                     child:
-                        controller.userAvatar.value == null
+                        controller.userAvatar.value.isEmpty
                             ? const Icon(
                               Icons.person,
                               size: 20,
@@ -149,10 +149,7 @@ class StoryViewerView extends GetView<StoryViewerController> {
                         ),
                         Text(
                           controller.getTimeAgo(currentStory.createdAt),
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(color: Colors.white, fontSize: 12),
                         ),
                       ],
                     ),

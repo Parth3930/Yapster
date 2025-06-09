@@ -8,6 +8,7 @@ import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/core/services/user_interaction_service.dart';
 import 'package:yapster/app/core/services/intelligent_feed_service.dart';
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
+import 'package:yapster/app/core/utils/avatar_utils.dart';
 
 import 'dart:async';
 
@@ -27,14 +28,14 @@ class PostsFeedController extends GetxController {
   final RxBool isLoadingMore = false.obs;
   final RxBool hasMorePosts = true.obs;
 
-  // Cache management
+  // Cache management - optimized for better performance
   DateTime? _lastPostsLoad;
   static const Duration _postsCacheDuration = Duration(
-    minutes: 5,
-  ); // Increased cache duration
+    minutes: 15,
+  ); // Significantly increased cache duration for better performance
   int _currentOffset = 0;
   static const int _postsPerPage =
-      15; // Increased page size for better performance
+      20; // Increased page size for better performance
 
   // Realtime subscription
   RealtimeChannel? _postsSubscription;
@@ -327,14 +328,17 @@ class PostsFeedController extends GetxController {
     bool filterViewedPosts = false,
   }) async {
     try {
-      // Check if we should use cached data
+      // Check if we should use cached data - increased cache duration for better performance
       if (!forceRefresh && _lastPostsLoad != null && hasLoadedOnce.value) {
         final timeSinceLastLoad = DateTime.now().difference(_lastPostsLoad!);
-        if (timeSinceLastLoad < _postsCacheDuration) {
-          debugPrint('Using cached posts data');
+        if (timeSinceLastLoad < _postsCacheDuration && posts.isNotEmpty) {
+          debugPrint('Using cached posts data (${posts.length} posts)');
           return;
         }
       }
+
+      // Ensure viewed posts are loaded for filtering
+      await _interactionService.refreshViewedPostsCache();
 
       // Only show loading on first load or force refresh
       if (!hasLoadedOnce.value || forceRefresh) {
@@ -368,7 +372,6 @@ class PostsFeedController extends GetxController {
             'p_user_id': currentUserId.value,
             'p_limit': _postsPerPage,
             'p_offset': forceRefresh ? 0 : _currentOffset,
-            'p_filter_viewed': true, // Always filter viewed posts
           },
         );
         newPosts =
@@ -398,7 +401,6 @@ class PostsFeedController extends GetxController {
               'p_user_id': currentUserId.value,
               'p_limit': _postsPerPage,
               'p_offset': forceRefresh ? 0 : _currentOffset,
-              'p_filter_viewed': true, // Always filter viewed posts
             },
           );
           newPosts =
@@ -454,8 +456,8 @@ class PostsFeedController extends GetxController {
         await _feedService.addPostsToFeed(newPosts, currentUserId.value);
         debugPrint('Successfully added posts to feed service');
 
-        // Always filter out viewed posts to prevent duplicates and already interacted posts
-        // Use synchronous version for filtering
+        // Filter out viewed posts using only synchronous cache for better performance
+        // The batch loading ensures the cache is comprehensive
         var postsToShow =
             newPosts
                 .where(
@@ -463,18 +465,9 @@ class PostsFeedController extends GetxController {
                 )
                 .toList();
 
-        // Then do an additional async check for posts not in local cache
-        final futures = <Future<void>>[];
-        for (final post in postsToShow.toList()) {
-          futures.add(
-            _interactionService.hasViewedPost(post.id).then((hasViewed) {
-              if (hasViewed && postsToShow.contains(post)) {
-                postsToShow.remove(post);
-              }
-            }),
-          );
-        }
-        await Future.wait(futures);
+        debugPrint(
+          'Filtered ${newPosts.length - postsToShow.length} viewed posts using cache',
+        );
 
         // Filter out duplicates that might already be in the posts list
         if (!forceRefresh) {
@@ -513,9 +506,23 @@ class PostsFeedController extends GetxController {
         'Posts loading completed. hasLoadedOnce: ${hasLoadedOnce.value}, total posts: ${posts.length}',
       );
 
-      // Refresh any missing profile data
+      // Refresh any missing profile data and preload avatars
       if (posts.isNotEmpty) {
         await refreshMissingProfileData();
+
+        // Batch preload avatars for better performance
+        final avatarData =
+            posts
+                .map(
+                  (post) => {
+                    'avatar': post.avatar,
+                    'google_avatar': post.googleAvatar,
+                  },
+                )
+                .toList();
+
+        // Don't await this to avoid blocking UI
+        AvatarUtils.batchPreloadAvatars(avatarData);
       }
 
       // Manage periodic refresh based on posts availability
@@ -942,39 +949,37 @@ class PostsFeedController extends GetxController {
     await loadPosts(forceRefresh: true);
   }
 
-  /// Load engagement states for posts (likes and favorites)
+  /// Load engagement states for posts (likes and favorites) - optimized batch loading
   Future<void> _loadEngagementStates(List<PostModel> postsList) async {
     final userId = _supabase.client.auth.currentUser?.id;
     if (userId == null) return;
 
     try {
-      // Batch load favorites for performance
-      final userFavorites = await _loadUserFavorites(userId);
-      debugPrint('Loaded ${userFavorites.length} favorites for user $userId');
+      // Batch load all engagement data in parallel for better performance
+      final futures = await Future.wait([
+        _loadUserFavorites(userId),
+        _loadUserLikes(userId, postsList.map((p) => p.id).toList()),
+      ]);
 
+      final userFavorites = futures[0] as Set<String>;
+      final userLikes = futures[1] as Map<String, Map<String, dynamic>>;
+
+      debugPrint(
+        'Loaded ${userFavorites.length} favorites and ${userLikes.length} likes for user $userId',
+      );
+
+      // Update all posts with engagement states
       for (int i = 0; i < postsList.length; i++) {
         final post = postsList[i];
-
-        // Get like state using the optimized function
-        final likeState = await _postRepository.getUserPostLikeState(
-          post.id,
-          userId,
-        );
+        final likeData = userLikes[post.id];
 
         // Update metadata with engagement state
         final updatedMetadata = Map<String, dynamic>.from(post.metadata);
-        updatedMetadata['isLiked'] = likeState?['isLiked'] ?? false;
+        updatedMetadata['isLiked'] = likeData?['isLiked'] ?? false;
+        updatedMetadata['isFavorited'] = userFavorites.contains(post.id);
 
-        // Check if post is favorited using pre-loaded user_favorites data
-        final isFavorited = userFavorites.contains(post.id);
-        updatedMetadata['isFavorited'] = isFavorited;
-
-        debugPrint(
-          'Post ${post.id} - isLiked: ${updatedMetadata['isLiked']}, isFavorited: $isFavorited',
-        );
-
-        // Update the post in the list with correct likes count from database
-        final updatedLikesCount = likeState?['likesCount'] ?? post.likesCount;
+        // Update the post with engagement data
+        final updatedLikesCount = likeData?['likesCount'] ?? post.likesCount;
         postsList[i] = post.copyWith(
           metadata: updatedMetadata,
           likesCount: updatedLikesCount,
@@ -982,6 +987,46 @@ class PostsFeedController extends GetxController {
       }
     } catch (e) {
       debugPrint('Error loading engagement states: $e');
+    }
+  }
+
+  /// Batch load user likes for multiple posts
+  Future<Map<String, Map<String, dynamic>>> _loadUserLikes(
+    String userId,
+    List<String> postIds,
+  ) async {
+    if (postIds.isEmpty) return {};
+
+    try {
+      // Use a single query to get all like states
+      final response = await _supabase.client
+          .from('post_likes')
+          .select('post_id')
+          .eq('user_id', userId)
+          .filter('post_id', 'in', postIds);
+
+      final likedPostIds =
+          response.map((item) => item['post_id'] as String).toSet();
+
+      // Get posts data for like counts
+      final postsResponse = await _supabase.client
+          .from('posts')
+          .select('id, likes_count')
+          .filter('id', 'in', postIds);
+
+      final result = <String, Map<String, dynamic>>{};
+      for (final postData in postsResponse) {
+        final postId = postData['id'] as String;
+        result[postId] = {
+          'isLiked': likedPostIds.contains(postId),
+          'likesCount': postData['likes_count'] ?? 0,
+        };
+      }
+
+      return result;
+    } catch (e) {
+      debugPrint('Error batch loading user likes: $e');
+      return {};
     }
   }
 

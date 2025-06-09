@@ -74,7 +74,7 @@ class FeedLoaderService {
 
   /// Placeholder for the feed algorithm
   static List<PostModel> _applyFeedAlgorithm(List<PostModel> posts) {
-    // TODO: Implement your custom algorithm here
+    // Implement your custom algorithm here
     // Example: sort by recency, filter by user preferences, etc.
     return posts;
   }

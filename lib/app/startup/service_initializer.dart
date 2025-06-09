@@ -17,6 +17,9 @@ import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart'
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/repositories/account_repository.dart';
 import 'package:yapster/app/data/repositories/story_repository.dart';
+import 'package:yapster/app/data/repositories/notification_repository.dart';
+import 'package:yapster/app/data/repositories/device_token_repository.dart';
+import 'package:yapster/app/core/services/push_notification_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Handles initialization of all application services
@@ -55,6 +58,14 @@ class ServiceInitializer {
     }
     if (!Get.isRegistered<StoryRepository>()) {
       Get.put(StoryRepository(), permanent: true);
+    }
+    if (!Get.isRegistered<NotificationRepository>()) {
+      Get.put(NotificationRepository(), permanent: true);
+    }
+
+    // Initialize device token repository
+    if (!Get.isRegistered<DeviceTokenRepository>()) {
+      Get.put(DeviceTokenRepository(), permanent: true);
     }
 
     // Initialize intelligent feed services (UserPostsCacheService moved to initializeRemainingServices)
@@ -150,6 +161,22 @@ class ServiceInitializer {
             'ChatCacheService registered (not initialized, waiting for login)',
           );
         }
+      }
+
+      // Initialize Supabase notification service after user is authenticated
+      if (!Get.isRegistered<PushNotificationService>()) {
+        await Get.putAsync(() => PushNotificationService().init()).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint(
+              'Supabase notification service initialization timed out (non-critical)',
+            );
+            return PushNotificationService();
+          },
+        );
+        debugPrint(
+          'Supabase notification service initialized in ${stopwatch.elapsedMilliseconds}ms',
+        );
       }
 
       // Initialize connectivity monitoring
@@ -262,6 +289,22 @@ class ServiceInitializer {
         Get.put(UserInteractionService(), permanent: true);
       }
 
+      // Check if device token repository is available
+      if (!Get.isRegistered<DeviceTokenRepository>()) {
+        debugPrint(
+          'DeviceTokenRepository not found on hot reload, initializing',
+        );
+        Get.put(DeviceTokenRepository(), permanent: true);
+      }
+
+      // Check if Supabase notification service is available
+      if (!Get.isRegistered<PushNotificationService>()) {
+        debugPrint(
+          'Supabase notification service not found on hot reload, initializing',
+        );
+        await Get.putAsync(() => PushNotificationService().init());
+      }
+
       if (!Get.isRegistered<IntelligentFeedService>()) {
         debugPrint(
           'IntelligentFeedService not found on hot reload, initializing',
@@ -290,6 +333,13 @@ class ServiceInitializer {
       if (!Get.isRegistered<StoryRepository>()) {
         debugPrint('StoryRepository not found on hot reload, initializing');
         Get.put(StoryRepository(), permanent: true);
+      }
+
+      if (!Get.isRegistered<NotificationRepository>()) {
+        debugPrint(
+          'NotificationRepository not found on hot reload, initializing',
+        );
+        Get.put(NotificationRepository(), permanent: true);
       }
 
       // CRITICAL: Force refresh data after hot reload to ensure consistency

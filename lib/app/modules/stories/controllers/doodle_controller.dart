@@ -37,9 +37,9 @@ class DoodleController extends GetxController {
   }
 
   void updateRgbFromColor(Color color) {
-    red.value = color.red.toDouble();
-    green.value = color.green.toDouble();
-    blue.value = color.blue.toDouble();
+    red.value = (color.r * 255.0).round().toDouble();
+    green.value = (color.g * 255.0).round().toDouble();
+    blue.value = (color.b * 255.0).round().toDouble();
   }
 
   void updateColorFromRgb() {

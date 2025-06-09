@@ -10,14 +10,14 @@ class DoodleCanvas extends StatelessWidget {
   final Function() onPanEnd;
 
   const DoodleCanvas({
-    Key? key,
+    super.key,
     required this.drawingPoints,
     required this.color,
     required this.strokeWidth,
     required this.onPanStart,
     required this.onPanUpdate,
     required this.onPanEnd,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -51,19 +51,16 @@ class DoodlePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final point in points) {
-      final paint = Paint()
-        ..color = point.color
-        ..strokeWidth = point.width
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke;
+      final paint =
+          Paint()
+            ..color = point.color
+            ..strokeWidth = point.width
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..style = PaintingStyle.stroke;
 
       for (var i = 0; i < point.points.length - 1; i++) {
-        canvas.drawLine(
-          point.points[i],
-          point.points[i + 1],
-          paint,
-        );
+        canvas.drawLine(point.points[i], point.points[i + 1], paint);
       }
     }
   }

@@ -451,9 +451,24 @@ class PostRepository extends GetxService {
             isAddingStar = true;
           }
 
+          // Determine primary interaction type
+          String primaryInteractionType = 'star';
+          if (updatedMetadata.containsKey('like')) {
+            primaryInteractionType = 'like';
+          }
+          if (updatedMetadata.containsKey('comment')) {
+            primaryInteractionType = 'comment';
+          }
+          if (updatedMetadata.containsKey('share')) {
+            primaryInteractionType = 'share';
+          }
+
           await _supabase.client
               .from('user_interactions')
-              .update({'metadata': updatedMetadata})
+              .update({
+                'interaction_type': primaryInteractionType,
+                'metadata': updatedMetadata,
+              })
               .eq('id', existingInteraction['id']);
         }
       } else {
@@ -461,6 +476,7 @@ class PostRepository extends GetxService {
         await _supabase.client.from('user_interactions').insert({
           'user_id': userId,
           'post_id': postId,
+          'interaction_type': 'star',
           'metadata': {'star': true},
           'created_at': DateTime.now().toIso8601String(),
         });

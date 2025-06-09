@@ -11,14 +11,14 @@ class PostActionButton extends StatelessWidget {
   final Color? textColor;
 
   const PostActionButton({
-    Key? key,
+    super.key,
     required this.assetPath,
     this.text,
     required this.onTap,
     this.glassy = false,
     this.size = 25,
     this.textColor,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

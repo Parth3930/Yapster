@@ -99,7 +99,7 @@ class DoodleWidget extends GetView<DoodleController> {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.5),
+                            color: Colors.black.withValues(alpha: 0.5),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -181,7 +181,7 @@ class DoodleWidget extends GetView<DoodleController> {
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.5),
+                                    color: Colors.black.withValues(alpha: 0.5),
                                     blurRadius: 4,
                                     spreadRadius: 1,
                                     offset: const Offset(0, 2),

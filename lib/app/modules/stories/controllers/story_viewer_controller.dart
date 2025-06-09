@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/repositories/story_repository.dart';
@@ -69,7 +70,7 @@ class StoryViewerController extends GetxController {
         await markCurrentStoryAsViewed();
       }
     } catch (e) {
-      print('Error loading user stories: $e');
+      debugPrint('Error loading user stories: $e');
       Get.snackbar('Error', 'Failed to load stories');
     } finally {
       isLoading.value = false;
@@ -90,7 +91,7 @@ class StoryViewerController extends GetxController {
           response['nickname'] ?? response['username'] ?? 'Unknown';
       userAvatar.value = response['avatar'] ?? '';
     } catch (e) {
-      print('Error loading user info: $e');
+      debugPrint('Error loading user info: $e');
     }
   }
 
@@ -188,7 +189,7 @@ class StoryViewerController extends GetxController {
         }
       }
     } catch (e) {
-      print('Error marking story as viewed: $e');
+      debugPrint('Error marking story as viewed: $e');
     }
   }
 

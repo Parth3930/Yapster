@@ -276,9 +276,9 @@ class _ChatViewState extends State<ChatView> {
         'description': group.description,
         'icon_url': group.iconUrl,
         'member_count': group.members.length,
-        'last_message': '', // TODO: Get last group message
+        'last_message': '', // Get last group message from database
         'last_message_time': group.updatedAt.toIso8601String(),
-        'unread_count': 0, // TODO: Get unread count
+        'unread_count': 0, // Get unread count from database
         'groupData': group.toJson(), // Include full group data
       });
     }

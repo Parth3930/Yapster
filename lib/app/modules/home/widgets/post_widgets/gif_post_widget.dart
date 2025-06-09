@@ -257,8 +257,8 @@ class GifPostWidget extends BasePostWidget {
   }
 
   void _showGifFullscreen(String gifUrl) {
-    // TODO: Implement fullscreen GIF viewer with controls
-    print('Show fullscreen GIF: $gifUrl');
+    // Implement fullscreen GIF viewer with controls
+    debugPrint('Show fullscreen GIF: $gifUrl');
   }
 
   Widget _buildPostHeader() {

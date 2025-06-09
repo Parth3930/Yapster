@@ -19,10 +19,17 @@ class UserInteractionService extends GetxService {
   static const String _preferencesKey = 'user_preferences';
   static const String _viewedPostsKey = 'viewed_posts';
 
+  // Cache for batch loaded viewed posts
+  DateTime? _lastViewedPostsLoad;
+  static const Duration _viewedPostsCacheDuration = Duration(minutes: 10);
+  bool _isLoadingViewedPosts = false;
+
   @override
   void onInit() {
     super.onInit();
     _loadUserPreferences();
+    // Preload viewed posts for faster filtering
+    _batchLoadViewedPosts();
   }
 
   /// Load user preferences from local storage
@@ -95,10 +102,17 @@ class UserInteractionService extends GetxService {
     _updateContentTypePreference(postType, weight);
     _updateAuthorPreference(authorId, weight);
 
-    // Note: The database interaction is now handled by the toggle_post_like function
-    // This method only updates local preferences for the recommendation algorithm
-    // The actual database interaction (user_interactions table) is managed atomically
-    // by the SQL function to ensure consistency
+    // Track the like interaction in the database for the intelligent feed algorithm
+    // This works alongside the toggle_post_like function to ensure we have
+    // interaction data for recommendations
+    if (isLike) {
+      await _trackInteractionInDatabase(postId, 'like', {
+        'post_type': postType,
+        'author_id': authorId,
+        'timestamp': DateTime.now().toIso8601String(),
+        'action': 'liked',
+      });
+    }
 
     await _saveUserPreferences();
   }
@@ -207,10 +221,16 @@ class UserInteractionService extends GetxService {
         existingMetadata[interactionType] = metadata;
         existingMetadata['last_updated'] = DateTime.now().toIso8601String();
 
-        // Update the record
+        // Determine the primary interaction type (most recent or most important)
+        String primaryInteractionType = _determinePrimaryInteractionType(
+          existingMetadata,
+        );
+
+        // Update the record with both metadata and interaction_type
         await _supabase.client
             .from('user_interactions')
             .update({
+              'interaction_type': primaryInteractionType,
               'metadata': existingMetadata,
               'updated_at': DateTime.now().toIso8601String(),
             })
@@ -224,10 +244,11 @@ class UserInteractionService extends GetxService {
           'last_updated': DateTime.now().toIso8601String(),
         };
 
-        // Insert new record
+        // Insert new record with both interaction_type and metadata
         await _supabase.client.from('user_interactions').insert({
           'user_id': userId,
           'post_id': postId,
+          'interaction_type': interactionType,
           'metadata': interactionsJson,
           'created_at': DateTime.now().toIso8601String(),
         });
@@ -235,6 +256,21 @@ class UserInteractionService extends GetxService {
     } catch (e) {
       debugPrint('Error tracking interaction in database: $e');
     }
+  }
+
+  /// Determine the primary interaction type based on importance hierarchy
+  String _determinePrimaryInteractionType(Map<String, dynamic> metadata) {
+    // Priority order: share > comment > like > view > time_spent
+    const priorityOrder = ['share', 'comment', 'like', 'view', 'time_spent'];
+
+    for (final interactionType in priorityOrder) {
+      if (metadata.containsKey(interactionType)) {
+        return interactionType;
+      }
+    }
+
+    // Fallback to 'view' if no known interaction types found
+    return 'view';
   }
 
   /// Get user preference score for a post type
@@ -283,6 +319,56 @@ class UserInteractionService extends GetxService {
   /// Synchronous version that only checks local cache (for filtering operations)
   bool hasViewedPostSync(String postId) {
     return _viewedPosts.contains(postId);
+  }
+
+  /// Batch load viewed posts from database for faster filtering
+  Future<void> _batchLoadViewedPosts() async {
+    if (_isLoadingViewedPosts) return;
+
+    // Check if we need to refresh the cache
+    if (_lastViewedPostsLoad != null) {
+      final timeSinceLastLoad = DateTime.now().difference(
+        _lastViewedPostsLoad!,
+      );
+      if (timeSinceLastLoad < _viewedPostsCacheDuration) {
+        return; // Cache is still valid
+      }
+    }
+
+    try {
+      _isLoadingViewedPosts = true;
+      final userId = _supabase.client.auth.currentUser?.id;
+      if (userId == null) return;
+
+      debugPrint('Batch loading viewed posts for faster filtering...');
+
+      // Load all user interactions to populate viewed posts cache
+      final response = await _supabase.client
+          .from('user_interactions')
+          .select('post_id')
+          .eq('user_id', userId);
+
+      // Add all interacted posts to viewed posts cache
+      for (final record in response) {
+        final postId = record['post_id'] as String?;
+        if (postId != null) {
+          _viewedPosts.add(postId);
+        }
+      }
+
+      _lastViewedPostsLoad = DateTime.now();
+      debugPrint('Loaded ${_viewedPosts.length} viewed posts into cache');
+    } catch (e) {
+      debugPrint('Error batch loading viewed posts: $e');
+    } finally {
+      _isLoadingViewedPosts = false;
+    }
+  }
+
+  /// Force refresh viewed posts cache
+  Future<void> refreshViewedPostsCache() async {
+    _lastViewedPostsLoad = null;
+    await _batchLoadViewedPosts();
   }
 
   /// Get viewed posts count

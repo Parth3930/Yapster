@@ -8,25 +8,20 @@ class SplashView extends GetView<SplashController> {
 
   @override
   Widget build(BuildContext context) {
-    // Ensure the controller is registered
-    try {
-      Get.find<SplashController>();
-    } catch (_) {
-      // If controller doesn't exist, create it
-      Get.lazyPut(() => SplashController());
+    // Ensure the controller is registered - this is a safety check for hot reload
+    if (!Get.isRegistered<SplashController>()) {
+      Get.put(SplashController());
     }
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Center(
         child: Obx(() {
-          try {
-            // Access the reactive variable (this will cause navigation when ready)
+          // Access the reactive variable safely (this will cause navigation when ready)
+          if (Get.isRegistered<SplashController>()) {
             controller.isInitialized.value;
-          } catch (e) {
-            // Ignore errors from controller not being ready
           }
-          
+
           return Text(
             'Yapster',
             style: TextStyle(
@@ -41,4 +36,4 @@ class SplashView extends GetView<SplashController> {
       ),
     );
   }
-} 
+}

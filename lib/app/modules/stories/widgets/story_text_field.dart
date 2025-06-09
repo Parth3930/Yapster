@@ -117,13 +117,15 @@ class _StoryTextFieldState extends State<StoryTextField> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: widget.backgroundColor != Colors.transparent
-                ? widget.backgroundColor
-                : null,
+            color:
+                widget.backgroundColor != Colors.transparent
+                    ? widget.backgroundColor
+                    : null,
             borderRadius: BorderRadius.circular(8),
-            border: widget.isEditing
-                ? Border.all(color: Colors.white, width: 1)
-                : null,
+            border:
+                widget.isEditing
+                    ? Border.all(color: Colors.white, width: 1)
+                    : null,
           ),
           child: IntrinsicWidth(
             child: TextField(
@@ -138,7 +140,7 @@ class _StoryTextFieldState extends State<StoryTextField> {
               decoration: InputDecoration.collapsed(
                 hintText: 'Type something...',
                 hintStyle: TextStyle(
-                  color: widget.textColor.withOpacity(0.7),
+                  color: widget.textColor.withValues(alpha: 0.7),
                   fontSize: widget.textSize,
                   fontWeight: widget.fontWeight,
                 ),

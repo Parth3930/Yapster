@@ -41,7 +41,8 @@ class _ProfileBannerWidgetState extends State<ProfileBannerWidget> {
   @override
   void didUpdateWidget(ProfileBannerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.selectedImage != oldWidget.selectedImage && widget.selectedImage != null) {
+    if (widget.selectedImage != oldWidget.selectedImage &&
+        widget.selectedImage != null) {
       setState(() {
         _currentImage = widget.selectedImage;
         _uploadBanner(_currentImage!);
@@ -51,7 +52,7 @@ class _ProfileBannerWidgetState extends State<ProfileBannerWidget> {
 
   Future<void> _uploadBanner(XFile imageFile) async {
     if (_isUploading) return;
-    
+
     setState(() {
       _isUploading = true;
     });
@@ -95,31 +96,32 @@ class _ProfileBannerWidgetState extends State<ProfileBannerWidget> {
                   bottomLeft: Radius.circular(20),
                   bottomRight: Radius.circular(20),
                 ),
-                child: _currentImage!.path.startsWith('http')
-                    ? Image.network(
-                        _currentImage!.path,
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[800],
-                            child: const Center(child: Icon(Icons.error)),
-                          );
-                        },
-                      )
-                    : Image.file(
-                        File(_currentImage!.path),
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[800],
-                            child: const Center(child: Icon(Icons.error)),
-                          );
-                        },
-                      ),
+                child:
+                    _currentImage!.path.startsWith('http')
+                        ? Image.network(
+                          _currentImage!.path,
+                          width: double.infinity,
+                          height: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey[800],
+                              child: const Center(child: Icon(Icons.error)),
+                            );
+                          },
+                        )
+                        : Image.file(
+                          File(_currentImage!.path),
+                          width: double.infinity,
+                          height: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey[800],
+                              child: const Center(child: Icon(Icons.error)),
+                            );
+                          },
+                        ),
               )
             else if (accountDataProvider.banner.value.isNotEmpty)
               ClipRRect(
@@ -143,7 +145,7 @@ class _ProfileBannerWidgetState extends State<ProfileBannerWidget> {
               width: double.infinity,
               height: double.infinity,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(alpha: 0.3),
                 borderRadius: const BorderRadius.only(
                   bottomLeft: Radius.circular(20),
                   bottomRight: Radius.circular(20),

@@ -6,8 +6,6 @@ import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 import '../controllers/profile_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:yapster/app/core/utils/avatar_utils.dart';
-import 'package:yapster/app/core/utils/banner_utils.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';

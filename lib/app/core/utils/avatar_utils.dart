@@ -11,8 +11,13 @@ import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 /// Utility class for handling avatar-related operations
 /// This centralizes common avatar functionality used across controllers
 class AvatarUtils {
-  // Cache for avatar URLs to avoid unnecessary network requests
+  // Enhanced cache for avatar URLs to avoid unnecessary network requests
   static final Map<String, ImageProvider> _imageCache = {};
+  static final Map<String, DateTime> _cacheTimestamps = {};
+  static const Duration _cacheExpiration = Duration(hours: 6);
+
+  // Preloading cache for frequently accessed avatars
+  static final Set<String> _preloadedAvatars = {};
 
   /// Picks an image from the gallery and returns the selected image file
   static Future<XFile?> pickImageFromGallery() async {
@@ -197,9 +202,78 @@ class AvatarUtils {
     return null;
   }
 
+  /// Clean expired cache entries
+  static void _cleanExpiredCache() {
+    final now = DateTime.now();
+    final expiredKeys = <String>[];
+
+    _cacheTimestamps.forEach((key, timestamp) {
+      if (now.difference(timestamp) > _cacheExpiration) {
+        expiredKeys.add(key);
+      }
+    });
+
+    for (final key in expiredKeys) {
+      _imageCache.remove(key);
+      _cacheTimestamps.remove(key);
+      _preloadedAvatars.remove(key);
+    }
+
+    if (expiredKeys.isNotEmpty) {
+      debugPrint('Cleaned ${expiredKeys.length} expired avatar cache entries');
+    }
+  }
+
+  /// Batch preload avatars for multiple users
+  static Future<void> batchPreloadAvatars(
+    List<Map<String, String?>> avatarData,
+  ) async {
+    _cleanExpiredCache();
+
+    final futures = <Future<void>>[];
+    for (final data in avatarData) {
+      final profileUrl = data['avatar'];
+      final googleUrl = data['google_avatar'];
+
+      if (profileUrl != null &&
+          isValidUrl(profileUrl) &&
+          !_preloadedAvatars.contains(profileUrl)) {
+        futures.add(_preloadSingleAvatar(profileUrl));
+      }
+
+      if (googleUrl != null &&
+          isValidUrl(googleUrl) &&
+          !_preloadedAvatars.contains(googleUrl)) {
+        futures.add(_preloadSingleAvatar(googleUrl));
+      }
+    }
+
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
+      debugPrint('Batch preloaded ${futures.length} avatars');
+    }
+  }
+
+  /// Preload a single avatar
+  static Future<void> _preloadSingleAvatar(String url) async {
+    try {
+      if (Get.context != null) {
+        final provider = CachedNetworkImageProvider(url);
+        await precacheImage(provider, Get.context!);
+        _imageCache[url] = provider;
+        _cacheTimestamps[url] = DateTime.now();
+        _preloadedAvatars.add(url);
+      }
+    } catch (e) {
+      debugPrint('Error preloading avatar $url: $e');
+    }
+  }
+
   /// Preloads avatar images to make them instantly available when needed
   static void preloadAvatarImages(AccountDataProvider provider) {
     try {
+      _cleanExpiredCache();
+
       // Log avatar sources for debugging
       debugPrint(
         'Preloading avatars - Profile avatar: ${provider.avatar.value}',
@@ -215,27 +289,17 @@ class AvatarUtils {
 
       // Preload profile avatar if valid
       final profileAvatarUrl = provider.avatar.value;
-      if (isValidUrl(profileAvatarUrl)) {
-        precacheImage(
-          CachedNetworkImageProvider(profileAvatarUrl),
-          Get.context!,
-        );
-        _imageCache[profileAvatarUrl] = CachedNetworkImageProvider(
-          profileAvatarUrl,
-        );
+      if (isValidUrl(profileAvatarUrl) &&
+          !_preloadedAvatars.contains(profileAvatarUrl)) {
+        _preloadSingleAvatar(profileAvatarUrl);
         debugPrint('Profile avatar preloaded: $profileAvatarUrl');
       }
 
       // Preload Google avatar if valid
       final googleAvatarUrl = provider.googleAvatar.value;
-      if (isValidUrl(googleAvatarUrl)) {
-        precacheImage(
-          CachedNetworkImageProvider(googleAvatarUrl),
-          Get.context!,
-        );
-        _imageCache[googleAvatarUrl] = CachedNetworkImageProvider(
-          googleAvatarUrl,
-        );
+      if (isValidUrl(googleAvatarUrl) &&
+          !_preloadedAvatars.contains(googleAvatarUrl)) {
+        _preloadSingleAvatar(googleAvatarUrl);
         debugPrint('Google avatar preloaded: $googleAvatarUrl');
 
         // CRITICAL FIX: If regular avatar is skiped, ensure the Google avatar is ready
@@ -414,3 +478,4 @@ class AvatarUtils {
     return '';
   }
 }
+  

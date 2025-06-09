@@ -235,9 +235,9 @@ class StoriesController extends GetxController {
       }
 
       // Debug print to check user ID
-      print('Creating story for user ID: ${user.id}');
-      print('User email: ${user.email}');
-      print('User metadata: ${user.userMetadata}');
+      debugPrint('Creating story for user ID: ${user.id}');
+      debugPrint('User email: ${user.email}');
+      debugPrint('User metadata: ${user.userMetadata}');
 
       if (user.id.isEmpty) {
         Get.snackbar('Error', 'Invalid user ID');
@@ -261,7 +261,7 @@ class StoriesController extends GetxController {
                         drawingPoint.points
                             .map((offset) => {'x': offset.dx, 'y': offset.dy})
                             .toList(),
-                    'color': drawingPoint.color.value,
+                    'color': drawingPoint.color.toARGB32(),
                     'stroke_width': drawingPoint.width,
                   },
                 )
@@ -329,10 +329,10 @@ class StoriesController extends GetxController {
             .update({'image_url': imageUrl})
             .eq('id', storyId);
 
-        print('Story image uploaded and updated successfully');
+        debugPrint('Story image uploaded and updated successfully');
       }
     } catch (e) {
-      print('Error uploading image in background: $e');
+      debugPrint('Error uploading image in background: $e');
       // Don't show error to user since story was already posted successfully
     }
   }
