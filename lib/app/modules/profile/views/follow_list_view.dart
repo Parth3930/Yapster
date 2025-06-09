@@ -6,6 +6,7 @@ import 'package:yapster/app/modules/explore/controllers/explore_controller.dart'
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
+import 'package:yapster/app/startup/preloader/cache_manager.dart';
 
 class FollowListView extends StatefulWidget {
   final String userId;
@@ -146,10 +147,34 @@ class _FollowListViewState extends State<FollowListView> {
                 .eq('user_id', currentUserId);
           }
 
-          // CRITICAL: Also refresh the AccountDataProvider's following list cache
-          // to match the actual database state
-          debugPrint('Refreshing AccountDataProvider following list cache');
-          await _accountDataProvider.loadFollowing(currentUserId);
+          // CRITICAL: Update AccountDataProvider's following list cache with actual data
+          // Clear the old cache first
+          _accountDataProvider.clearFollowCaches(currentUserId);
+
+          // Convert the actual loaded users to the format expected by AccountDataProvider
+          final followingData =
+              users
+                  .map(
+                    (user) => {
+                      'following_id': user['user_id'],
+                      'created_at': DateTime.now().toIso8601String(),
+                    },
+                  )
+                  .toList();
+
+          // Update the cache with the actual data we just loaded
+          _accountDataProvider.following.clear();
+          _accountDataProvider.following.addAll(followingData);
+          _accountDataProvider.markFollowingFetched(currentUserId);
+
+          // CRITICAL: Also update the persistent cache to prevent it from overriding our fresh data
+          final cacheManager = Get.find<CacheManager>();
+          await cacheManager.cacheUserFollowing(currentUserId, followingData);
+
+          debugPrint(
+            'Updated AccountDataProvider following cache with ${followingData.length} users',
+          );
+          debugPrint('Updated persistent cache with fresh following data');
 
           // Also clear ExploreController's follow state cache to force fresh checks
           _exploreController.clearAllFollowStateCaches();
@@ -169,9 +194,34 @@ class _FollowListViewState extends State<FollowListView> {
                 .eq('user_id', currentUserId);
           }
 
-          // CRITICAL: Also refresh the AccountDataProvider's followers list cache
-          debugPrint('Refreshing AccountDataProvider followers list cache');
-          await _accountDataProvider.loadFollowers(currentUserId);
+          // CRITICAL: Update AccountDataProvider's followers list cache with actual data
+          // Clear the old cache first
+          _accountDataProvider.clearFollowCaches(currentUserId);
+
+          // Convert the actual loaded users to the format expected by AccountDataProvider
+          final followersData =
+              users
+                  .map(
+                    (user) => {
+                      'follower_id': user['user_id'],
+                      'created_at': DateTime.now().toIso8601String(),
+                    },
+                  )
+                  .toList();
+
+          // Update the cache with the actual data we just loaded
+          _accountDataProvider.followers.clear();
+          _accountDataProvider.followers.addAll(followersData);
+          _accountDataProvider.markFollowersFetched(currentUserId);
+
+          // CRITICAL: Also update the persistent cache to prevent it from overriding our fresh data
+          final cacheManager = Get.find<CacheManager>();
+          await cacheManager.cacheUserFollowers(currentUserId, followersData);
+
+          debugPrint(
+            'Updated AccountDataProvider followers cache with ${followersData.length} users',
+          );
+          debugPrint('Updated persistent cache with fresh followers data');
         }
       }
     } catch (e) {

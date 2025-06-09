@@ -180,11 +180,13 @@ class _MessageBubbleWrapper extends StatelessWidget {
     // If message has observable properties (like isRead),
     // you can make those reactive inside MessageBubble itself.
 
-    // Wrap MessageBubble in Obx to react to changes in messagesToAnimate
+    // Wrap MessageBubble in Obx to react to changes in messagesToAnimate and message content
     return Obx(() {
+      // CRITICAL: Create a fresh map each time to ensure reactivity to content changes
       final msgMap = {
         'message_id': message.messageId,
-        'content': message.content,
+        'content':
+            message.content, // This will update when image upload completes
         'created_at': message.createdAt.toIso8601String(),
         'sender_id': message.senderId,
         'is_read': message.isRead,
@@ -196,9 +198,11 @@ class _MessageBubbleWrapper extends StatelessWidget {
       };
       final isDeleting =
           controller.deletingMessageId.value == message.messageId;
+
+      // Include content in the key to force rebuild when content changes (e.g., image upload)
       return MessageBubble(
         key: ValueKey(
-          'msg_${message.messageId}_${message.senderId}_${isMe}_${msgMap['is_new']}_$isDeleting',
+          'msg_${message.messageId}_${message.senderId}_${isMe}_${msgMap['is_new']}_${isDeleting}_${message.content.hashCode}',
         ),
         message: msgMap,
         isMe: isMe,

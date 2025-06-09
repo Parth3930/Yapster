@@ -98,7 +98,13 @@ class _MessageBubbleState extends State<MessageBubble>
             (_messageContent.contains('.jpg') ||
                 _messageContent.contains('.jpeg') ||
                 _messageContent.contains('.png') ||
-                _messageContent.contains('.gif')));
+                _messageContent.contains('.gif') ||
+                _messageContent.contains(
+                  'chat-media',
+                ))) || // Supabase storage URLs
+        (_messageContent.contains('supabase') &&
+            _messageContent.contains('storage') &&
+            _messageContent.contains('chat-media'));
 
     _isAudioMessage =
         widget.message['message_type'] ==
@@ -125,6 +131,14 @@ class _MessageBubbleState extends State<MessageBubble>
       } else {
         _imageUrl = null;
       }
+
+      // Debug logging for image messages
+      debugPrint('Image message detected:');
+      debugPrint('  Message ID: $_messageId');
+      debugPrint('  Message Type: ${widget.message['message_type']}');
+      debugPrint('  Content: $_messageContent');
+      debugPrint('  Image URL: $_imageUrl');
+      debugPrint('  Is Placeholder: $_isPlaceholder');
     } else {
       _imageUrl = null;
     }
