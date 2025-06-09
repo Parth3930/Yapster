@@ -266,10 +266,10 @@ class GifPostWidget extends BasePostWidget {
       children: [
         PostAvatarWidget(
           post: post,
-          radius: 20,
+          radius: 16,
           onTap: () => _navigateToProfile(),
         ),
-        SizedBox(width: 12),
+        SizedBox(width: 10),
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,14 +279,18 @@ class GifPostWidget extends BasePostWidget {
                 children: [
                   Row(
                     children: [
-                      GestureDetector(
-                        onTap: () => _navigateToProfile(),
-                        child: Text(
-                          post.username ?? 'Unknown User',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: () => _navigateToProfile(),
+                          child: Text(
+                            _getTruncatedDisplayName(),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ),
                       ),
@@ -390,6 +394,26 @@ class GifPostWidget extends BasePostWidget {
     } else {
       return 'now';
     }
+  }
+
+  String _getDisplayName() {
+    // Show nickname if available, otherwise show username, fallback to 'Yapper'
+    if (post.nickname != null && post.nickname!.isNotEmpty) {
+      return post.nickname!;
+    } else if (post.username != null && post.username!.isNotEmpty) {
+      return post.username!;
+    } else {
+      return 'Yapper';
+    }
+  }
+
+  String _getTruncatedDisplayName() {
+    final displayName = _getDisplayName();
+    // Truncate to 10 characters and add ellipsis if longer
+    if (displayName.length > 10) {
+      return '${displayName.substring(0, 10)}..';
+    }
+    return displayName;
   }
 
   // Helper method to safely access metadata values

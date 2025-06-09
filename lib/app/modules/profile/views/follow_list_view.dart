@@ -539,7 +539,7 @@ class _FollowListViewState extends State<FollowListView> {
     isLoading.value = true;
     try {
       await _exploreController.toggleFollowUser(userId);
-      await _exploreController.refreshFollowState(userId);
+      await _exploreController.refreshFollowState(userId, forceRefresh: true);
 
       final currentUserId = _supabaseService.currentUser.value?.id;
       if (currentUserId != null) {
@@ -561,7 +561,7 @@ class _FollowListViewState extends State<FollowListView> {
     isLoading.value = true;
     try {
       await _exploreController.toggleFollowUser(userId);
-      await _exploreController.refreshFollowState(userId);
+      await _exploreController.refreshFollowState(userId, forceRefresh: true);
 
       final currentUserId = _supabaseService.currentUser.value?.id;
       if (currentUserId != null) {

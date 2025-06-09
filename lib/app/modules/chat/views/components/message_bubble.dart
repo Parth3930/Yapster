@@ -50,6 +50,9 @@ class _MessageBubbleState extends State<MessageBubble>
   late final AccountDataProvider _accountDataProvider;
   late final ChatController _chatController;
 
+  // Static cache for group member avatars to avoid repeated database calls
+  static final Map<String, Map<String, String?>> _groupMemberAvatarCache = {};
+
   // Cached message properties
   late final bool _isNew;
   late final bool _isSending;
@@ -64,8 +67,9 @@ class _MessageBubbleState extends State<MessageBubble>
   late final bool _isAudioMessage;
   late final bool _isSharedPost;
   late final Map<String, dynamic>? _sharedPostData;
-  late final ImageProvider? _avatarImage;
-  late final bool _hasAnyAvatar;
+  ImageProvider?
+  _avatarImage; // Remove late final since it's set asynchronously
+  bool _hasAnyAvatar = false; // Remove late final and initialize
   late final String _messageId;
 
   @override
@@ -142,31 +146,119 @@ class _MessageBubbleState extends State<MessageBubble>
       regularAvatar = _accountDataProvider.avatar.value;
       googleAvatar = _accountDataProvider.googleAvatar.value;
     } else {
-      final followingMatch = _accountDataProvider.following.firstWhereOrNull(
-        (f) => f['following_id'] == widget.otherUserId,
-      );
-      final followerMatch = _accountDataProvider.followers.firstWhereOrNull(
-        (f) => f['follower_id'] == widget.otherUserId,
-      );
+      // Check if this is a group chat by looking at arguments
+      final args = Get.arguments;
+      final bool isGroupChat =
+          args != null &&
+          args is Map<String, dynamic> &&
+          args.containsKey('groupId');
 
-      if (followingMatch != null) {
-        regularAvatar = followingMatch['avatar'];
-        googleAvatar = followingMatch['google_avatar'];
-      } else if (followerMatch != null) {
-        regularAvatar = followerMatch['avatar'];
-        googleAvatar = followerMatch['google_avatar'];
+      if (isGroupChat) {
+        // For group chats, get the sender ID from the message
+        final senderId = widget.message['sender_id'] as String?;
+        if (senderId != null) {
+          // Initialize with default values first
+          _setAvatarImage(null, null);
+          // Then fetch the actual avatar asynchronously
+          _fetchGroupMemberAvatar(senderId);
+          return; // Exit early, avatar will be updated in the fetch method
+        }
+      } else {
+        // For regular chats, use the existing logic
+        final followingMatch = _accountDataProvider.following.firstWhereOrNull(
+          (f) => f['following_id'] == widget.otherUserId,
+        );
+        final followerMatch = _accountDataProvider.followers.firstWhereOrNull(
+          (f) => f['follower_id'] == widget.otherUserId,
+        );
+
+        if (followingMatch != null) {
+          regularAvatar = followingMatch['avatar'];
+          googleAvatar = followingMatch['google_avatar'];
+        } else if (followerMatch != null) {
+          regularAvatar = followerMatch['avatar'];
+          googleAvatar = followerMatch['google_avatar'];
+        }
       }
     }
 
-    if (AvatarUtils.isValidUrl(regularAvatar)) {
-      _avatarImage = CachedNetworkImageProvider(regularAvatar!);
-    } else if (AvatarUtils.isValidUrl(googleAvatar)) {
-      _avatarImage = CachedNetworkImageProvider(googleAvatar!);
+    _setAvatarImage(regularAvatar, googleAvatar);
+  }
+
+  void _setAvatarImage(String? regularAvatar, String? googleAvatar) {
+    // Handle avatar with fallback to google_avatar when avatar is null or "skiped"
+    String? finalAvatar;
+
+    if (regularAvatar == 'skiped' ||
+        regularAvatar == null ||
+        regularAvatar.isEmpty) {
+      finalAvatar = googleAvatar?.isNotEmpty == true ? googleAvatar : null;
     } else {
-      _avatarImage = null;
+      finalAvatar = regularAvatar.isNotEmpty ? regularAvatar : null;
     }
 
-    _hasAnyAvatar = _avatarImage != null;
+    if (AvatarUtils.isValidUrl(finalAvatar)) {
+      _avatarImage = CachedNetworkImageProvider(finalAvatar!);
+      _hasAnyAvatar = true;
+    } else {
+      _avatarImage = null;
+      _hasAnyAvatar = false;
+    }
+  }
+
+  void _fetchGroupMemberAvatar(String senderId) async {
+    try {
+      // Check cache first
+      if (_groupMemberAvatarCache.containsKey(senderId)) {
+        final cachedData = _groupMemberAvatarCache[senderId]!;
+        if (mounted) {
+          setState(() {
+            _setAvatarImage(cachedData['avatar'], cachedData['google_avatar']);
+          });
+        }
+        return;
+      }
+
+      final supabaseService = Get.find<SupabaseService>();
+
+      // Fetch avatar data from profiles table
+      final response =
+          await supabaseService.client
+              .from('profiles')
+              .select('avatar, google_avatar')
+              .eq('user_id', senderId)
+              .single();
+
+      final regularAvatar = response['avatar'] as String?;
+      final googleAvatar = response['google_avatar'] as String?;
+
+      // Cache the result
+      _groupMemberAvatarCache[senderId] = {
+        'avatar': regularAvatar,
+        'google_avatar': googleAvatar,
+      };
+
+      if (mounted) {
+        setState(() {
+          _setAvatarImage(regularAvatar, googleAvatar);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching group member avatar: $e');
+      // Cache null values to avoid repeated failed requests
+      _groupMemberAvatarCache[senderId] = {
+        'avatar': null,
+        'google_avatar': null,
+      };
+
+      // Set default avatar on error
+      if (mounted) {
+        setState(() {
+          _avatarImage = null;
+          _hasAnyAvatar = false;
+        });
+      }
+    }
   }
 
   void _initializeAnimations() {

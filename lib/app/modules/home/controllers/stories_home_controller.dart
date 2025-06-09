@@ -71,7 +71,9 @@ class StoriesHomeController extends GetxController {
       // Get the list of follower user IDs
       final followerIds =
           _accountProvider.followers
-              .map((follower) => follower['user_id'] as String)
+              .map((follower) => follower['follower_id'] as String?)
+              .where((id) => id != null)
+              .cast<String>()
               .toList();
 
       if (followerIds.isEmpty) {

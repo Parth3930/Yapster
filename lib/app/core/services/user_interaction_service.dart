@@ -7,7 +7,16 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 
 /// Service for tracking user interactions and learning preferences
 class UserInteractionService extends GetxService {
-  SupabaseService get _supabase => Get.find<SupabaseService>();
+  // Lazy initialization to avoid dependency issues
+  SupabaseService? get _supabase {
+    try {
+      return Get.find<SupabaseService>();
+    } catch (e) {
+      debugPrint('SupabaseService not available yet: $e');
+      return null;
+    }
+  }
+
   StorageService get _storage => Get.find<StorageService>();
 
   // Local cache for user preferences
@@ -198,12 +207,20 @@ class UserInteractionService extends GetxService {
     Map<String, dynamic> metadata,
   ) async {
     try {
-      final userId = _supabase.client.auth.currentUser?.id;
+      final supabase = _supabase;
+      if (supabase == null) {
+        debugPrint(
+          'SupabaseService not available, skipping interaction tracking',
+        );
+        return;
+      }
+
+      final userId = supabase.client.auth.currentUser?.id;
       if (userId == null) return;
 
       // First check if there's an existing record for this user-post pair
       final existingRecord =
-          await _supabase.client
+          await supabase.client
               .from('user_interactions')
               .select()
               .eq('user_id', userId)
@@ -227,7 +244,7 @@ class UserInteractionService extends GetxService {
         );
 
         // Update the record with both metadata and interaction_type
-        await _supabase.client
+        await supabase.client
             .from('user_interactions')
             .update({
               'interaction_type': primaryInteractionType,
@@ -245,7 +262,7 @@ class UserInteractionService extends GetxService {
         };
 
         // Insert new record with both interaction_type and metadata
-        await _supabase.client.from('user_interactions').insert({
+        await supabase.client.from('user_interactions').insert({
           'user_id': userId,
           'post_id': postId,
           'interaction_type': interactionType,
@@ -292,11 +309,14 @@ class UserInteractionService extends GetxService {
 
     // Then check database for interactions
     try {
-      final userId = _supabase.client.auth.currentUser?.id;
+      final supabase = _supabase;
+      if (supabase == null) return false;
+
+      final userId = supabase.client.auth.currentUser?.id;
       if (userId == null) return false;
 
       final record =
-          await _supabase.client
+          await supabase.client
               .from('user_interactions')
               .select()
               .eq('user_id', userId)
@@ -337,13 +357,19 @@ class UserInteractionService extends GetxService {
 
     try {
       _isLoadingViewedPosts = true;
-      final userId = _supabase.client.auth.currentUser?.id;
+      final supabase = _supabase;
+      if (supabase == null) {
+        debugPrint('SupabaseService not available, skipping batch load');
+        return;
+      }
+
+      final userId = supabase.client.auth.currentUser?.id;
       if (userId == null) return;
 
       debugPrint('Batch loading viewed posts for faster filtering...');
 
       // Load all user interactions to populate viewed posts cache
-      final response = await _supabase.client
+      final response = await supabase.client
           .from('user_interactions')
           .select('post_id')
           .eq('user_id', userId);

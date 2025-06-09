@@ -89,18 +89,22 @@ class ImagePostWidget extends StatelessWidget {
                     children: [
                       PostAvatarWidget(
                         post: post,
-                        radius: 20,
+                        radius: 16,
                         onTap: () => _navigateToProfile(),
                       ),
-                      SizedBox(width: 10),
-                      GestureDetector(
-                        onTap: () => _navigateToProfile(),
-                        child: Text(
-                          _getDisplayName(),
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
+                      SizedBox(width: 8),
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: () => _navigateToProfile(),
+                          child: Text(
+                            _getTruncatedDisplayName(),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ),
                       ),
@@ -215,6 +219,15 @@ class ImagePostWidget extends StatelessWidget {
     } else {
       return 'Yapper';
     }
+  }
+
+  String _getTruncatedDisplayName() {
+    final displayName = _getDisplayName();
+    // Truncate to 10 characters and add ellipsis if longer
+    if (displayName.length > 10) {
+      return '${displayName.substring(0, 10)}..';
+    }
+    return displayName;
   }
 
   void _navigateToProfile() async {

@@ -662,6 +662,9 @@ class AccountDataProvider extends GetxController {
         debugPrint('  Google Avatar: ${googleAvatar.value}');
       }
 
+      // CRITICAL FIX: Load counts from profiles table first for immediate display
+      await _loadCountsFromProfiles(userId);
+
       // Preload followers and following data in parallel
       await Future.wait([
         loadFollowers(userId),
@@ -722,5 +725,51 @@ class AccountDataProvider extends GetxController {
   /// Updates the following cache timestamp without fetching new data
   void markFollowingFetched(String userId) {
     _followingFetchTime[userId] = DateTime.now();
+  }
+
+  /// Load counts directly from profiles table for immediate display
+  Future<void> _loadCountsFromProfiles(String userId) async {
+    try {
+      final supabaseService = Get.find<SupabaseService>();
+
+      // Get counts from profiles table
+      final response =
+          await supabaseService.client
+              .from('profiles')
+              .select('follower_count, following_count')
+              .eq('user_id', userId)
+              .single();
+
+      final dbFollowerCount = response['follower_count'] as int? ?? 0;
+      final dbFollowingCount = response['following_count'] as int? ?? 0;
+
+      // Update the reactive counts immediately
+      followerCount.value = dbFollowerCount;
+      followingCount.value = dbFollowingCount;
+
+      // Also get posts count from posts table
+      final postsResponse = await supabaseService.client
+          .from('posts')
+          .select('id')
+          .eq('user_id', userId);
+
+      final dbPostsCount = (postsResponse as List).length;
+      userPostData.value = {'post_count': dbPostsCount};
+
+      // Force refresh to ensure UI updates
+      followerCount.refresh();
+      followingCount.refresh();
+      userPostData.refresh();
+
+      debugPrint('AccountDataProvider: Loaded counts from database');
+      debugPrint('  Follower count: ${followerCount.value}');
+      debugPrint('  Following count: ${followingCount.value}');
+      debugPrint('  Posts count: $dbPostsCount');
+    } catch (e) {
+      debugPrint('AccountDataProvider: Error loading counts from profiles: $e');
+      // Set to 0 on error to avoid showing stale data
+      followerCount.value = 0;
+      followingCount.value = 0;
+    }
   }
 }

@@ -48,80 +48,83 @@ class TextPostWidget extends BasePostWidget {
       children: [
         PostAvatarWidget(
           post: post,
-          radius: 20,
+          radius: 16,
           onTap: () => _navigateToProfile(),
         ),
-        SizedBox(width: 12),
+        SizedBox(width: 10),
         Expanded(
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => _navigateToProfile(),
-                        child: Text(
-                          _getDisplayName(),
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _navigateToProfile(),
+                      child: Text(
+                        _getTruncatedDisplayName(),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
                         ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                      SizedBox(width: 4),
-                      if (_getMetadataValue(post.metadata, 'verified') == true)
-                        Icon(Icons.verified, color: Colors.blue, size: 16),
-                      SizedBox(width: 8),
-                      // Only show follow button if this is not the current user's post
-                      if (!_isCurrentUserPost())
-                        Obx(() {
-                          final exploreController =
-                              Get.find<ExploreController>();
-                          final isFollowing = exploreController.isFollowingUser(
-                            post.userId,
-                          );
-
-                          // Don't show follow button if already following
-                          if (isFollowing) {
-                            return SizedBox.shrink();
-                          }
-
-                          return TextButton(
-                            onPressed: () async {
-                              await exploreController.toggleFollowUser(
-                                post.userId,
-                              );
-                            },
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: Text(
-                              'Follow',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          );
-                        }),
-                    ],
-                  ),
-                  Text(
-                    _formatTimeAgo(post.createdAt),
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
                     ),
                   ),
+                  if (_getMetadataValue(post.metadata, 'verified') == true) ...[
+                    SizedBox(width: 4),
+                    Icon(Icons.verified, color: Colors.blue, size: 16),
+                  ],
+                  // Only show follow button if this is not the current user's post
+                  if (!_isCurrentUserPost())
+                    Obx(() {
+                      final exploreController = Get.find<ExploreController>();
+                      final isFollowing = exploreController.isFollowingUser(
+                        post.userId,
+                      );
+
+                      // Don't show follow button if already following
+                      if (isFollowing) {
+                        return SizedBox.shrink();
+                      }
+
+                      return Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: TextButton(
+                          onPressed: () async {
+                            await exploreController.toggleFollowUser(
+                              post.userId,
+                            );
+                          },
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            'Follow',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
                 ],
+              ),
+              SizedBox(height: 2),
+              Text(
+                _formatTimeAgo(post.createdAt),
+                style: TextStyle(
+                  color: Colors.grey[500],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ],
           ),
@@ -163,6 +166,15 @@ class TextPostWidget extends BasePostWidget {
     } else {
       return 'Yapper';
     }
+  }
+
+  String _getTruncatedDisplayName() {
+    final displayName = _getDisplayName();
+    // Truncate to 10 characters and add ellipsis if longer
+    if (displayName.length > 10) {
+      return '${displayName.substring(0, 10)}..';
+    }
+    return displayName;
   }
 
   void _navigateToProfile() async {

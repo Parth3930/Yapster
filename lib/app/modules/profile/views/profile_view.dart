@@ -323,7 +323,7 @@ class ProfileView extends GetView<ProfileController> {
                         // Get the post count from the appropriate source
                         final postCount =
                             isCurrentUser
-                                ? accountDataProvider.posts.length
+                                ? accountDataProvider.postsCount
                                 : (exploreController
                                             .selectedUserProfile['post_count']
                                         as int?) ??
@@ -356,7 +356,7 @@ class ProfileView extends GetView<ProfileController> {
                         // Get the followers count from the appropriate source
                         final followersCount =
                             isCurrentUser
-                                ? accountDataProvider.followers.length
+                                ? accountDataProvider.followerCount.value
                                 : (exploreController
                                             .selectedUserProfile['follower_count']
                                         as int?) ??
@@ -394,7 +394,7 @@ class ProfileView extends GetView<ProfileController> {
                         // Get the following count from the appropriate source
                         final followingCount =
                             isCurrentUser
-                                ? accountDataProvider.following.length
+                                ? accountDataProvider.followingCount.value
                                 : (exploreController
                                             .selectedUserProfile['following_count']
                                         as int?) ??

@@ -68,13 +68,8 @@ class ServiceInitializer {
       Get.put(DeviceTokenRepository(), permanent: true);
     }
 
-    // Initialize intelligent feed services (UserPostsCacheService moved to initializeRemainingServices)
-    if (!Get.isRegistered<UserInteractionService>()) {
-      Get.put(UserInteractionService(), permanent: true);
-    }
-    if (!Get.isRegistered<IntelligentFeedService>()) {
-      Get.put(IntelligentFeedService(), permanent: true);
-    }
+    // Note: UserInteractionService and IntelligentFeedService moved to initializeRemainingServices
+    // because they depend on SupabaseService which is initialized later
   }
 
   /// Initialize remaining services after app has started
@@ -105,6 +100,21 @@ class ServiceInitializer {
         );
         debugPrint(
           'SupabaseService initialized in ${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
+
+      // Initialize intelligent feed services after SupabaseService is ready
+      if (!Get.isRegistered<UserInteractionService>()) {
+        Get.put(UserInteractionService(), permanent: true);
+        debugPrint(
+          'UserInteractionService initialized in ${stopwatch.elapsedMilliseconds}ms',
+        );
+      }
+
+      if (!Get.isRegistered<IntelligentFeedService>()) {
+        Get.put(IntelligentFeedService(), permanent: true);
+        debugPrint(
+          'IntelligentFeedService initialized in ${stopwatch.elapsedMilliseconds}ms',
         );
       }
 
