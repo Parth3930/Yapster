@@ -1,385 +1,318 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:yapster/app/core/utils/avatar_utils.dart';
-import 'package:yapster/app/data/providers/account_data_provider.dart';
+import 'package:camera/camera.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
-import 'package:yapster/app/global_widgets/icon_button_widget.dart';
 import '../controllers/create_controller.dart';
-import 'package:yapster/app/routes/app_pages.dart';
 
 class CreateView extends GetView<CreateController> {
   const CreateView({super.key});
 
+  BottomNavAnimationController get _bottomNavController =>
+      Get.find<BottomNavAnimationController>();
+
   @override
   Widget build(BuildContext context) {
-    final accountDataProvider = Get.find<AccountDataProvider>();
-    final bottomNavController = Get.find<BottomNavAnimationController>();
-
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: Icon(Icons.close, color: Colors.white, size: 24),
-          onPressed: () {
-            bottomNavController.showBottomNavigation();
-            Get.back();
-          },
-        ),
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
+      body: Obx(() {
+        if (!controller.isCameraInitialized.value) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+
+        return Stack(
           children: [
-            Text(
-              "New Post",
-              style: TextStyle(
-                fontFamily: GoogleFonts.dongle().fontFamily,
-                fontSize: 38,
-              ),
-            ),
-            GestureDetector(
-              onTap: () {
-                Get.toNamed(Routes.CREATE_STORY);
-              },
-              child: Image.asset(
-                "assets/icons/story.png",
-                width: 20,
-                height: 20,
-              ),
-            ),
+            // Camera preview
+            Positioned.fill(child: CameraPreview(controller.cameraController!)),
+
+            // Top status bar
+            _buildTopBar(context),
+
+            // Right side controls
+            _buildRightControls(context),
+
+            // Bottom controls
+            _buildBottomControls(context),
           ],
+        );
+      }),
+    );
+  }
+
+  Widget _buildTopBar(BuildContext context) {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: MediaQuery.of(context).padding.top + 60,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.black.withValues(alpha: 0.7), Colors.transparent],
+          ),
         ),
-        backgroundColor: Colors.transparent,
-      ),
-      body: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            // Main content area
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisAlignment: MainAxisAlignment.start,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Left column with large avatar and line
-                Column(
-                  children: [
-                    SizedBox(height: 20),
-                    CircleAvatar(
-                      radius: 35,
-                      backgroundColor: Colors.grey[300],
-                      backgroundImage: AvatarUtils.getAvatarImage(
-                        null,
-                        accountDataProvider,
-                      ),
+                // Close button
+                GestureDetector(
+                  onTap:
+                      () => {_bottomNavController.onReturnToHome(), Get.back()},
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 24,
                     ),
-                    Container(height: 50, width: 1, color: Colors.grey[700]),
-                  ],
-                ),
-                SizedBox(width: 10),
-                // Right column with username and content
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("@${accountDataProvider.username.string}"),
-                      Text(
-                        "Whats New?",
-                        style: TextStyle(color: Colors.grey[500]),
-                      ),
-                      SizedBox(height: 10),
-                      Row(
-                        children: [
-                          IconButtonWidget(
-                            assetPath: "assets/icons/add_image.png",
-                            width: 20,
-                            height: 20,
-                            onTap: controller.pickImages,
-                          ),
-                          SizedBox(width: 10),
-                          IconButtonWidget(
-                            assetPath: "assets/icons/camera.png",
-                            width: 20,
-                            height: 20,
-                            onTap: () {},
-                          ),
-                          SizedBox(width: 10),
-                          IconButtonWidget(
-                            assetPath: "assets/icons/gif.png",
-                            width: 20,
-                            height: 20,
-                            onTap: () {},
-                          ),
-                          SizedBox(width: 10),
-                          IconButtonWidget(
-                            assetPath: "assets/icons/sticker.png",
-                            width: 20,
-                            height: 20,
-                            onTap: () {},
-                          ),
-                        ],
-                      ),
-                    ],
                   ),
                 ),
+
+                // Title
+                const Text(
+                  'Yap Upload',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+
+                // Placeholder for symmetry
+                const SizedBox(width: 40),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRightControls(BuildContext context) {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 80,
+      right: 16,
+      child: Column(
+        children: [
+          // Camera switch button
+          GestureDetector(
+            onTap: controller.switchCamera,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.flip_camera_ios,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Flash button
+          _buildFlashButton(),
+
+          const SizedBox(height: 16),
+
+          // Timer button
+          _buildTimerButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlashButton() {
+    return GestureDetector(
+      onTap: controller.toggleFlash,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          shape: BoxShape.circle,
+        ),
+        child: Obx(() {
+          IconData flashIcon;
+          switch (controller.flashMode.value) {
+            case 'on':
+              flashIcon = Icons.flash_on;
+              break;
+            case 'auto':
+              flashIcon = Icons.flash_auto;
+              break;
+            default:
+              flashIcon = Icons.flash_off;
+          }
+          return Icon(flashIcon, color: Colors.white, size: 24);
+        }),
+      ),
+    );
+  }
+
+  Widget _buildTimerButton() {
+    return GestureDetector(
+      onTap: () {
+        // Cycle through timer options: 0 -> 3 -> 10 -> 0
+        int nextTimer =
+            controller.timerSeconds.value == 0
+                ? 3
+                : controller.timerSeconds.value == 3
+                ? 10
+                : 0;
+        controller.setTimer(nextTimer);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          shape: BoxShape.circle,
+        ),
+        child: Obx(() {
+          return controller.timerSeconds.value == 0
+              ? const Icon(Icons.timer_off, color: Colors.white, size: 24)
+              : Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Icon(Icons.timer, color: Colors.white, size: 24),
+                  Text(
+                    '${controller.timerSeconds.value}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildBottomControls(BuildContext context) {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 200,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
+          ),
+        ),
+        child: Column(
+          children: [
+            const Spacer(),
+
+            // Capture controls
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Gallery button
+                  GestureDetector(
+                    onTap: controller.pickImages,
+                    child: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.photo_library,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+
+                  // Capture button
+                  GestureDetector(
+                    onTap: controller.takePhoto,
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 4),
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Mode selector placeholder
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.more_horiz,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Mode tabs
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildModeTab('STORY'),
+                const SizedBox(width: 40),
+                _buildModeTab('VIDEO'),
+                const SizedBox(width: 40),
+                _buildModeTab('POST'),
               ],
             ),
 
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 15),
-                child: Column(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Recreating the layout structure to match the column above
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Colors.grey[300],
-                          backgroundImage: AvatarUtils.getAvatarImage(
-                            null,
-                            accountDataProvider,
-                          ),
-                        ),
-                        SizedBox(width: 10), // Same spacing as in main row
-                        Expanded(
-                          child: TextField(
-                            maxLines: null,
-                            maxLength: 200,
-                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                            controller: controller.postTextController,
-                            cursorColor: Colors.white,
-                            keyboardType: TextInputType.multiline,
-                            style: TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              hintText: 'Add Thread',
-                              hintStyle: TextStyle(color: Colors.grey[500]),
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                              counterStyle: TextStyle(color: Colors.grey[500]),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    // Image preview section
-                    Obx(() {
-                      if (controller.selectedImages.isEmpty) {
-                        return SizedBox.shrink();
-                      }
-
-                      return Container(
-                        margin: EdgeInsets.only(top: 16, left: 50),
-                        child: _buildImagePreview(controller),
-                      );
-                    }),
-
-                    Spacer(),
-
-                    // Post button
-                    Obx(
-                      () => Container(
-                        width: double.infinity,
-                        margin: EdgeInsets.only(bottom: 20),
-                        child: ElevatedButton(
-                          onPressed:
-                              controller.canPost.value &&
-                                      !controller.isLoading.value
-                                  ? controller.createPost
-                                  : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                controller.canPost.value
-                                    ? Colors.white
-                                    : Colors.grey[800],
-                            foregroundColor: Colors.black,
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(25),
-                            ),
-                          ),
-                          child:
-                              controller.isLoading.value
-                                  ? SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.black,
-                                      ),
-                                    ),
-                                  )
-                                  : Text(
-                                    'Post',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
           ],
         ),
       ),
-      extendBody: true,
-      floatingActionButton: Obx(() {
-        return AnimatedSlide(
-          duration: const Duration(milliseconds: 250),
-          offset:
-              bottomNavController.showBottomNav.value
-                  ? Offset.zero
-                  : const Offset(0, 1.2),
-          curve: Curves.easeInOutCubic,
-          child: AnimatedOpacity(
-            opacity: bottomNavController.showBottomNav.value ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            child: BottomNavigation(),
+    );
+  }
+
+  Widget _buildModeTab(String mode) {
+    return GestureDetector(
+      onTap: () => controller.setMode(mode),
+      child: Obx(() {
+        final isSelected = controller.selectedMode.value == mode;
+        return Text(
+          mode,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.grey,
+            fontSize: 16,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
         );
       }),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-    );
-  }
-
-  Widget _buildImagePreview(CreateController controller) {
-    final imageCount = controller.selectedImages.length;
-
-    if (imageCount == 1) {
-      // Single image - full width
-      return _buildSingleImagePreview(
-        controller.selectedImages[0],
-        0,
-        controller,
-      );
-    } else if (imageCount == 2) {
-      // Two images - side by side
-      return Row(
-        children: [
-          Expanded(
-            child: _buildImagePreviewItem(
-              controller.selectedImages[0],
-              0,
-              controller,
-            ),
-          ),
-          SizedBox(width: 4),
-          Expanded(
-            child: _buildImagePreviewItem(
-              controller.selectedImages[1],
-              1,
-              controller,
-            ),
-          ),
-        ],
-      );
-    } else if (imageCount == 3) {
-      // Three images - first one full width, bottom two side by side
-      return Column(
-        children: [
-          _buildImagePreviewItem(controller.selectedImages[0], 0, controller),
-          SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: _buildImagePreviewItem(
-                  controller.selectedImages[1],
-                  1,
-                  controller,
-                ),
-              ),
-              SizedBox(width: 4),
-              Expanded(
-                child: _buildImagePreviewItem(
-                  controller.selectedImages[2],
-                  2,
-                  controller,
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-    }
-
-    return SizedBox.shrink();
-  }
-
-  Widget _buildSingleImagePreview(
-    File image,
-    int index,
-    CreateController controller,
-  ) {
-    return Container(
-      height: 200,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        image: DecorationImage(image: FileImage(image), fit: BoxFit.cover),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: 8,
-            right: 8,
-            child: GestureDetector(
-              onTap: () => controller.removeImage(index),
-              child: Container(
-                padding: EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.close, color: Colors.white, size: 16),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildImagePreviewItem(
-    File image,
-    int index,
-    CreateController controller,
-  ) {
-    return Container(
-      height: 120,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        image: DecorationImage(image: FileImage(image), fit: BoxFit.cover),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: 4,
-            right: 4,
-            child: GestureDetector(
-              onTap: () => controller.removeImage(index),
-              child: Container(
-                padding: EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.close, color: Colors.white, size: 12),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

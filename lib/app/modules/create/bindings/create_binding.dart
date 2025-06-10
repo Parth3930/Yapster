@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
+import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import '../controllers/create_controller.dart';
 
 class CreateBinding extends Bindings {
@@ -7,5 +8,6 @@ class CreateBinding extends Bindings {
   void dependencies() {
     Get.lazyPut<PostRepository>(() => PostRepository());
     Get.lazyPut<CreateController>(() => CreateController());
+    Get.lazyPut(() => BottomNavAnimationController());
   }
 }

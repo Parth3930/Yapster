@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:camera/camera.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
@@ -36,16 +37,27 @@ class CreateController extends GetxController {
   final RxString gifUrl = ''.obs;
   final RxString stickerUrl = ''.obs;
 
+  // Camera functionality
+  CameraController? cameraController;
+  final RxBool isCameraInitialized = false.obs;
+  final RxBool isRearCamera = true.obs; // true for rear, false for front
+  final RxString flashMode = 'off'.obs; // off, on, auto
+  final RxInt timerSeconds = 0.obs; // 0, 3, 10
+  final RxString selectedMode = 'POST'.obs; // STORY, VIDEO, POST
+  List<CameraDescription> cameras = [];
+
   @override
   void onInit() {
     super.onInit();
     // Listen to content changes to enable/disable post button
     postTextController.addListener(_updateCanPost);
+    initializeCamera();
   }
 
   @override
   void onClose() {
     postTextController.dispose();
+    cameraController?.dispose();
     super.onClose();
   }
 
@@ -56,6 +68,141 @@ class CreateController extends GetxController {
 
   void setPostType(String type) {
     selectedPostType.value = type;
+  }
+
+  /// Initialize camera
+  Future<void> initializeCamera() async {
+    try {
+      cameras = await availableCameras();
+      if (cameras.isNotEmpty) {
+        await _initializeCameraController();
+      }
+    } catch (e) {
+      debugPrint('Error initializing camera: $e');
+    }
+  }
+
+  /// Initialize camera controller
+  Future<void> _initializeCameraController() async {
+    try {
+      final camera =
+          isRearCamera.value
+              ? cameras.firstWhere(
+                (camera) => camera.lensDirection == CameraLensDirection.back,
+              )
+              : cameras.firstWhere(
+                (camera) => camera.lensDirection == CameraLensDirection.front,
+              );
+
+      cameraController = CameraController(
+        camera,
+        ResolutionPreset.high,
+        enableAudio: selectedMode.value == 'VIDEO',
+      );
+
+      await cameraController!.initialize();
+      isCameraInitialized.value = true;
+
+      // Set flash mode
+      await _updateFlashMode();
+    } catch (e) {
+      debugPrint('Error initializing camera controller: $e');
+      isCameraInitialized.value = false;
+    }
+  }
+
+  /// Switch between front and rear camera
+  Future<void> switchCamera() async {
+    if (cameras.length < 2) return;
+
+    isRearCamera.value = !isRearCamera.value;
+    isCameraInitialized.value = false;
+
+    await cameraController?.dispose();
+    await _initializeCameraController();
+  }
+
+  /// Toggle flash mode
+  void toggleFlash() {
+    switch (flashMode.value) {
+      case 'off':
+        flashMode.value = 'on';
+        break;
+      case 'on':
+        flashMode.value = 'auto';
+        break;
+      case 'auto':
+        flashMode.value = 'off';
+        break;
+    }
+    _updateFlashMode();
+  }
+
+  /// Update flash mode on camera
+  Future<void> _updateFlashMode() async {
+    if (cameraController == null || !cameraController!.value.isInitialized) {
+      return;
+    }
+
+    try {
+      switch (flashMode.value) {
+        case 'off':
+          await cameraController!.setFlashMode(FlashMode.off);
+          break;
+        case 'on':
+          await cameraController!.setFlashMode(FlashMode.always);
+          break;
+        case 'auto':
+          await cameraController!.setFlashMode(FlashMode.auto);
+          break;
+      }
+    } catch (e) {
+      debugPrint('Error setting flash mode: $e');
+    }
+  }
+
+  /// Set timer
+  void setTimer(int seconds) {
+    timerSeconds.value = seconds;
+  }
+
+  /// Set capture mode
+  void setMode(String mode) {
+    selectedMode.value = mode;
+    // Reinitialize camera with audio if switching to video
+    if (mode == 'VIDEO' && cameraController != null) {
+      _initializeCameraController();
+    }
+  }
+
+  /// Take photo
+  Future<void> takePhoto() async {
+    if (cameraController == null || !cameraController!.value.isInitialized) {
+      return;
+    }
+
+    try {
+      // Apply timer if set
+      if (timerSeconds.value > 0) {
+        await Future.delayed(Duration(seconds: timerSeconds.value));
+      }
+
+      final XFile photo = await cameraController!.takePicture();
+      selectedImages.add(File(photo.path));
+      selectedPostType.value = 'image';
+      _updateCanPost();
+
+      // Navigate to post creation or handle based on mode
+      if (selectedMode.value == 'POST') {
+        // Stay on camera for now, user can navigate to text post creation
+      } else if (selectedMode.value == 'STORY') {
+        // Navigate to story creation
+        Get.toNamed('/create-story');
+      }
+    } catch (e) {
+      debugPrint('Error taking photo: $e');
+      Get.snackbar('Error', 'Failed to take photo');
+    }
   }
 
   /// Pick images from gallery
