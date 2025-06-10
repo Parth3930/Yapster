@@ -15,6 +15,9 @@ abstract class Routes {
   static const GROUP_CHAT = _Paths.GROUP_CHAT;
   static const EXPLORE = _Paths.EXPLORE;
   static const CREATE = _Paths.CREATE;
+  static const IMAGE_EDIT = _Paths.IMAGE_EDIT;
+  static const VIDEO_EDIT = _Paths.VIDEO_EDIT;
+  static const CREATE_POST = _Paths.CREATE_POST;
   static const VIDEOS = _Paths.VIDEOS;
   static const EDIT_PROFILE = _Paths.EDIT_PROFILE;
   static const NOTIFICATIONS = _Paths.NOTIFICATIONS;
@@ -38,6 +41,9 @@ abstract class _Paths {
   static const GROUP_CHAT = '/group-chat';
   static const EXPLORE = '/explore';
   static const CREATE = '/create';
+  static const IMAGE_EDIT = '/image-edit';
+  static const VIDEO_EDIT = '/video-edit';
+  static const CREATE_POST = '/create-post';
   static const VIDEOS = '/videos';
   static const EDIT_PROFILE = '/edit-profile';
   static const NOTIFICATIONS = '/notifications';

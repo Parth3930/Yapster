@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
@@ -134,6 +135,9 @@ class CreateController extends GetxController {
 
     // Stop camera (no longer disposes controllers, just nullifies them)
     stopCamera();
+
+    // Stop any active recording timer
+    _stopRecordingTimer();
 
     // Dispose other non-camera controllers
     postTextController.dispose();
@@ -490,12 +494,61 @@ class CreateController extends GetxController {
   }
 
   /// Take photo
+  // Flag to track if video recording is in progress
+  final RxBool isRecordingVideo = false.obs;
+  // Video file path
+  final RxString videoFilePath = ''.obs;
+  // For button animation
+  final RxBool isButtonPressed = false.obs;
+  // For recording duration in seconds
+  final RxInt recordingDuration = 0.obs;
+  // Timer instance for video recording
+  Timer? _recordingTimer;
+  // Flag for processing state
+  final RxBool isProcessingPhoto = false.obs;
+
   Future<void> takePhoto() async {
+    debugPrint('🔥 takePhoto called');
+
+    // Set processing flag to true
+    isProcessingPhoto.value = true;
+
+    // Trigger button press animation
+    isButtonPressed.value = true;
+    Future.delayed(const Duration(milliseconds: 150), () {
+      isButtonPressed.value = false;
+    });
+
     if (cameraController == null || !cameraController!.value.isInitialized) {
+      debugPrint('❌ Camera not initialized, cannot take photo');
+      Get.snackbar(
+        'Camera Not Ready',
+        'Please wait for the camera to initialize',
+        backgroundColor: Colors.red.withOpacity(0.7),
+        colorText: Colors.white,
+        duration: Duration(seconds: 2),
+      );
+
+      // Try to initialize the camera again
+      ensureCameraInitialized();
       return;
     }
 
     try {
+      // Handle different modes
+      if (selectedMode.value == 'VIDEO') {
+        debugPrint(
+          '📹 Video mode detected, redirecting to _handleVideoCapture',
+        );
+        if (cameraController != null && cameraController!.value.isInitialized) {
+          await _handleVideoCapture();
+        } else {
+          debugPrint('❌ Camera not ready for video recording');
+          Get.snackbar('Error', 'Camera not ready for video recording');
+        }
+        return;
+      }
+
       // Apply timer if set
       if (timerSeconds.value > 0) {
         await Future.delayed(Duration(seconds: timerSeconds.value));
@@ -524,48 +577,141 @@ class CreateController extends GetxController {
       }
 
       final XFile photo = await cameraController!.takePicture();
-      selectedImages.add(File(photo.path));
-      selectedPostType.value = 'image';
-      _updateCanPost();
 
-      // Handle based on mode
       if (selectedMode.value == 'POST') {
-        // Stay on camera for now, user can navigate to text post creation
+        // Navigate to image crop/edit page
+        _navigateToImageEditPage(File(photo.path));
       } else if (selectedMode.value == 'STORY') {
         // Create story directly with the captured image
         await _createStoryWithImage(File(photo.path));
       }
+
+      // Reset processing flag
+      isProcessingPhoto.value = false;
     } catch (e) {
       debugPrint('Error taking photo: $e');
       Get.snackbar('Error', 'Failed to take photo');
+
+      // Reset processing flag on error
+      isProcessingPhoto.value = false;
     }
   }
 
-  /// Pick images from gallery
+  Future<void> _handleVideoCapture() async {
+    debugPrint(
+      '📹 _handleVideoCapture called, isRecording: ${isRecordingVideo.value}',
+    );
+
+    if (isRecordingVideo.value) {
+      // Stop recording
+      try {
+        debugPrint('📹 Attempting to stop video recording');
+        final XFile videoFile = await cameraController!.stopVideoRecording();
+        isRecordingVideo.value = false;
+        videoFilePath.value = videoFile.path;
+
+        // Stop the duration timer
+        _stopRecordingTimer();
+
+        debugPrint('📹 Video recording stopped: ${videoFile.path}');
+
+        // Provide user feedback
+        Get.snackbar(
+          'Success',
+          'Video recorded successfully',
+          backgroundColor: Colors.green.withOpacity(0.7),
+          colorText: Colors.white,
+        );
+
+        // Navigate to video edit page
+        _navigateToVideoEditPage(File(videoFile.path));
+      } catch (e) {
+        debugPrint('❌ Error stopping video recording: $e');
+        Get.snackbar('Error', 'Failed to stop video recording');
+
+        // Make sure to stop the timer if there's an error
+        _stopRecordingTimer();
+      }
+    } else {
+      // Start recording
+      try {
+        debugPrint('📹 Attempting to start video recording');
+        await cameraController!.startVideoRecording();
+        isRecordingVideo.value = true;
+
+        // Reset and start the duration timer
+        recordingDuration.value = 0;
+        _startRecordingTimer();
+
+        debugPrint('📹 Video recording started');
+
+        // Provide user feedback
+        Get.snackbar(
+          'Recording',
+          'Video recording in progress',
+          backgroundColor: Colors.red.withOpacity(0.7),
+          colorText: Colors.white,
+          duration: const Duration(seconds: 1),
+        );
+      } catch (e) {
+        debugPrint('❌ Error starting video recording: $e');
+        Get.snackbar('Error', 'Failed to start video recording');
+        // Reset recording state on error
+        isRecordingVideo.value = false;
+        _stopRecordingTimer();
+      }
+    }
+  }
+
+  // Start a timer that updates the recording duration every second
+  void _startRecordingTimer() {
+    // Create a periodic timer that fires every second
+    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      recordingDuration.value++;
+      debugPrint('Recording duration: ${recordingDuration.value}s');
+    });
+  }
+
+  // Stop the recording timer
+  void _stopRecordingTimer() {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    recordingDuration.value = 0;
+  }
+
+  /// Pick media from gallery based on current mode
   Future<void> pickImages() async {
     try {
-      final List<XFile> images = await _picker.pickMultiImage(
-        maxWidth: 1080,
-        maxHeight: 1080,
-        imageQuality: 85,
-      );
+      if (selectedMode.value == 'VIDEO') {
+        // Pick video
+        final XFile? video = await _picker.pickVideo(
+          source: ImageSource.gallery,
+          maxDuration: const Duration(minutes: 2),
+        );
 
-      if (images.isNotEmpty) {
-        // Limit to 3 images maximum
-        final imagesToAdd = images.take(3 - selectedImages.length).toList();
-
-        for (final image in imagesToAdd) {
-          selectedImages.add(File(image.path));
+        if (video != null) {
+          _navigateToVideoEditPage(File(video.path));
         }
+      } else {
+        // Pick images
+        final List<XFile> images = await _picker.pickMultiImage(
+          maxWidth: 1080,
+          maxHeight: 1080,
+          imageQuality: 85,
+        );
 
-        if (selectedImages.isNotEmpty) {
-          selectedPostType.value = 'image';
+        if (images.isNotEmpty) {
+          // For POST mode, navigate to edit page with first image
+          if (selectedMode.value == 'POST') {
+            _navigateToImageEditPage(File(images.first.path));
+          } else if (selectedMode.value == 'STORY') {
+            // Create story directly with the first image
+            await _createStoryWithImage(File(images.first.path));
+          }
         }
-
-        _updateCanPost();
       }
     } catch (e) {
-      debugPrint('Error picking images: $e');
+      debugPrint('Error picking media: $e');
       Get.snackbar(
         'Error',
         'Failed to pick images',
@@ -591,7 +737,67 @@ class CreateController extends GetxController {
   }
 
   /// Create and publish post
-  Future<void> createPost() async {
+  // Navigate to image edit page
+  void _navigateToImageEditPage(File imageFile) {
+    // Create a temporary image in the selected images list
+    selectedImages.clear();
+    selectedImages.add(imageFile);
+    selectedPostType.value = 'image';
+
+    // Navigate to image edit page
+    Get.toNamed(
+      '/image-edit',
+      arguments: {
+        'imageFile': imageFile,
+        'aspectRatio': 4 / 5, // Fixed 4:5 ratio for post images
+      },
+    )?.then((result) {
+      if (result != null && result is Map<String, dynamic>) {
+        // Handle edited image returned from edit page
+        if (result.containsKey('editedImage')) {
+          File editedImage = result['editedImage'] as File;
+          selectedImages.clear();
+          selectedImages.add(editedImage);
+
+          // Navigate to post creation page
+          _navigateToPostPage();
+        }
+      }
+    });
+  }
+
+  // Navigate to video edit page
+  void _navigateToVideoEditPage(File videoFile) {
+    // Navigate to video edit page
+    Get.toNamed('/video-edit', arguments: {'videoFile': videoFile})?.then((
+      result,
+    ) {
+      if (result != null && result is Map<String, dynamic>) {
+        // Handle edited video returned from edit page
+        if (result.containsKey('editedVideo')) {
+          File editedVideo = result['editedVideo'] as File;
+          videoFilePath.value = editedVideo.path;
+
+          // Navigate to post creation page
+          _navigateToPostPage();
+        }
+      }
+    });
+  }
+
+  // Navigate to post creation page
+  void _navigateToPostPage() {
+    Get.toNamed(
+      '/create-post',
+      arguments: {
+        'selectedImages': selectedImages.toList(),
+        'videoPath':
+            videoFilePath.value.isNotEmpty ? videoFilePath.value : null,
+      },
+    );
+  }
+
+  Future<void> createPost({bool isGlobal = false}) async {
     if (!canPost.value) return;
 
     try {
@@ -603,22 +809,48 @@ class CreateController extends GetxController {
         return;
       }
 
+      // Check if we're posting a video
+      bool isVideoPost = videoFilePath.value.isNotEmpty;
+
       // Create post model
       final post = PostModel(
         id: '', // Will be generated by database
         userId: currentUser.id,
         content: postTextController.text.trim(),
-        postType: selectedPostType.value,
-        metadata: {}, // Will be updated with image URLs after upload
+        postType: isVideoPost ? 'video' : selectedPostType.value,
+        metadata: {}, // Will be updated with URLs after upload
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        global: isGlobal,
       );
 
-      // Create post with images
-      final postId = await _postRepository.createPostWithImages(
-        post,
-        selectedImages.toList(),
-      );
+      String? postId;
+
+      if (isVideoPost) {
+        // For video posts, create a different upload flow
+        // First create post to get ID
+        postId = await _postRepository.createPost(post);
+
+        if (postId != null) {
+          // Upload video file
+          final videoUrl = await _postRepository.uploadPostVideo(
+            File(videoFilePath.value),
+            currentUser.id,
+            postId,
+          );
+
+          if (videoUrl != null) {
+            // Update post with video URL
+            await _postRepository.updatePostWithVideo(postId, videoUrl);
+          }
+        }
+      } else {
+        // Create post with images
+        postId = await _postRepository.createPostWithImages(
+          post,
+          selectedImages.toList(),
+        );
+      }
 
       if (postId != null) {
         // Create the complete post model with the generated ID

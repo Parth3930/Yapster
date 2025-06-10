@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import '../controllers/create_controller.dart';
+import '../widgets/camera_button.dart';
 
 class CreateView extends GetView<CreateController> {
   const CreateView({super.key});
@@ -276,42 +277,9 @@ class CreateView extends GetView<CreateController> {
             ),
 
             const SizedBox(width: 40),
-            GestureDetector(
-              onTap: controller.takePhoto,
-              child: Obx(() {
-                // Get shutter button color based on selected mode
-                Color shutterColor;
-                switch (controller.selectedMode.value) {
-                  case 'POST':
-                    shutterColor = Colors.white;
-                    break;
-                  case 'STORY':
-                    shutterColor = Colors.grey;
-                    break;
-                  case 'VIDEO':
-                    shutterColor = Colors.red;
-                    break;
-                  default:
-                    shutterColor = Colors.white;
-                }
 
-                return Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 4),
-                  ),
-                  child: Container(
-                    margin: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: shutterColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                );
-              }),
-            ),
+            // Use the new simplified camera button widget
+            CameraButton(controller: controller),
 
             const SizedBox(width: 90),
           ],

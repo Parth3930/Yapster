@@ -51,6 +51,63 @@ class PostRepository extends GetxService {
     }
   }
 
+  /// Upload post video to storage with proper structure
+  /// Storage structure: videos/{user_id}/{post_id}/video.{extension}
+  Future<String?> uploadPostVideo(
+    File videoFile,
+    String userId,
+    String postId,
+  ) async {
+    try {
+      final fileExtension = videoFile.path.split('.').last.toLowerCase();
+      final fileName = 'video.$fileExtension';
+      final storagePath = '$userId/$postId/$fileName';
+
+      // Read file as bytes
+      final fileBytes = await videoFile.readAsBytes();
+
+      // Upload to Supabase storage with proper structure
+      await _supabase.client.storage
+          .from('videos')
+          .uploadBinary(
+            storagePath,
+            fileBytes,
+            fileOptions: const FileOptions(
+              cacheControl: '3600', // Cache for 1 hour
+              upsert: true,
+            ),
+          );
+
+      // Get public URL
+      final publicUrl = _supabase.client.storage
+          .from('videos')
+          .getPublicUrl(storagePath);
+
+      return publicUrl;
+    } catch (e) {
+      debugPrint('Error uploading post video: $e');
+      return null;
+    }
+  }
+
+  /// Update post with video URL
+  Future<bool> updatePostWithVideo(String postId, String videoUrl) async {
+    try {
+      await _supabase.client
+          .from('posts')
+          .update({
+            'image_url': null, // Clear image URL if any
+            'video_url': videoUrl,
+            'metadata': {'video_url': videoUrl, 'video_type': 'mp4'},
+          })
+          .eq('id', postId);
+      return true;
+    } catch (e) {
+      debugPrint('Error updating post with video: $e');
+      return false;
+    }
+  }
+
   /// Upload multiple post images with proper structure
   Future<List<String>> uploadPostImages(
     List<File> imageFiles,

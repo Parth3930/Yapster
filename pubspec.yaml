@@ -39,6 +39,9 @@ dependencies:
   device_info_plus: ^11.4.0
   flutter_local_notifications: ^19.2.1
   camera: ^0.11.1
+  video_player: ^2.10.0
+  image_cropper: ^9.1.0
+  video_trimmer: ^5.0.0
 
 dev_dependencies:
   flutter_test:

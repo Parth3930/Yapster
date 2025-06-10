@@ -5,6 +5,7 @@ class PostModel {
   final String content;
   final String postType;
   final String? imageUrl;
+  final String? videoUrl;
   final String? gifUrl;
   final String? stickerUrl;
   final Map<String, dynamic> metadata;
@@ -21,6 +22,7 @@ class PostModel {
   final String? nickname;
   final String? avatar;
   final String? googleAvatar;
+  final bool global;
 
   PostModel({
     required this.id,
@@ -28,6 +30,7 @@ class PostModel {
     required this.content,
     required this.postType,
     this.imageUrl,
+    this.videoUrl,
     this.gifUrl,
     this.stickerUrl,
     required this.metadata,
@@ -42,6 +45,7 @@ class PostModel {
     this.nickname,
     this.avatar,
     this.googleAvatar,
+    this.global = false,
   });
 
   factory PostModel.fromMap(Map<String, dynamic> map) {
@@ -92,6 +96,7 @@ class PostModel {
       content: map['content'] ?? '',
       postType: map['post_type'] ?? 'text',
       imageUrl: map['image_url'],
+      videoUrl: map['video_url'],
       gifUrl: map['gif_url'],
       stickerUrl: map['sticker_url'],
       metadata: safeMetadata,
@@ -110,6 +115,7 @@ class PostModel {
       nickname: map['nickname'] ?? profileNickname,
       avatar: map['avatar'] ?? profileAvatar,
       googleAvatar: map['google_avatar'] ?? profileGoogleAvatar,
+      global: map['global'] == true,
     );
   }
 
@@ -120,6 +126,7 @@ class PostModel {
       'content': content,
       'post_type': postType,
       'image_url': imageUrl,
+      'video_url': videoUrl,
       'gif_url': gifUrl,
       'sticker_url': stickerUrl,
       'metadata': metadata,
@@ -130,6 +137,7 @@ class PostModel {
       'views_count': viewsCount,
       'shares_count': sharesCount,
       'engagement_data': engagementData,
+      'global': global,
       // Include profile data for proper caching
       'username': username,
       'nickname': nickname,
@@ -146,6 +154,7 @@ class PostModel {
       'content': content,
       'post_type': postType,
       'image_url': imageUrl,
+      'video_url': videoUrl,
       'gif_url': gifUrl,
       'sticker_url': stickerUrl,
       'metadata': metadata,
@@ -156,6 +165,7 @@ class PostModel {
       'views_count': viewsCount,
       'shares_count': sharesCount,
       'engagement_data': engagementData,
+      'global': global,
       'is_active': true, // Ensure posts are active by default
       'is_deleted': false, // Ensure posts are not deleted by default
     };
@@ -167,6 +177,7 @@ class PostModel {
     String? content,
     String? postType,
     String? imageUrl,
+    String? videoUrl,
     String? gifUrl,
     String? stickerUrl,
     Map<String, dynamic>? metadata,
@@ -181,6 +192,7 @@ class PostModel {
     String? nickname,
     String? avatar,
     String? googleAvatar,
+    bool? global,
   }) {
     return PostModel(
       id: id ?? this.id,
@@ -202,6 +214,7 @@ class PostModel {
       nickname: nickname ?? this.nickname,
       avatar: avatar ?? this.avatar,
       googleAvatar: googleAvatar ?? this.googleAvatar,
+      global: global ?? this.global,
     );
   }
 }
