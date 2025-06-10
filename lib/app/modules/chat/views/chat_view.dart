@@ -148,7 +148,6 @@ class _ChatViewState extends State<ChatView> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
               ],
             ),
           ],
@@ -208,7 +207,9 @@ class _ChatViewState extends State<ChatView> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigation(),
+      extendBody: true,
+      floatingActionButton: BottomNavigation(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 

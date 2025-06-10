@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../routes/app_pages.dart';
@@ -7,6 +8,9 @@ class BottomNavAnimationController extends GetxController {
   // Observable to trigger animations
   final RxString animateIcon = ''.obs;
 
+  // Observable to control bottom nav visibility globally
+  final RxBool showBottomNav = true.obs;
+
   // Trigger animation for specific icon
   void triggerAnimation(String route) {
     debugPrint('BottomNavAnimationController: Triggering animation for $route');
@@ -15,6 +19,39 @@ class BottomNavAnimationController extends GetxController {
     Future.delayed(const Duration(milliseconds: 800), () {
       animateIcon.value = '';
       debugPrint('BottomNavAnimationController: Animation reset for $route');
+    });
+  }
+
+  // Hide bottom navigation with smooth animation
+  void hideBottomNav() {
+    if (showBottomNav.value) {
+      showBottomNav.value = false;
+    }
+  }
+
+  // Show bottom navigation with smooth animation
+  void showBottomNavigation() {
+    if (!showBottomNav.value) {
+      showBottomNav.value = true;
+    }
+  }
+
+  // Navigate with bottom nav animation - smooth slide down for all routes
+  Future<void> navigateWithAnimation(String route) async {
+    // Hide bottom nav first to start the slide animation
+    hideBottomNav();
+
+    // Wait just enough for the animation to start (shorter delay for smoothness)
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // Navigate to the route
+    return Get.toNamed(route);
+  }
+
+  // Method to be called when returning to home page
+  void onReturnToHome() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      showBottomNavigation();
     });
   }
 }
@@ -225,8 +262,8 @@ class _BottomNavigationState extends State<BottomNavigation>
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.HOME),
       child: Container(
-        width: 44,
-        height: 44,
+        width: 52, // Increased container size
+        height: 52,
         alignment: Alignment.center,
         child: AnimatedBuilder(
           animation: _homeScaleAnimation,
@@ -243,8 +280,8 @@ class _BottomNavigationState extends State<BottomNavigation>
           },
           child: Image.asset(
             'assets/icons/home.png',
-            width: 24,
-            height: 24,
+            width: 28, // Increased icon size
+            height: 28,
             color: Colors.white,
           ),
         ),
@@ -257,8 +294,8 @@ class _BottomNavigationState extends State<BottomNavigation>
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.VIDEOS),
       child: Container(
-        width: 44,
-        height: 44,
+        width: 52, // Increased container size
+        height: 52,
         alignment: Alignment.center,
         child: AnimatedBuilder(
           animation: _animations[1],
@@ -275,8 +312,8 @@ class _BottomNavigationState extends State<BottomNavigation>
           },
           child: Image.asset(
             'assets/icons/videos.png',
-            width: 24,
-            height: 24,
+            width: 28, // Increased icon size
+            height: 28,
             color: Colors.white,
           ),
         ),
@@ -289,8 +326,8 @@ class _BottomNavigationState extends State<BottomNavigation>
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.CHAT),
       child: Container(
-        width: 44,
-        height: 44,
+        width: 52, // Increased container size
+        height: 52,
         alignment: Alignment.center,
         child: AnimatedBuilder(
           animation: _animations[0],
@@ -302,8 +339,8 @@ class _BottomNavigationState extends State<BottomNavigation>
           },
           child: Image.asset(
             'assets/icons/chat.png',
-            width: 24,
-            height: 24,
+            width: 28, // Increased icon size
+            height: 28,
             color: Colors.white,
           ),
         ),
@@ -316,8 +353,8 @@ class _BottomNavigationState extends State<BottomNavigation>
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.PROFILE),
       child: Container(
-        width: 44,
-        height: 44,
+        width: 52, // Increased container size
+        height: 52,
         alignment: Alignment.center,
         child: AnimatedBuilder(
           animation: _animations[2],
@@ -338,8 +375,8 @@ class _BottomNavigationState extends State<BottomNavigation>
           },
           child: Image.asset(
             'assets/icons/profile.png',
-            width: 24,
-            height: 24,
+            width: 28, // Increased icon size
+            height: 28,
             color: Colors.white,
           ),
         ),
@@ -351,25 +388,24 @@ class _BottomNavigationState extends State<BottomNavigation>
   Widget _buildAddButton() {
     return GestureDetector(
       onTap: () {
-        // Navigate immediately for speed
-        Get.offNamed(Routes.CREATE);
+        // Use the new navigation method with animation
+        _animationController.navigateWithAnimation(Routes.CREATE);
 
-        // Schedule animation to play on the new page after navigation completes
-        Future.delayed(const Duration(milliseconds: 100), () {
+        // Schedule icon animation to play after navigation completes
+        Future.delayed(const Duration(milliseconds: 400), () {
           _animationController.triggerAnimation(Routes.CREATE);
         });
       },
       child: RepaintBoundary(
         // Use RepaintBoundary for better performance
         child: Container(
-          width: 44,
-          height: 44,
+          width: 52, // Increased container size
+          height: 52,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [
-                Color(0xFF9C27B0), // Purple
-                Color(0xFFE91E63), // Pink
-                Color(0xFFF44336), // Red
+                Color(0xFFB41DFF),
+                Color(0xFFFF0000), // Red
               ],
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
@@ -398,7 +434,12 @@ class _BottomNavigationState extends State<BottomNavigation>
               );
             },
             child: const Center(
-              child: Icon(Icons.add, size: 24, color: Colors.white),
+              child: Icon(
+                Icons.add,
+                size: 40,
+                color: Colors.white,
+                weight: 500,
+              ), // Increased icon size
             ),
           ),
         ),
@@ -408,30 +449,58 @@ class _BottomNavigationState extends State<BottomNavigation>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 40, vertical: 18),
-      child: Container(
-        height: 65,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A).withAlpha(220),
-          borderRadius: BorderRadius.circular(30), // Curved edges
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+    return Obx(
+      () => AnimatedSlide(
+        offset:
+            _animationController.showBottomNav.value
+                ? Offset.zero
+                : const Offset(
+                  0,
+                  1.2,
+                ), // Slide further down for smoother effect
+        duration: const Duration(
+          milliseconds: 250,
+        ), // Slightly longer for smoothness
+        curve: Curves.easeInOutCubic, // Smoother curve
+        child: AnimatedOpacity(
+          opacity: _animationController.showBottomNav.value ? 1.0 : 0.0,
+          duration: const Duration(
+            milliseconds: 200,
+          ), // Slightly longer opacity transition
+          curve: Curves.easeOut,
+          child: Container(
+            margin: EdgeInsets.symmetric(horizontal: 30, vertical: 30),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(35),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: Container(
+                  height: 70,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(35),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildHomeIcon(),
+                      _buildChatIcon(),
+                      _buildAddButton(),
+                      _buildVideosIcon(),
+                      _buildProfileIcon(),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _buildHomeIcon(),
-            _buildChatIcon(),
-            _buildAddButton(),
-            _buildVideosIcon(),
-            _buildProfileIcon(),
-          ],
+          ),
         ),
       ),
     );

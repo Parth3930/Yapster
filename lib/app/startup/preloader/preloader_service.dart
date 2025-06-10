@@ -11,6 +11,7 @@ import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/group_controller.dart';
 import 'package:yapster/app/modules/create/controllers/create_controller.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
+import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/startup/feed_loader/feed_loader_service.dart';
@@ -131,6 +132,14 @@ class PreloaderService extends GetxService {
     debugPrint('$_tag: Preloading page controllers');
 
     try {
+      // Register BottomNavAnimationController first as it's needed by other controllers
+      if (!Get.isRegistered<BottomNavAnimationController>()) {
+        Get.put<BottomNavAnimationController>(
+          BottomNavAnimationController(),
+          permanent: true,
+        );
+      }
+
       // Home page controllers
       if (!Get.isRegistered<HomeController>()) {
         Get.put<HomeController>(HomeController(), permanent: true);

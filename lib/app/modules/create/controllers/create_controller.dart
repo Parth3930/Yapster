@@ -9,6 +9,7 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
+import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 
 class CreateController extends GetxController {
   final AccountDataProvider _accountDataProvider =
@@ -163,6 +164,14 @@ class CreateController extends GetxController {
 
         // Clear form
         _clearForm();
+
+        // Show bottom navigation and navigate back to home
+        try {
+          final bottomNavController = Get.find<BottomNavAnimationController>();
+          bottomNavController.onReturnToHome();
+        } catch (e) {
+          debugPrint('BottomNavAnimationController not found: $e');
+        }
 
         // Navigate back to home
         Get.offAllNamed('/home');

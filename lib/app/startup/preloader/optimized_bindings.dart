@@ -14,6 +14,7 @@ import 'package:yapster/app/modules/explore/controllers/explore_controller.dart'
 import 'package:yapster/app/modules/chat/services/chat_message_service.dart';
 import 'package:yapster/app/modules/chat/services/audio_services.dart';
 import 'package:yapster/app/core/utils/chat_cache_service.dart';
+import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/startup/preloader/preloader_service.dart';
 
 /// Optimized bindings that use preloaded controllers instead of creating new ones
@@ -38,6 +39,15 @@ class OptimizedHomeBinding extends Bindings {
     if (!Get.isRegistered<ExploreController>()) {
       Get.put<ExploreController>(ExploreController(), permanent: true);
     }
+
+    // Register BottomNavAnimationController as permanent
+    if (!Get.isRegistered<BottomNavAnimationController>()) {
+      Get.put<BottomNavAnimationController>(
+        BottomNavAnimationController(),
+        permanent: true,
+      );
+    }
+
     if (!Get.isRegistered<HomeController>()) {
       Get.put<HomeController>(HomeController(), permanent: true);
     }

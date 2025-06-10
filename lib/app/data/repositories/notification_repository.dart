@@ -21,6 +21,7 @@ class NotificationRepository extends GetxService {
             .from('notifications')
             .select('*')
             .eq('user_id', userId)
+            .neq('type', 'message') // Exclude message notifications
             .order('created_at', ascending: false)
             .range(offset, offset + limit - 1);
 
@@ -71,7 +72,8 @@ class NotificationRepository extends GetxService {
           .from('notifications')
           .update({'is_read': true})
           .eq('user_id', userId)
-          .eq('is_read', false);
+          .eq('is_read', false)
+          .neq('type', 'message'); // Exclude message notifications
       return true;
     } catch (e) {
       debugPrint('Error marking all notifications as read: $e');
@@ -100,13 +102,14 @@ class NotificationRepository extends GetxService {
       if (userId == null) return 0;
 
       try {
-        // Use the count() method to get the count of unread notifications
+        // Use the count() method to get the count of unread notifications (excluding messages)
         final count =
             await _supabase.client
                 .from('notifications')
                 .select()
                 .eq('user_id', userId)
                 .eq('is_read', false)
+                .neq('type', 'message') // Exclude message notifications
                 .count();
 
         return count.count;

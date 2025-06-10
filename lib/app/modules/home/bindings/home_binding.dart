@@ -4,6 +4,7 @@ import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/repositories/account_repository.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
+import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import '../controllers/home_controller.dart';
 import '../controllers/stories_home_controller.dart';
 import '../controllers/create_post_controller.dart';
@@ -16,6 +17,15 @@ class HomeBinding extends Bindings {
     Get.lazyPut<PostRepository>(() => PostRepository());
     Get.lazyPut<AccountRepository>(() => AccountRepository());
     Get.lazyPut<ExploreController>(() => ExploreController());
+    Get.lazyPut(() => BottomNavAnimationController());
+    // Register BottomNavAnimationController as permanent
+    if (!Get.isRegistered<BottomNavAnimationController>()) {
+      Get.put<BottomNavAnimationController>(
+        BottomNavAnimationController(),
+        permanent: true,
+      );
+    }
+
     Get.put<HomeController>(HomeController(), permanent: true);
     Get.put<StoriesHomeController>(StoriesHomeController(), permanent: true);
     Get.put<PostsFeedController>(PostsFeedController(), permanent: true);

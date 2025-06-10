@@ -6,10 +6,41 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/profile/views/profile_view.dart';
 import 'package:yapster/app/startup/preloader/optimized_bindings.dart';
+import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import '../controllers/notifications_controller.dart';
 
-class NotificationsView extends GetView<NotificationsController> {
+class NotificationsView extends StatefulWidget {
   const NotificationsView({super.key});
+
+  @override
+  State<NotificationsView> createState() => _NotificationsViewState();
+}
+
+class _NotificationsViewState extends State<NotificationsView> {
+  // Get the controller
+  NotificationsController get controller => Get.find<NotificationsController>();
+
+  // Get the global bottom navigation controller
+  final BottomNavAnimationController _bottomNavController =
+      Get.find<BottomNavAnimationController>();
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Hide bottom navigation with animation after page loads
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _bottomNavController.hideBottomNav();
+    });
+  }
+
+  @override
+  void dispose() {
+    // Show bottom navigation when returning to home
+    _bottomNavController.onReturnToHome();
+
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -330,8 +361,7 @@ class NotificationItem extends StatelessWidget {
         return const Icon(Icons.favorite, color: Colors.red);
       case 'comment':
         return const Icon(Icons.comment, color: Colors.grey);
-      case 'message':
-        return const Icon(Icons.message, color: Colors.blueGrey);
+
       default:
         return const Icon(Icons.notifications, color: Colors.grey);
     }

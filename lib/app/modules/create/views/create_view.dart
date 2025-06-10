@@ -17,9 +17,18 @@ class CreateView extends GetView<CreateController> {
   @override
   Widget build(BuildContext context) {
     final accountDataProvider = Get.find<AccountDataProvider>();
+    final bottomNavController = Get.find<BottomNavAnimationController>();
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
+        leading: IconButton(
+          icon: Icon(Icons.close, color: Colors.white, size: 24),
+          onPressed: () {
+            bottomNavController.showBottomNavigation();
+            Get.back();
+          },
+        ),
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -223,7 +232,24 @@ class CreateView extends GetView<CreateController> {
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigation(),
+      extendBody: true,
+      floatingActionButton: Obx(() {
+        return AnimatedSlide(
+          duration: const Duration(milliseconds: 250),
+          offset:
+              bottomNavController.showBottomNav.value
+                  ? Offset.zero
+                  : const Offset(0, 1.2),
+          curve: Curves.easeInOutCubic,
+          child: AnimatedOpacity(
+            opacity: bottomNavController.showBottomNav.value ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            child: BottomNavigation(),
+          ),
+        );
+      }),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 

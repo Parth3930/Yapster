@@ -6,7 +6,7 @@ class NotificationModel {
   final String actorUsername;
   final String actorNickname;
   final String actorAvatar;
-  final String type; // 'follow', 'like', 'comment', 'message'
+  final String type; // 'follow', 'like', 'comment'
   final String? postId; // Reference to post (for like/comment)
   final String? commentId; // Reference to comment
   final String? message; // Additional message content
@@ -74,10 +74,7 @@ class NotificationModel {
           return 'liked your post';
         case 'comment':
           return 'commented on your post';
-        case 'message':
-          return message != null && message!.isNotEmpty
-              ? 'sent: "${message!.length > 30 ? '${message!.substring(0, 30)}...' : message}"'
-              : 'sent you a message';
+
         default:
           return 'interacted with you';
       }

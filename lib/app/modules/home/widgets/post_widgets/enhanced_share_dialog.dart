@@ -515,34 +515,39 @@ class _EnhancedShareDialogState extends State<EnhancedShareDialog> {
                 ),
               ],
             ),
-            child:
-                icon != null
-                    ? FaIcon(
-                      icon,
-                      color: label == 'Snapchat' ? Colors.black : Colors.white,
-                      size: 24,
-                    )
-                    : assetPath != null
-                    ? ClipOval(
-                      child: Image.asset(
-                        assetPath,
-                        width: 50,
-                        height: 50,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return FaIcon(
-                            FontAwesomeIcons.share,
-                            color: Colors.white,
-                            size: 24,
-                          );
-                        },
+            child: Center(
+              child:
+                  icon != null
+                      ? FaIcon(
+                        icon,
+                        color:
+                            label == 'Snapchat' ? Colors.black : Colors.white,
+                        size: 24,
+                      )
+                      : assetPath != null
+                      ? ClipOval(
+                        child: Image.asset(
+                          assetPath,
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Center(
+                              child: FaIcon(
+                                FontAwesomeIcons.share,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                      : FaIcon(
+                        FontAwesomeIcons.share,
+                        color: Colors.white,
+                        size: 24,
                       ),
-                    )
-                    : FaIcon(
-                      FontAwesomeIcons.share,
-                      color: Colors.white,
-                      size: 24,
-                    ),
+            ),
           ),
           SizedBox(height: 8),
           Text(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import '../controllers/explore_controller.dart';
 
 class ExploreView extends StatefulWidget {
@@ -14,17 +15,30 @@ class _ExploreViewState extends State<ExploreView> {
   // Get the controller
   final ExploreController controller = Get.find<ExploreController>();
 
+  // Get the global bottom navigation controller
+  final BottomNavAnimationController _bottomNavController =
+      Get.find<BottomNavAnimationController>();
+
   @override
   void initState() {
     super.initState();
     // Notify the controller that we're on the explore page
     controller.onExplorePageOpened();
+
+    // Hide bottom navigation with animation after page loads
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _bottomNavController.hideBottomNav();
+    });
   }
 
   @override
   void dispose() {
     // Notify the controller that we're leaving the explore page
     controller.onExplorePageClosed();
+
+    // Show bottom navigation when returning to home
+    _bottomNavController.onReturnToHome();
+
     super.dispose();
   }
 

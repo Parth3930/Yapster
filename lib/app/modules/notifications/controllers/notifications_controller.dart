@@ -53,8 +53,11 @@ class NotificationsController extends GetxController {
                   final notification = NotificationModel.fromMap(
                     payload.newRecord,
                   );
-                  notifications.insert(0, notification);
-                  unreadCount.value++;
+                  // Filter out message notifications
+                  if (notification.type != 'message') {
+                    notifications.insert(0, notification);
+                    unreadCount.value++;
+                  }
                 }
               } catch (e) {
                 debugPrint('Error processing notification: $e');

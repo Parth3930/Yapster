@@ -1,236 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
+import 'package:yapster/app/modules/home/controllers/home_controller.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/home/widgets/stories_list_widget.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_widget_factory.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:yapster/app/core/services/push_notification_service.dart';
 import 'package:yapster/app/modules/notifications/controllers/notifications_controller.dart';
 import 'package:yapster/app/modules/explore/views/explore_view.dart';
 import 'package:yapster/app/modules/explore/bindings/explore_binding.dart';
 import 'package:yapster/app/modules/notifications/views/notifications_view.dart';
 import 'package:yapster/app/modules/notifications/bindings/notifications_binding.dart';
-import 'dart:async';
 
-class HomeView extends StatefulWidget {
+class HomeView extends GetView<HomeController> {
   const HomeView({super.key});
-
-  @override
-  State<HomeView> createState() => _HomeViewState();
-}
-
-class _HomeViewState extends State<HomeView> {
-  bool showBottomNav = true;
-  Timer? _showNavTimer;
-  double _lastOffset = 0;
-  ScrollController? _scrollController;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController = ScrollController();
-
-    // Check if we need to scroll to a specific post
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _handleScrollToPost();
-      _checkNotificationPermission();
-    });
-  }
-
-  /// Check and request notification permission if not granted
-  Future<void> _checkNotificationPermission() async {
-    try {
-      final status = await Permission.notification.status;
-
-      if (status.isDenied) {
-        // Show a dialog asking for permission
-        _showNotificationPermissionDialog();
-      } else if (status.isPermanentlyDenied) {
-        // Permission was permanently denied, show settings dialog
-        _showNotificationSettingsDialog();
-      }
-    } catch (e) {
-      debugPrint('Error checking notification permission: $e');
-    }
-  }
-
-  /// Show dialog to request notification permission
-  void _showNotificationPermissionDialog() {
-    Get.dialog(
-      AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: Row(
-          children: [
-            Icon(Icons.notifications, color: Colors.white, size: 24),
-            SizedBox(width: 8),
-            Text(
-              'Stay Updated',
-              style: TextStyle(color: Colors.white, fontSize: 18),
-            ),
-          ],
-        ),
-        content: Text(
-          'Get notified when someone follows you, likes your posts, or sends you a message. You can change this anytime in settings.',
-          style: TextStyle(color: Colors.grey[300], fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: Text('Not Now', style: TextStyle(color: Colors.grey[400])),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Get.back();
-              await _requestNotificationPermission();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-            ),
-            child: Text('Allow'),
-          ),
-        ],
-      ),
-      barrierDismissible: false,
-    );
-  }
-
-  /// Show dialog to open app settings for notification permission
-  void _showNotificationSettingsDialog() {
-    Get.dialog(
-      AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: Row(
-          children: [
-            Icon(Icons.settings, color: Colors.white, size: 24),
-            SizedBox(width: 8),
-            Text(
-              'Enable Notifications',
-              style: TextStyle(color: Colors.white, fontSize: 18),
-            ),
-          ],
-        ),
-        content: Text(
-          'Notifications are disabled. To receive updates about follows, likes, and messages, please enable notifications in your device settings.',
-          style: TextStyle(color: Colors.grey[300], fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Get.back();
-              await openAppSettings();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-            ),
-            child: Text('Open Settings'),
-          ),
-        ],
-      ),
-      barrierDismissible: false,
-    );
-  }
-
-  /// Request notification permission
-  Future<void> _requestNotificationPermission() async {
-    try {
-      final status = await Permission.notification.request();
-
-      if (status.isGranted) {
-        // Permission granted, initialize push notification service
-        final pushService = Get.find<PushNotificationService>();
-        await pushService.init();
-
-        Get.snackbar(
-          'Notifications Enabled',
-          'You\'ll now receive notifications for follows, likes, and messages',
-          backgroundColor: Colors.green[700],
-          colorText: Colors.white,
-          duration: Duration(seconds: 3),
-          snackPosition: SnackPosition.TOP,
-        );
-      } else if (status.isPermanentlyDenied) {
-        _showNotificationSettingsDialog();
-      }
-    } catch (e) {
-      debugPrint('Error requesting notification permission: $e');
-    }
-  }
-
-  void _handleScrollToPost() {
-    final arguments = Get.arguments;
-    if (arguments != null && arguments is Map<String, dynamic>) {
-      final scrollToPostId = arguments['scrollToPostId'] as String?;
-      if (scrollToPostId != null && scrollToPostId.isNotEmpty) {
-        // Wait for posts to load, then scroll to the specific post
-        Timer(Duration(milliseconds: 1000), () {
-          _scrollToPost(scrollToPostId);
-        });
-      }
-    }
-  }
-
-  void _scrollToPost(String postId) {
-    try {
-      final controller = Get.find<PostsFeedController>();
-      final postIndex = controller.posts.indexWhere(
-        (post) => post.id == postId,
-      );
-
-      if (postIndex != -1 && _scrollController != null) {
-        // Calculate approximate position (each post is roughly 400px)
-        final position = (postIndex * 400.0) + 200; // Add offset for header
-
-        _scrollController!.animateTo(
-          position,
-          duration: Duration(milliseconds: 800),
-          curve: Curves.easeInOut,
-        );
-      }
-    } catch (e) {
-      debugPrint('Error scrolling to post: $e');
-    }
-  }
-
-  void _onScroll(ScrollNotification notification) {
-    if (notification is UserScrollNotification ||
-        notification is ScrollUpdateNotification) {
-      final currentOffset = notification.metrics.pixels;
-      if (currentOffset > _lastOffset + 5) {
-        // Scrolling down
-        if (showBottomNav) setState(() => showBottomNav = false);
-        _showNavTimer?.cancel();
-      } else if (currentOffset < _lastOffset - 5) {
-        // Scrolling up
-        if (!showBottomNav) setState(() => showBottomNav = true);
-        _showNavTimer?.cancel();
-      } else if (notification is UserScrollNotification &&
-          notification.direction == ScrollDirection.idle) {
-        // Stopped scrolling
-        _showNavTimer?.cancel();
-        _showNavTimer = Timer(const Duration(seconds: 1), () {
-          if (!showBottomNav) setState(() => showBottomNav = true);
-        });
-      }
-      _lastOffset = currentOffset;
-    }
-  }
-
-  @override
-  void dispose() {
-    _showNavTimer?.cancel();
-    _scrollController?.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -240,17 +24,17 @@ class _HomeViewState extends State<HomeView> {
           Colors.black, // or whatever your app's background color is
       body: GetX<PostsFeedController>(
         init: PostsFeedController(),
-        builder: (controller) {
+        builder: (feedController) {
           return NotificationListener<ScrollNotification>(
             onNotification: (notification) {
-              _onScroll(notification);
+              controller.onScroll(notification);
               return false;
             },
             child: RefreshIndicator(
-              onRefresh: controller.refreshPosts,
+              onRefresh: feedController.refreshPosts,
               // Fix 2: Remove conditional padding, let the feed take full height
               child: CustomScrollView(
-                controller: _scrollController,
+                controller: controller.scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
                   // App bar
@@ -293,14 +77,16 @@ class _HomeViewState extends State<HomeView> {
                                       color: Colors.white,
                                     ),
                                     onPressed:
-                                        () => Get.to(
-                                          () => const ExploreView(),
-                                          transition: Transition.rightToLeft,
-                                          duration: const Duration(
-                                            milliseconds: 300,
-                                          ),
-                                          binding: ExploreBinding(),
-                                        ),
+                                        () => controller
+                                            .navigateWithBottomNavAnimation(
+                                              const ExploreView(),
+                                              transition:
+                                                  Transition.rightToLeft,
+                                              duration: const Duration(
+                                                milliseconds: 300,
+                                              ),
+                                              binding: ExploreBinding(),
+                                            ),
                                   ),
                                   GetX<NotificationsController>(
                                     init: NotificationsController(),
@@ -315,17 +101,18 @@ class _HomeViewState extends State<HomeView> {
                                               color: Colors.white,
                                             ),
                                             onPressed:
-                                                () => Get.to(
-                                                  () =>
+                                                () => controller
+                                                    .navigateWithBottomNavAnimation(
                                                       const NotificationsView(),
-                                                  transition:
-                                                      Transition.rightToLeft,
-                                                  duration: const Duration(
-                                                    milliseconds: 300,
-                                                  ),
-                                                  binding:
-                                                      NotificationsBinding(),
-                                                ),
+                                                      transition:
+                                                          Transition
+                                                              .rightToLeft,
+                                                      duration: const Duration(
+                                                        milliseconds: 300,
+                                                      ),
+                                                      binding:
+                                                          NotificationsBinding(),
+                                                    ),
                                           ),
                                           if (notificationController
                                                   .unreadCount
@@ -381,8 +168,8 @@ class _HomeViewState extends State<HomeView> {
                   // Add spacing below stories
                   const SliverToBoxAdapter(child: SizedBox(height: 20)),
                   // Posts Feed - Handle different states
-                  if (controller.isLoading.value &&
-                      !controller.hasLoadedOnce.value)
+                  if (feedController.isLoading.value &&
+                      !feedController.hasLoadedOnce.value)
                     // Initial loading state - reduced shimmer count for faster loading
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
@@ -390,39 +177,39 @@ class _HomeViewState extends State<HomeView> {
                         childCount: 1, // Reduced from 3 to 1 for faster loading
                       ),
                     )
-                  else if (controller.posts.isEmpty &&
-                      controller.hasLoadedOnce.value)
+                  else if (feedController.posts.isEmpty &&
+                      feedController.hasLoadedOnce.value)
                     // Empty state - no posts available
                     SliverToBoxAdapter(child: _buildEmptyState())
-                  else if (controller.posts.isNotEmpty)
+                  else if (feedController.posts.isNotEmpty)
                     // Posts available - show the feed
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
-                          if (index == controller.posts.length) {
-                            if (controller.isLoadingMore.value) {
+                          if (index == feedController.posts.length) {
+                            if (feedController.isLoadingMore.value) {
                               return _buildLoadMoreIndicator();
                             } else {
                               WidgetsBinding.instance.addPostFrameCallback((_) {
-                                controller.loadMorePosts();
+                                feedController.loadMorePosts();
                               });
                               return const SizedBox.shrink();
                             }
                           }
-                          final post = controller.posts[index];
+                          final post = feedController.posts[index];
                           return Padding(
                             padding: EdgeInsets.symmetric(horizontal: 16),
                             child: Center(
                               child: PostWidgetFactory.createPostWidget(
                                 post: post,
-                                controller: controller,
+                                controller: feedController,
                               ),
                             ),
                           );
                         },
                         childCount:
-                            controller.posts.length +
-                            (controller.hasMorePosts.value ? 1 : 0),
+                            feedController.posts.length +
+                            (feedController.hasMorePosts.value ? 1 : 0),
                       ),
                     )
                   else
@@ -443,8 +230,7 @@ class _HomeViewState extends State<HomeView> {
                   // Fix 3: Add bottom padding as a sliver to ensure proper spacing
                   SliverToBoxAdapter(
                     child: SizedBox(
-                      height:
-                          showBottomNav ? 56.0 : 0, // Bottom navigation height
+                      height: 120, // Space for floating bottom navigation
                     ),
                   ),
                 ],
@@ -455,28 +241,18 @@ class _HomeViewState extends State<HomeView> {
       ),
       // Fix 4: Use extendBody to allow content behind bottom nav when hidden
       extendBody: true,
-      bottomNavigationBar: AnimatedSlide(
-        duration: const Duration(milliseconds: 150),
-        offset: showBottomNav ? Offset.zero : const Offset(0, 1),
-        curve: Curves.easeOut,
-        child: AnimatedContainer(
+      floatingActionButton: Obx(
+        () => AnimatedSlide(
           duration: const Duration(milliseconds: 150),
-          decoration: BoxDecoration(
-            color: showBottomNav ? Colors.black : Colors.transparent,
-            boxShadow:
-                showBottomNav
-                    ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 10,
-                        offset: Offset(0, -2),
-                      ),
-                    ]
-                    : null,
-          ),
+          offset:
+              controller.bottomNavController.showBottomNav.value
+                  ? Offset.zero
+                  : const Offset(0, 1),
+          curve: Curves.easeOut,
           child: BottomNavigation(),
         ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 }

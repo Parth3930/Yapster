@@ -680,7 +680,9 @@ class ProfileView extends GetView<ProfileController> {
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigation(),
+      extendBody: true,
+      floatingActionButton: BottomNavigation(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 

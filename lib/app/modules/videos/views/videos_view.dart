@@ -22,7 +22,7 @@ class VideosView extends GetView<VideosController> {
               color: Colors.white,
             ),
             const SizedBox(height: 24),
-            
+
             // Coming Soon text
             const Text(
               'Coming Soon',
@@ -33,20 +33,19 @@ class VideosView extends GetView<VideosController> {
               ),
             ),
             const SizedBox(height: 12),
-            
+
             // Subtitle
             Text(
               'Videos feature is under development',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[400],
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey[400]),
               textAlign: TextAlign.center,
             ),
           ],
         ),
       ),
-      bottomNavigationBar: const BottomNavigation(),
+      extendBody: true,
+      floatingActionButton: const BottomNavigation(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 }

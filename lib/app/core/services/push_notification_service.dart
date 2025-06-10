@@ -133,7 +133,10 @@ class PushNotificationService extends GetxService {
             ),
             callback: (payload) {
               debugPrint('New notification received via Supabase Realtime');
-              _handleNewNotification(payload);
+              // Filter out message notifications
+              if (payload.newRecord['type'] != 'message') {
+                _handleNewNotification(payload);
+              }
             },
           );
 
@@ -258,8 +261,7 @@ class PushNotificationService extends GetxService {
         return 'New like on your post';
       case 'comment':
         return '${notification.actorNickname} commented on your post';
-      case 'message':
-        return 'New message from ${notification.actorNickname}';
+
       default:
         return 'New notification';
     }
@@ -274,8 +276,7 @@ class PushNotificationService extends GetxService {
         return '${notification.actorNickname} liked your post';
       case 'comment':
         return notification.message ?? 'Tap to view the comment';
-      case 'message':
-        return notification.message ?? 'Tap to view the message';
+
       default:
         return 'Tap to view details';
     }
