@@ -68,8 +68,8 @@ class StoriesListWidget extends StatelessWidget {
               // View own stories
               controller.navigateToViewStories(controller.currentUserId.value);
             } else {
-              // Create new story - navigate to create story page
-              Get.toNamed(Routes.CREATE_STORY);
+              // Create new story - navigate to create page with story mode selected
+              Get.toNamed(Routes.CREATE, arguments: {'mode': 'STORY'});
             }
           },
           radius: 35,

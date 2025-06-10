@@ -9,7 +9,7 @@ import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart'
 import 'package:yapster/app/modules/profile/controllers/profile_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/chat/controllers/group_controller.dart';
-import 'package:yapster/app/modules/create/controllers/create_controller.dart';
+
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -166,10 +166,8 @@ class PreloaderService extends GetxService {
         Get.put<ChatController>(ChatController(), permanent: true);
       }
 
-      // Create controller
-      if (!Get.isRegistered<CreateController>()) {
-        Get.put<CreateController>(CreateController(), permanent: true);
-      }
+      // SKIP Create controller - should not be preloaded to avoid camera access on startup
+      // CreateController will be created lazily when user navigates to create page
 
       controllersPreloaded.value = true;
       debugPrint('$_tag: Page controllers preloaded');

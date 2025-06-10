@@ -196,7 +196,7 @@ class StoriesHomeController extends GetxController {
 
   /// Navigate to create story
   void navigateToCreateStory() {
-    Get.toNamed('/create-story');
+    Get.toNamed('/create', arguments: {'mode': 'STORY'});
   }
 
   /// Navigate to view stories for a specific user

@@ -23,7 +23,6 @@ import 'package:yapster/app/modules/videos/bindings/videos_binding.dart';
 
 import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
-import 'package:yapster/app/modules/stories/views/create_story_view.dart';
 import 'package:yapster/app/modules/stories/views/story_viewer_view.dart';
 import 'package:yapster/app/modules/stories/bindings/stories_binding.dart';
 import 'package:yapster/app/modules/post/views/post_detail_view.dart';
@@ -265,19 +264,6 @@ class AppPages {
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-    ),
-    // Create story page
-    GetPage(
-      name: _Paths.CREATE_STORY,
-      page: () => CreateStoryView(),
-      binding: StoriesBinding(),
-      transition: Transition.leftToRight,
-      transitionDuration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      fullscreenDialog: true,
-      opaque: true,
-      preventDuplicates: true,
-      popGesture: true,
     ),
     // View stories page
     GetPage(

@@ -26,6 +26,9 @@ class ProfileView extends GetView<ProfileController> {
   // Track if initial data has been loaded to avoid repeated database calls
   static final Map<String, bool> _initialDataLoaded = <String, bool>{};
 
+  // Track if posts have been initialized to prevent infinite loops
+  static final Map<String, bool> _postsInitialized = <String, bool>{};
+
   // Story status tracking
   final RxBool hasStory = false.obs;
   final RxBool hasUnseenStory = false.obs;
@@ -203,6 +206,14 @@ class ProfileView extends GetView<ProfileController> {
                         child: CachedNetworkImage(
                           imageUrl: bannerUrl,
                           fit: BoxFit.cover,
+                          fadeInDuration:
+                              Duration.zero, // Remove fade animation
+                          fadeOutDuration:
+                              Duration.zero, // Remove fade animation
+                          memCacheWidth: 400, // Limit memory cache size
+                          memCacheHeight: 150, // Match banner height
+                          maxWidthDiskCache: 800, // Reasonable disk cache limit
+                          maxHeightDiskCache: 300,
                           placeholder:
                               (context, url) =>
                                   Container(color: Colors.grey[800]),
@@ -264,8 +275,11 @@ class ProfileView extends GetView<ProfileController> {
                                 },
                               );
                             } else {
-                              // Create new story
-                              Get.toNamed(Routes.CREATE_STORY);
+                              // Create new story - navigate to create page with story mode selected
+                              Get.toNamed(
+                                Routes.CREATE,
+                                arguments: {'mode': 'STORY'},
+                              );
                             }
                           } else {
                             if (hasStory.value) {
@@ -958,55 +972,64 @@ class ProfileView extends GetView<ProfileController> {
     final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
     final targetUserId = isCurrentUser ? currentUserId ?? '' : userId ?? '';
 
-    // OPTIMIZATION: Check if posts are already cached using the cache service
-    final cacheService = Get.find<UserPostsCacheService>();
-    final hasCachedPosts = cacheService.hasCachedPosts(targetUserId);
-    final hasPostsInController = profilePostsController.profilePosts.isNotEmpty;
-    final isTargetCurrentUser = targetUserId == currentUserId;
+    // CRITICAL FIX: Move loading logic to a one-time initialization
+    // Use the static map to track if we've already initialized posts for this user
+    final initKey = 'posts_$targetUserId';
 
-    // For other users, only load once and don't cache
-    if (!isTargetCurrentUser) {
-      // Check if we've already attempted to load posts for this user
-      final hasAttempted = profilePostsController.hasLoadAttempted(
-        targetUserId,
-      );
-      if (!hasPostsInController &&
-          !profilePostsController.isLoading.value &&
-          !hasAttempted) {
-        debugPrint('Loading posts once for other user: $targetUserId');
-        Future.microtask(() {
-          profilePostsController.loadUserPosts(targetUserId);
-        });
-      } else {
-        debugPrint(
-          'Posts already loaded, loading, or attempted for other user: $targetUserId (attempted: $hasAttempted)',
-        );
-      }
-    } else {
-      // For current user, use caching logic
-      if (!hasCachedPosts &&
-          !hasPostsInController &&
-          !profilePostsController.isLoading.value) {
-        debugPrint(
-          'No cached posts found, loading for current user: $targetUserId',
-        );
-        Future.microtask(() {
-          profilePostsController.loadUserPosts(targetUserId);
-        });
-      } else if (hasCachedPosts && !hasPostsInController) {
-        debugPrint(
-          'Loading cached posts instantly for current user: $targetUserId',
-        );
-        // Load cached posts immediately and synchronously
-        _loadCachedPostsInstantly(
-          profilePostsController,
-          cacheService,
+    if (!_postsInitialized.containsKey(initKey)) {
+      _postsInitialized[initKey] = true;
+
+      // OPTIMIZATION: Check if posts are already cached using the cache service
+      final cacheService = Get.find<UserPostsCacheService>();
+      final hasCachedPosts = cacheService.hasCachedPosts(targetUserId);
+      final hasPostsInController =
+          profilePostsController.profilePosts.isNotEmpty;
+      final isTargetCurrentUser = targetUserId == currentUserId;
+
+      // For other users, only load once and don't cache
+      if (!isTargetCurrentUser) {
+        // Check if we've already attempted to load posts for this user
+        final hasAttempted = profilePostsController.hasLoadAttempted(
           targetUserId,
         );
+        if (!hasPostsInController &&
+            !profilePostsController.isLoading.value &&
+            !hasAttempted) {
+          debugPrint('Loading posts once for other user: $targetUserId');
+          Future.microtask(() {
+            profilePostsController.loadUserPosts(targetUserId);
+          });
+        } else {
+          debugPrint(
+            'Posts already loaded, loading, or attempted for other user: $targetUserId (attempted: $hasAttempted)',
+          );
+        }
       } else {
-        debugPrint(
-          'Using existing posts data for current user: $targetUserId (cached: $hasCachedPosts, controller: $hasPostsInController)',
-        );
+        // For current user, use caching logic
+        if (!hasCachedPosts &&
+            !hasPostsInController &&
+            !profilePostsController.isLoading.value) {
+          debugPrint(
+            'No cached posts found, loading for current user: $targetUserId',
+          );
+          Future.microtask(() {
+            profilePostsController.loadUserPosts(targetUserId);
+          });
+        } else if (hasCachedPosts && !hasPostsInController) {
+          debugPrint(
+            'Loading cached posts instantly for current user: $targetUserId',
+          );
+          // Load cached posts immediately and synchronously
+          _loadCachedPostsInstantly(
+            profilePostsController,
+            Get.find<UserPostsCacheService>(),
+            targetUserId,
+          );
+        } else {
+          debugPrint(
+            'Using existing posts data for current user: $targetUserId (cached: $hasCachedPosts, controller: $hasPostsInController)',
+          );
+        }
       }
     }
 
@@ -1142,6 +1165,14 @@ class ProfileView extends GetView<ProfileController> {
     String targetUserId,
   ) {
     try {
+      // Prevent multiple calls to this method for the same user
+      if (profilePostsController.profilePosts.isNotEmpty) {
+        debugPrint(
+          'Posts already loaded for user: $targetUserId, skipping instant load',
+        );
+        return;
+      }
+
       // Get cached posts synchronously from the cache service
       final cachedPosts = cacheService.getCachedPosts(targetUserId);
       if (cachedPosts.isNotEmpty) {
@@ -1158,14 +1189,15 @@ class ProfileView extends GetView<ProfileController> {
           );
         });
       } else {
-        // If no cached posts, fall back to async loading
+        debugPrint('No cached posts found for user: $targetUserId');
+        // If no cached posts, fall back to async loading only once
         Future.microtask(() {
           profilePostsController.loadUserPosts(targetUserId);
         });
       }
     } catch (e) {
       debugPrint('Error loading cached posts instantly: $e');
-      // Fall back to async loading on error
+      // Fall back to async loading on error only once
       Future.microtask(() {
         profilePostsController.loadUserPosts(targetUserId);
       });
@@ -1190,6 +1222,19 @@ class ProfileView extends GetView<ProfileController> {
   bool get isCurrentUser =>
       userId == null ||
       userId == Get.find<SupabaseService>().currentUser.value?.id;
+
+  // Clear posts initialization cache for a specific user (useful for refresh)
+  static void clearPostsInitialization(String userId) {
+    final initKey = 'posts_$userId';
+    _postsInitialized.remove(initKey);
+    debugPrint('Cleared posts initialization for user: $userId');
+  }
+
+  // Clear all posts initialization cache
+  static void clearAllPostsInitialization() {
+    _postsInitialized.clear();
+    debugPrint('Cleared all posts initialization cache');
+  }
 
   // Check story status for the current user or other user
   Future<void> _checkStoryStatus() async {

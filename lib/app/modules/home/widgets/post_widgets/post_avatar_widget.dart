@@ -36,9 +36,11 @@ class PostAvatarWidget extends StatelessWidget {
           fadeOutDuration: Duration.zero,
           placeholder: null, // No placeholder for instant display
           errorWidget: (context, url, error) => _buildDefaultAvatar(),
-          // Use memory cache for better performance
-          memCacheWidth: (radius * 2 * 2).toInt(), // 2x for high DPI
-          memCacheHeight: (radius * 2 * 2).toInt(),
+          // Use memory cache for better performance with reduced size
+          memCacheWidth: (radius * 2).toInt(), // Reduce memory usage
+          memCacheHeight: (radius * 2).toInt(),
+          maxWidthDiskCache: (radius * 2).toInt(), // Limit disk cache
+          maxHeightDiskCache: (radius * 2).toInt(),
         ),
       );
     }

@@ -166,8 +166,10 @@ class ProfileAvatarWidget extends StatelessWidget {
                 backgroundColor: ProfileConstants.darkBackground,
                 child: Icon(Icons.person, size: radius, color: Colors.white),
               ),
-          memCacheWidth: (radius * 2 * 2).toInt(), // 2x for high DPI
-          memCacheHeight: (radius * 2 * 2).toInt(),
+          memCacheWidth: (radius * 2).toInt(), // Reduce memory cache size
+          memCacheHeight: (radius * 2).toInt(),
+          maxWidthDiskCache: (radius * 2).toInt(), // Limit disk cache size
+          maxHeightDiskCache: (radius * 2).toInt(),
         ),
       );
     }

@@ -127,11 +127,14 @@ class OptimizedCreateBinding extends Bindings {
     if (!Get.isRegistered<PostRepository>()) {
       Get.put<PostRepository>(PostRepository(), permanent: true);
     }
-
-    // Use preloaded controller
-    if (!Get.isRegistered<CreateController>()) {
-      Get.put<CreateController>(CreateController(), permanent: true);
+    if (!Get.isRegistered<StoryRepository>()) {
+      Get.put<StoryRepository>(StoryRepository(), permanent: true);
     }
+
+    // IMPORTANT: CreateController should NOT be permanent to avoid camera access on startup
+    // Only create it when actually needed (when navigating to create page)
+    Get.lazyPut<CreateController>(() => CreateController());
+    Get.lazyPut(() => BottomNavAnimationController());
   }
 }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:yapster/app/routes/app_pages.dart';
@@ -47,6 +48,9 @@ Future<void> startApp() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Configure system to reduce memory usage and prevent buffer issues
+  _configureSystemForOptimalPerformance();
+
   try {
     // Pre-initialize app components
     await AppInitializer.preInitialize();
@@ -70,5 +74,30 @@ Future<void> startApp() async {
     debugPrint('Failed to initialize essential services: $e');
     // Run the app in error state
     runApp(const MyApp(initializationFailed: true));
+  }
+}
+
+/// Configure system settings for optimal performance and reduced memory usage
+void _configureSystemForOptimalPerformance() {
+  try {
+    // Set system UI overlay style to reduce memory usage
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
+
+    // Configure preferred orientations
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    debugPrint('System configured for optimal performance');
+  } catch (e) {
+    debugPrint('Error configuring system: $e');
   }
 }

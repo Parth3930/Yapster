@@ -7,11 +7,12 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:yapster/app/modules/stories/controllers/doodle_controller.dart';
 import 'package:yapster/app/modules/stories/controllers/text_controller.dart';
 import 'package:yapster/app/modules/stories/models/text_element.dart';
-import 'package:yapster/app/modules/stories/views/create_story_view.dart';
 import 'package:yapster/app/data/repositories/story_repository.dart';
 import 'package:yapster/app/data/models/story_model.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/home/controllers/stories_home_controller.dart';
+
+enum DrawingMode { none, text, doodle }
 
 class StoriesController extends GetxController {
   // Track if the story creation panel is visible
@@ -144,8 +145,8 @@ class StoriesController extends GetxController {
 
   // Toggle the story creation panel
   void toggleStoryPanel() {
-    // Navigate to the create story page instead of showing overlay
-    Get.toNamed('/create-story');
+    // Navigate to the create page with story mode selected
+    Get.toNamed('/create', arguments: {'mode': 'STORY'});
   }
 
   // Select an image from the recent media
