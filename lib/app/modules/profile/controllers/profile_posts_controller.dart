@@ -17,6 +17,9 @@ class ProfilePostsController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxString currentUserId = ''.obs;
 
+  // Track the post currently selected via long-press for additional actions
+  final RxString selectedPostIdForAction = ''.obs;
+
   // Track failed post loads to prevent infinite retries
   final Set<String> _failedPostLoads = <String>{};
 
@@ -494,5 +497,15 @@ class ProfilePostsController extends GetxController {
   void clearLoadAttempt(String userId) {
     _loadAttempts.remove(userId);
     debugPrint('Cleared load attempt for user: $userId');
+  }
+
+  /// Select a post (e.g., after long-press) to show contextual actions
+  void selectPostForAction(String postId) {
+    selectedPostIdForAction.value = postId;
+  }
+
+  /// Clear any active selection
+  void clearSelectedPost() {
+    selectedPostIdForAction.value = '';
   }
 }

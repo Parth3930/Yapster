@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -6,6 +5,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 import 'package:yapster/app/routes/app_pages.dart';
@@ -14,25 +14,33 @@ final Map<String, bool> _postsInitialized = <String, bool>{};
 
 Widget buildPostsTab(String? userId, bool isCurrentUser) {
   ProfilePostsController profilePostsController;
+  bool controllerCreated = false; // Track if we just created a new controller
   try {
     profilePostsController = Get.find<ProfilePostsController>(
       tag: 'profile_posts_${userId ?? 'current'}',
     );
   } catch (e) {
-    // If controller not found, create it (should only happen if there's an initialization issue)
+    // If controller not found, create it (happens when navigating back after disposal)
     profilePostsController = Get.put(
       ProfilePostsController(),
       tag: 'profile_posts_${userId ?? 'current'}',
     );
+    controllerCreated = true;
   }
 
   final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
   final targetUserId = isCurrentUser ? currentUserId ?? '' : userId ?? '';
 
-  // CRITICAL FIX: Move loading logic to a one-time initialization
-  // Use the static map to track if we've already initialized posts for this user
+  // Key used to track whether we've already initialized posts for this user
   final initKey = 'posts_$targetUserId';
 
+  // If we've just created the controller, remove any stale initialization flag
+  if (controllerCreated) {
+    _postsInitialized.remove(initKey);
+  }
+
+  // CRITICAL FIX: Move loading logic to a one-time initialization
+  // Use the static map to track if we've already initialized posts for this user
   if (!_postsInitialized.containsKey(initKey)) {
     _postsInitialized[initKey] = true;
 
@@ -132,72 +140,56 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
       itemBuilder: (context, index) {
         final post = posts[index];
 
-        // Calculate a variable height for each post to create masonry effect
-        // This will be based on content type and give a more Pinterest-like effect
-        double aspectRatio = 0.8; // Default aspect ratio
-
-        // Vary aspect ratio by post type for Pinterest-like variation
+        // Determine aspect ratio for the post card to achieve masonry effect
+        double aspectRatio;
         if (post.postType.toLowerCase() == 'image') {
-          // Images get a random aspect ratio for variation (like Pinterest)
-          aspectRatio = [0.7, 0.8, 1.0, 1.2, 1.5][index % 5];
+          // Use a set of predefined aspect ratios and cycle through for visual variety
+          const ratios = [0.8, 1.0, 1.25, 1.5];
+          aspectRatio = ratios[index % ratios.length];
         } else if (post.postType.toLowerCase() == 'video') {
-          // Videos tend to be more vertical (16:9 inverted)
-          aspectRatio = 0.6;
+          aspectRatio = 0.7; // Slightly taller for videos
         } else {
-          // Text posts get taller based on content length
+          // Text posts: scale height with content length for visual balance
           final textLength = post.content.length;
           if (textLength > 120) {
-            aspectRatio = 1.5; // Very tall
+            aspectRatio = 1.4;
           } else if (textLength > 60) {
-            aspectRatio = 1.2; // Medium tall
+            aspectRatio = 1.1;
           } else {
-            aspectRatio = 0.9; // Short
+            aspectRatio = 0.9;
           }
         }
 
-        return SizedBox(
-          height: max(200, 160 * aspectRatio),
-          child: Card(
-            color: Color(0xFF242424),
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            clipBehavior: Clip.antiAlias,
+        return Card(
+          color: Color(0xFF242424),
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: AspectRatio(
+            aspectRatio: 1 / aspectRatio, // width : height ratio
             child: GestureDetector(
               onTap: () {
-                // When tapped, navigate to the post detail page
+                // Navigate to post detail page
                 Get.toNamed(
                   '${Routes.POST_DETAIL}/${post.id}',
                   arguments: {'post': post},
                 );
               },
               onLongPress: () {
-                // Check if this is the user's own post
+                // Allow delete only for own posts
                 final currentUserId =
                     Get.find<SupabaseService>().client.auth.currentUser?.id;
-                if (currentUserId != post.userId)
-                  return; // Only allow delete for own posts
-
-                // Show delete confirmation with blur effect
+                if (currentUserId != post.userId) return;
                 _showDeleteConfirmation(post);
               },
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Post content preview
                   if (post.postType.toLowerCase() == 'image' &&
                       post.imageUrl != null)
-                    Image.network(
-                      post.imageUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder:
-                          (context, error, stackTrace) => Icon(
-                            Icons.image_not_supported,
-                            size: 40,
-                            color: Colors.grey,
-                          ),
-                    )
+                    Image.network(post.imageUrl!, fit: BoxFit.cover)
                   else if (post.postType.toLowerCase() == 'video' &&
                       post.content.isNotEmpty)
                     Stack(
@@ -230,15 +222,15 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
                       ],
                     )
                   else
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      alignment: Alignment.center,
+                    Padding(
+                      padding: const EdgeInsets.all(12.0),
                       child: Text(
                         post.content,
-                        style: TextStyle(color: Colors.white, fontSize: 14),
-                        maxLines: 6,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          height: 1.3,
+                        ),
                       ),
                     ),
                 ],
@@ -387,6 +379,9 @@ void _showDeleteConfirmation(PostModel post) {
                                   Get.find<ProfilePostsController>(
                                     tag: 'profile_posts_${currentUserId}',
                                   );
+                              // First remove the post directly from the controller
+                              profileController.removePost(post.id);
+                              // Then refresh posts to ensure everything is in sync
                               profileController.refreshPosts();
                             } catch (e) {
                               debugPrint(
@@ -397,6 +392,10 @@ void _showDeleteConfirmation(PostModel post) {
                             // Update cache to reflect the deletion
                             try {
                               userPostsCache.refreshUserPosts(currentUserId);
+                              // Decrement post count in AccountDataProvider
+                              final accountProvider =
+                                  Get.find<AccountDataProvider>();
+                              accountProvider.decrementPostCount();
                             } catch (e) {
                               debugPrint(
                                 'Error refreshing user posts cache: $e',

@@ -4,6 +4,8 @@ import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:yapster/app/core/services/user_posts_cache_service.dart';
+import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 
 class PostRepository extends GetxService {
   SupabaseService get _supabase => Get.find<SupabaseService>();
@@ -136,6 +138,9 @@ class PostRepository extends GetxService {
     PostModel post,
     List<File> imageFiles,
   ) async {
+    debugPrint(
+      '⚠️ Starting createPostWithImages - Tracing for user_posts column issue',
+    );
     try {
       // Validate user_id is not empty
       if (post.userId.isEmpty) {
@@ -146,6 +151,7 @@ class PostRepository extends GetxService {
       // First, create the post to get the ID
       final postData = post.toDatabaseMap();
       postData.remove('id'); // Remove ID so database generates it
+      debugPrint('⚠️ Post data prepared: ${postData.keys.join(', ')}');
 
       // Try to fetch profile data to include with post
       try {
@@ -171,6 +177,9 @@ class PostRepository extends GetxService {
       }
 
       debugPrint('Creating post with data: $postData');
+      debugPrint(
+        '⚠️ About to run SQL insert into posts table - watching for user_posts error',
+      );
 
       final response =
           await _supabase.client
@@ -179,8 +188,13 @@ class PostRepository extends GetxService {
               .select('id')
               .single();
 
+      debugPrint('⚠️ SQL insert into posts table completed successfully');
+
       final postId = response['id'] as String;
       debugPrint('Post created successfully with ID: $postId');
+      debugPrint(
+        '⚠️ Post created. Now watching for user_posts column error in subsequent operations',
+      );
 
       // Upload images if any
       if (imageFiles.isNotEmpty) {
@@ -235,6 +249,30 @@ class PostRepository extends GetxService {
         }
       }
 
+      // Update the user posts cache after creating the post
+      try {
+        // Get the post with the new ID and add it to cache
+        final createdPostResponse =
+            await _supabase.client
+                .from('posts')
+                .select('*')
+                .eq('id', postId)
+                .single();
+
+        if (createdPostResponse != null) {
+          final createdPost = PostModel.fromMap(createdPostResponse);
+          // Use the UserPostsCacheService to update the cache
+          final cacheService = Get.find<UserPostsCacheService>();
+          cacheService.addPostToCache(post.userId, createdPost);
+          debugPrint('Added new post to user cache: $postId');
+
+          // Update the user's post count and refresh relevant controllers
+          await updateUserPostCount(post.userId);
+        }
+      } catch (cacheError) {
+        debugPrint('Error updating post cache: $cacheError');
+      }
+
       return postId;
     } catch (e) {
       debugPrint('Error creating post: $e');
@@ -245,6 +283,57 @@ class PostRepository extends GetxService {
   /// Create a new post (legacy method for backward compatibility)
   Future<String?> createPost(PostModel post) async {
     return createPostWithImages(post, []);
+  }
+
+  /// Update the user's post count in memory and notify controllers
+  Future<void> updateUserPostCount(String userId) async {
+    try {
+      // Get current count from database
+      final response = await _supabase.client
+          .from('posts')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('is_deleted', false);
+
+      final postCount = response.length;
+      debugPrint('Updated post count for user $userId is $postCount');
+
+      // Update the post_count column in the profiles table
+      try {
+        await _supabase.client
+            .from('profiles')
+            .update({'post_count': postCount})
+            .eq('user_id', userId);
+        debugPrint('Updated post_count in profiles table for user $userId.');
+      } catch (e) {
+        debugPrint('Error updating post_count in profiles table: $e');
+      }
+
+      // Notify any controllers that need this information
+      try {
+        final cacheService = Get.find<UserPostsCacheService>();
+        await cacheService.refreshUserPosts(userId);
+        debugPrint('Refreshed posts cache for user: $userId');
+      } catch (e) {
+        debugPrint('Error refreshing user posts cache: $e');
+      }
+
+      try {
+        final tags = ['profile_posts_$userId', 'profile_posts_current'];
+        for (final tag in tags) {
+          if (Get.isRegistered<ProfilePostsController>(tag: tag)) {
+            final controller = Get.find<ProfilePostsController>(tag: tag);
+            controller.refreshPosts(forceRefresh: true);
+            debugPrint('Refreshed ProfilePostsController with tag: $tag');
+            break;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error updating profile controllers: $e');
+      }
+    } catch (e) {
+      debugPrint('Error updating user post count: $e');
+    }
   }
 
   /// Get posts feed with engagement-based algorithm
@@ -475,7 +564,7 @@ class PostRepository extends GetxService {
         return false;
       }
 
-      // 2. Delete from posts table
+      // 2. Permanently delete post from posts table
       await _supabase.client
           .from('posts')
           .delete()
@@ -585,7 +674,7 @@ class PostRepository extends GetxService {
         // Continue despite media errors - the post is already deleted
       }
 
-      // 4. Update post count in profile
+      // 4. Update post count in profile (skip database update as column doesn't exist)
       try {
         // Get current count from database
         final response = await _supabase.client
@@ -596,15 +685,48 @@ class PostRepository extends GetxService {
 
         final postCount = response.length;
 
-        // Update the profile
-        await _supabase.client
-            .from('profiles')
-            .update({'post_count': postCount})
-            .eq('user_id', userId);
+        // Update the post_count column in the profiles table
+        try {
+          await _supabase.client
+              .from('profiles')
+              .update({'post_count': postCount})
+              .eq('user_id', userId);
+          debugPrint('Updated post_count in profiles table for user $userId after deletion.');
+        } catch (e) {
+          debugPrint('Error updating post_count in profiles table after deletion: $e');
+        }
 
-        debugPrint('Updated post count for user $userId to $postCount');
+        // Notify controllers about post deletion
+        try {
+          final cacheService = Get.find<UserPostsCacheService>();
+          cacheService.refreshUserPosts(userId);
+
+          try {
+            final tags = [
+              'profile_posts_$userId',
+              'profile_posts_current',
+              'profile_threads_current',
+            ];
+            for (final tag in tags) {
+              if (Get.isRegistered<ProfilePostsController>(tag: tag)) {
+                final controller = Get.find<ProfilePostsController>(tag: tag);
+                controller.refreshPosts(forceRefresh: true);
+                debugPrint(
+                  'Successfully refreshed ProfilePostsController with tag: $tag',
+                );
+                break;
+              }
+            }
+          } catch (controllerError) {
+            debugPrint(
+              'ProfilePostsController refresh attempted but not found: $controllerError',
+            );
+          }
+        } catch (e) {
+          debugPrint('Error refreshing data after post deletion: $e');
+        }
       } catch (countError) {
-        debugPrint('Error updating post count: $countError');
+        debugPrint('Error calculating post count: $countError');
       }
 
       return true;

@@ -157,9 +157,10 @@ class AccountDataProvider extends GetxController {
     _rebuildPostsMap();
   }
 
-  // Update user_posts data directly
+  // Update user posts data in memory only
   void updateUserPostData(Map<String, dynamic> newUserPostData) {
     userPostData.value = newUserPostData;
+    debugPrint('Updated local user post data (not in database)');
   }
 
   // Add a follower to the list (usually from realtime updates)
@@ -525,11 +526,12 @@ class AccountDataProvider extends GetxController {
       // Get posts from db cache or fetch from API
       final postsList = await dbCacheService.getUserPosts(userId, () async {
         // Fetch posts from the database
-        final response = await supabaseService.client
-            .from('posts')
-            .select()
-            .eq('user_id', userId)
-            .order('created_at', ascending: false);
+        final response =
+            await supabaseService.client
+                .from('posts')
+                .select()
+                .eq('user_id', userId)
+                .order('created_at', ascending: false);
 
         return List<Map<String, dynamic>>.from(response);
       });
@@ -537,8 +539,11 @@ class AccountDataProvider extends GetxController {
       posts.value = postsList;
       _rebuildPostsMap();
 
-      // Update post count in user_posts data
-      userPostData['post_count'] = postsList.length;
+      // Update post count in local data structure only
+      userPostData.value = {'post_count': postsList.length};
+      debugPrint(
+        'Updated local post count to ${postsList.length} (not in database)',
+      );
 
       // Cache the posts for persistent storage
       await cacheManager.cacheUserPosts(userId, postsList);
@@ -863,5 +868,22 @@ class AccountDataProvider extends GetxController {
       followerCount.value = 0;
       followingCount.value = 0;
     }
+  }
+
+  /// Increment post count (used when user creates a post optimistically)
+  void incrementPostCount() {
+    final current = userPostData['post_count'] as int? ?? 0;
+    userPostData['post_count'] = current + 1;
+    userPostData.refresh();
+    debugPrint('AccountDataProvider: incremented post_count to ${current + 1}');
+  }
+
+  /// Decrement post count safely (used when a post is deleted)
+  void decrementPostCount() {
+    final current = userPostData['post_count'] as int? ?? 0;
+    final newCount = current > 0 ? current - 1 : 0;
+    userPostData['post_count'] = newCount;
+    userPostData.refresh();
+    debugPrint('AccountDataProvider: decremented post_count to $newCount');
   }
 }

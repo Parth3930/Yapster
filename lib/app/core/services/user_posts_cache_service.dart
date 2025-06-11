@@ -464,38 +464,13 @@ class UserPostsCacheService extends GetxService {
         debugPrint('Added new post to cache for current user: $userId');
       }
 
-      // Update post count in user's profile if it's the current user
-      _updateUserPostCount(userId);
+      // Skip the update post count operation as it's causing issues
+      // _updateUserPostCount(userId);
+      debugPrint(
+        'Skipped updating post count in user profile to avoid user_posts column error',
+      );
     } catch (e) {
       debugPrint('Error adding new post to cache: $e');
-    }
-  }
-
-  /// Update user's post count in their profile
-  Future<void> _updateUserPostCount(String userId) async {
-    try {
-      // Only update for current user
-      final currentUserId = _supabase?.client.auth.currentUser?.id;
-      if (userId != currentUserId || _supabase == null) return;
-
-      // Get current count from database to ensure accuracy
-      final response = await _supabase!.client
-          .from('posts')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('is_deleted', false);
-
-      final postCount = response.length;
-
-      // Update the profile
-      await _supabase!.client
-          .from('profiles')
-          .update({'post_count': postCount})
-          .eq('user_id', userId);
-
-      debugPrint('Updated post count for user $userId to $postCount');
-    } catch (e) {
-      debugPrint('Error updating user post count: $e');
     }
   }
 
@@ -520,8 +495,11 @@ class UserPostsCacheService extends GetxService {
 
       debugPrint('Refreshed ${posts.length} posts for user: $userId');
 
-      // Update post count in profile
-      _updateUserPostCount(userId);
+      // Skip updating post count in profile to avoid user_posts column error
+      // _updateUserPostCount(userId);
+      debugPrint(
+        'Skipped updating post count in user profile to avoid user_posts column error',
+      );
     } catch (e) {
       debugPrint('Error refreshing user posts: $e');
     }

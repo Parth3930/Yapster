@@ -8,7 +8,6 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
-import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
@@ -51,6 +50,8 @@ class CreateController extends GetxController {
   final RxBool isCameraInitialized = false.obs;
   final RxBool isCameraSwitching = false.obs; // Track camera switching state
   final RxBool isRearCamera = true.obs; // true for rear, false for front
+  final RxBool _rearCameraReady = false.obs;
+  final RxBool _frontCameraReady = false.obs;
   final RxString flashMode = 'off'.obs; // off, on, auto
   final RxInt timerSeconds = 0.obs; // 0, 3, 10
   final RxString selectedMode = 'POST'.obs; // STORY, VIDEO, POST
@@ -60,8 +61,6 @@ class CreateController extends GetxController {
   // Cache camera controllers for instant switching
   CameraController? _rearCameraController;
   CameraController? _frontCameraController;
-  final RxBool _rearCameraReady = false.obs;
-  final RxBool _frontCameraReady = false.obs;
 
   @override
   void onInit() {
@@ -259,7 +258,7 @@ class CreateController extends GetxController {
       // Initialize new controller
       await cameraController!.initialize();
 
-      // Verify camera is actually initialized before setting the flag
+      // Only if initialization completed successfully, apply flash mode
       if (cameraController!.value.isInitialized) {
         // Only update flash mode if camera successfully initialized
         await _updateFlashMode();
@@ -956,6 +955,13 @@ class CreateController extends GetxController {
           debugPrint('Adding post to cache...');
           _cacheService.addPostToCache(currentUser.id, createdPost);
 
+          // Increment post count optimistically
+          try {
+            _accountDataProvider.incrementPostCount();
+          } catch (e) {
+            debugPrint('Error incrementing post count: $e');
+          }
+
           // Also add to user posts cache for post count updates
           try {
             final userPostsCache = Get.find<UserPostsCacheService>();
@@ -995,31 +1001,22 @@ class CreateController extends GetxController {
           }
         }
 
-        // Add to feed controller if it exists
-        try {
-          debugPrint('Updating feed controller...');
-          final feedController = Get.find<PostsFeedController>();
-          feedController.addNewPost(createdPost);
-          debugPrint('Feed controller updated successfully');
-        } catch (e) {
-          debugPrint('Posts feed controller not found or error: $e');
-        }
-
         // Clear form
         debugPrint('Clearing form data...');
         _clearForm();
         debugPrint('Form cleared');
 
-        // Show bottom navigation and navigate back to home
+        // Show bottom navigation and navigate to profile
         try {
           final bottomNavController = Get.find<BottomNavAnimationController>();
-          bottomNavController.onReturnToHome();
+          // Simply ensure bottom nav is visible before navigating
+          bottomNavController.showBottomNavigation();
         } catch (e) {
           debugPrint('BottomNavAnimationController not found: $e');
         }
 
-        // Navigate back to home using safer method
-        _safeNavigateToHome();
+        // Navigate to profile using safer method
+        _safeNavigateToProfile();
       } else {
         Get.snackbar(
           'Error',
@@ -1051,40 +1048,29 @@ class CreateController extends GetxController {
     canPost.value = false;
   }
 
-  /// Safely navigate back to home with fallbacks
-  void _safeNavigateToHome() {
-    debugPrint('_safeNavigateToHome: Starting navigation to home');
+  /// Safely navigate to profile with fallbacks (mirrors _safeNavigateToHome)
+  void _safeNavigateToProfile() {
+    debugPrint('_safeNavigateToProfile: Starting navigation to profile');
 
     try {
-      // First try to use the bottom navigation controller for smoother transition
-      try {
-        final bottomNavController = Get.find<BottomNavAnimationController>();
-        bottomNavController.onReturnToHome();
-        debugPrint('_safeNavigateToHome: Bottom nav controller method called');
-      } catch (e) {
-        debugPrint('_safeNavigateToHome: Bottom nav controller not found: $e');
-      }
-
-      // Then try the standard navigation
-      debugPrint('_safeNavigateToHome: Attempting primary navigation to home');
-      Get.offAllNamed('/home');
-      debugPrint('_safeNavigateToHome: Primary navigation succeeded');
+      // Primary navigation to profile
+      debugPrint('_safeNavigateToProfile: Attempting primary navigation');
+      Get.offAllNamed(Routes.PROFILE);
+      debugPrint('_safeNavigateToProfile: Primary navigation succeeded');
     } catch (e) {
-      debugPrint('_safeNavigateToHome: Primary navigation failed: $e');
+      debugPrint('_safeNavigateToProfile: Primary navigation failed: $e');
       try {
-        debugPrint('_safeNavigateToHome: Trying fallback navigation 1');
-        Get.until((route) => route.settings.name == '/home' || route.isFirst);
-        debugPrint('_safeNavigateToHome: Fallback navigation 1 succeeded');
+        debugPrint('_safeNavigateToProfile: Trying fallback navigation 1');
+        Get.until((route) => route.settings.name == Routes.PROFILE || route.isFirst);
+        debugPrint('_safeNavigateToProfile: Fallback navigation 1 succeeded');
       } catch (e2) {
-        debugPrint('_safeNavigateToHome: Fallback navigation 1 failed: $e2');
+        debugPrint('_safeNavigateToProfile: Fallback navigation 1 failed: $e2');
         try {
-          debugPrint('_safeNavigateToHome: Trying fallback navigation 2');
-          Get.offAllNamed(Routes.HOME);
-          debugPrint('_safeNavigateToHome: Fallback navigation 2 succeeded');
+          debugPrint('_safeNavigateToProfile: Trying fallback navigation 2');
+          Get.toNamed(Routes.PROFILE);
+          debugPrint('_safeNavigateToProfile: Fallback navigation 2 succeeded');
         } catch (e3) {
-          debugPrint(
-            '_safeNavigateToHome: All navigation attempts failed: $e3',
-          );
+          debugPrint('_safeNavigateToProfile: All navigation attempts failed: $e3');
         }
       }
     }

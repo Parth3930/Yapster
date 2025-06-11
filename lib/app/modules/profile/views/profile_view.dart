@@ -13,9 +13,7 @@ import 'package:yapster/app/modules/explore/controllers/explore_controller.dart'
 import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_avatar_widget.dart';
 import 'package:yapster/app/data/repositories/story_repository.dart';
-
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
-import 'package:yapster/app/modules/profile/widgets/profile_post_widget_factory.dart';
 
 class ProfileView extends GetView<ProfileController> {
   final String? userId;

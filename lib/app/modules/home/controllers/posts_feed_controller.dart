@@ -33,9 +33,7 @@ class PostsFeedController extends GetxController {
   static const Duration _postsCacheDuration = Duration(
     minutes: 15,
   ); // Significantly increased cache duration for better performance
-  int _currentOffset = 0;
-  static const int _postsPerPage =
-      20; // Increased page size for better performance
+  static const int _postsPerPage = 20; // Batch size for feed_queue fetch
 
   // Realtime subscription
   RealtimeChannel? _postsSubscription;
@@ -256,7 +254,6 @@ class PostsFeedController extends GetxController {
 
         // Add to beginning of feed
         posts.insert(0, newPost);
-        _currentOffset++;
 
         // Limit feed size to prevent memory issues
         if (posts.length > 100) {
@@ -280,7 +277,6 @@ class PostsFeedController extends GetxController {
         // Check if post should be removed (deleted or inactive)
         if (postData['is_active'] == false || postData['is_deleted'] == true) {
           posts.removeAt(postIndex);
-          _currentOffset--;
         } else {
           // Preserve existing metadata and profile data when updating from realtime
           final existingPost = posts[postIndex];
@@ -340,7 +336,6 @@ class PostsFeedController extends GetxController {
 
       if (postIndex != -1) {
         posts.removeAt(postIndex);
-        _currentOffset--;
       }
     } catch (e) {
       debugPrint('Error handling post delete: $e');
@@ -352,6 +347,8 @@ class PostsFeedController extends GetxController {
     bool forceRefresh = false,
     bool filterViewedPosts = false,
   }) async {
+    // Declare here so it's accessible after try/catch for _markPostsConsumed
+    List<PostModel> newPosts = [];
     try {
       // Check if we should use cached data - increased cache duration for better performance
       if (!forceRefresh && _lastPostsLoad != null && hasLoadedOnce.value) {
@@ -368,8 +365,6 @@ class PostsFeedController extends GetxController {
       // Only show loading on first load or force refresh
       if (!hasLoadedOnce.value || forceRefresh) {
         isLoading.value = true;
-        _currentOffset = 0;
-        hasMorePosts.value = true;
 
         // Reset intelligent feed on refresh
         if (forceRefresh) {
@@ -384,20 +379,13 @@ class PostsFeedController extends GetxController {
       debugPrint('Loading posts for user: ${currentUserId.value}');
 
       // Load posts from repository using intelligent feed function
-      debugPrint(
-        'Loading intelligent posts for user: ${currentUserId.value}, offset: ${forceRefresh ? 0 : _currentOffset}',
-      );
+      debugPrint('Loading intelligent posts for user: ${currentUserId.value}');
 
-      // Try intelligent feed first, then fallback function, then regular feed
-      List<PostModel> newPosts;
       try {
+        // Try intelligent feed first, then fallback function, then regular feed
         final response = await _supabase.client.rpc(
-          'get_intelligent_posts_feed',
-          params: {
-            'p_user_id': currentUserId.value,
-            'p_limit': _postsPerPage,
-            'p_offset': forceRefresh ? 0 : _currentOffset,
-          },
+          'get_feed_for_user',
+          params: {'_user': currentUserId.value, '_limit': _postsPerPage},
         );
         newPosts =
             (response as List).map((post) {
@@ -414,9 +402,9 @@ class PostsFeedController extends GetxController {
                 throw Exception('Invalid post data format from RPC');
               }
             }).toList();
-        debugPrint('Loaded ${newPosts.length} intelligent posts');
+        debugPrint('Loaded ${newPosts.length} feed_queue posts');
       } catch (e) {
-        debugPrint('Intelligent feed failed, trying fallback function: $e');
+        debugPrint('get_feed_for_user RPC failed: $e');
 
         try {
           // Try the fallback intelligent feed function
@@ -425,7 +413,6 @@ class PostsFeedController extends GetxController {
             params: {
               'p_user_id': currentUserId.value,
               'p_limit': _postsPerPage,
-              'p_offset': forceRefresh ? 0 : _currentOffset,
             },
           );
           newPosts =
@@ -452,7 +439,6 @@ class PostsFeedController extends GetxController {
           newPosts = await _postRepository.getPostsFeed(
             currentUserId.value,
             limit: _postsPerPage,
-            offset: forceRefresh ? 0 : _currentOffset,
           );
           debugPrint('Loaded ${newPosts.length} regular posts');
           if (newPosts.isEmpty) {
@@ -473,7 +459,6 @@ class PostsFeedController extends GetxController {
         if (forceRefresh) {
           // Clear the current posts list to show empty state
           posts.clear();
-          _currentOffset = 0;
         }
       } else {
         // Add posts to intelligent feed service for future recommendations
@@ -510,12 +495,10 @@ class PostsFeedController extends GetxController {
         if (forceRefresh) {
           debugPrint('Refresh: Adding ${postsToShow.length} posts (filtered)');
           posts.assignAll(postsToShow);
-          _currentOffset = postsToShow.length;
           debugPrint('Refreshed posts list with ${postsToShow.length} posts');
         } else {
           // Append filtered posts
           posts.addAll(postsToShow);
-          _currentOffset += postsToShow.length;
           debugPrint(
             'Added ${postsToShow.length} posts to existing list. Total: ${posts.length}',
           );
@@ -561,6 +544,25 @@ class PostsFeedController extends GetxController {
     } finally {
       isLoading.value = false;
     }
+
+    // Mark fetched posts as consumed in feed_queue to avoid repeats
+    await _markPostsConsumed(newPosts);
+  }
+
+  /// Mark retrieved posts as consumed in feed_queue so they won't appear again
+  Future<void> _markPostsConsumed(List<PostModel> posts) async {
+    if (posts.isEmpty) return;
+    final postIds = posts.map((p) => p.id).toList();
+    try {
+      await _supabase.client
+          .from('feed_queue')
+          .update({'consumed': true})
+          .eq('user_id', currentUserId.value)
+          .inFilter('post_id', postIds);
+      debugPrint('Marked ${postIds.length} posts consumed in feed_queue');
+    } catch (e) {
+      debugPrint('Error marking posts consumed: $e');
+    }
   }
 
   /// Load more posts (pagination)
@@ -572,11 +574,31 @@ class PostsFeedController extends GetxController {
 
       if (currentUserId.value.isEmpty) return;
 
-      final newPosts = await _postRepository.getPostsFeed(
-        currentUserId.value,
-        limit: _postsPerPage,
-        offset: _currentOffset,
-      );
+      List<PostModel> newPosts = [];
+      newPosts = await _supabase.client
+          .rpc(
+            'get_feed_for_user',
+            params: {'_user': currentUserId.value, '_limit': _postsPerPage},
+          )
+          .then((response) {
+            return (response as List).map((post) {
+              // Safe type casting to handle Map<dynamic, dynamic> from Supabase RPC
+              if (post is Map<String, dynamic>) {
+                return PostModel.fromMap(post);
+              } else if (post is Map) {
+                final safeMap = <String, dynamic>{};
+                post.forEach((key, value) {
+                  safeMap[key.toString()] = value;
+                });
+                return PostModel.fromMap(safeMap);
+              } else {
+                throw Exception('Invalid post data');
+              }
+            }).toList();
+          });
+
+      // Mark consumed
+      await _markPostsConsumed(newPosts);
 
       if (newPosts.isNotEmpty) {
         // Load engagement states for new posts using the new user_interactions table
@@ -618,9 +640,6 @@ class PostsFeedController extends GetxController {
         );
 
         posts.addAll(uniquePostsToShow);
-        _currentOffset +=
-            newPosts
-                .length; // Still increment by original count to maintain pagination
         debugPrint(
           'Added ${uniquePostsToShow.length} more posts. Total: ${posts.length}',
         );
@@ -651,7 +670,6 @@ class PostsFeedController extends GetxController {
   /// Add new post to the beginning of the feed
   void addNewPost(PostModel post) {
     posts.insert(0, post);
-    _currentOffset++;
 
     // Add to user's posts cache
     _cacheService.addPostToCache(post.userId, post);
@@ -969,7 +987,6 @@ class PostsFeedController extends GetxController {
   Future<void> clearCacheAndReload() async {
     _lastPostsLoad = null;
     hasLoadedOnce.value = false;
-    _currentOffset = 0;
     _feedService.resetFeed();
     await loadPosts(forceRefresh: true);
   }

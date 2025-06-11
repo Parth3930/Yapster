@@ -154,7 +154,7 @@ class ImagePostWidget extends StatelessWidget {
                             ),
                           );
                         }),
-                      Spacer(),
+                      const Spacer(),
                       Text(
                         _formatTimeAgo(post.createdAt),
                         style: TextStyle(

@@ -152,14 +152,15 @@ class PostCreateView extends GetView<PostCreateController> {
                           const SizedBox(width: 15),
                         ],
                       ),
-                      const SizedBox(height: 20),
                       // Video preview
                       Obx(() {
                         if (controller.selectedImages.isNotEmpty) {
                           return Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 15),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 15,
+                              vertical: 15,
+                            ),
                             child: Container(
-                              height: 400,
                               width: double.infinity,
                               decoration: BoxDecoration(),
                               child: ClipRRect(
@@ -195,10 +196,7 @@ class PostCreateView extends GetView<PostCreateController> {
 
                       // Caption input
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10.0,
-                          vertical: 15, // Increased vertical padding
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10.0),
                         child: Container(
                           padding: EdgeInsets.symmetric(
                             horizontal: 15,
