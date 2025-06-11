@@ -187,9 +187,9 @@ class ChatController extends GetxController
                 : response['user_two_id'];
       }
 
-      // Set default expiration time (7 days from now)
+      // Set default expiration time (24 hours from now)
       final DateTime expiresAt = DateTime.now().toUtc().add(
-        const Duration(days: 7),
+        const Duration(hours: 24),
       );
 
       // Call the service with all required parameters

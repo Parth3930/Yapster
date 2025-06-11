@@ -244,7 +244,7 @@ class _GroupMessageBubbleWrapper extends StatelessWidget {
         'is_read': true, // Group messages are always considered read
         'expires_at':
             DateTime.now()
-                .add(const Duration(days: 1))
+                .add(const Duration(hours: 24))
                 .toIso8601String(), // Default expiry
         'message_type': message.messageType ?? 'text',
         'chat_id': groupId,

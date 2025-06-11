@@ -31,20 +31,18 @@ class CameraButton extends StatelessWidget {
           controller.selectedMode.value == 'VIDEO' &&
           controller.isRecordingVideo.value;
 
-      // Make the entire component tappable with a GestureDetector
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          debugPrint('CAMERA BUTTON PRESSED');
-          // Only process if not already processing
-          if (!controller.isProcessingPhoto.value) {
-            controller.takePhoto();
-          }
-        },
-        child: Container(
-          width: 120, // Larger area for easier tapping
-          height: 120, // Larger area for easier tapping
-          color: Colors.transparent,
+      return Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            debugPrint('CAMERA BUTTON PRESSED');
+            // Only process if not already processing
+            if (!controller.isProcessingPhoto.value) {
+              controller.takePhoto();
+            }
+          },
           child: Column(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -59,7 +57,7 @@ class CameraButton extends StatelessWidget {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -72,7 +70,7 @@ class CameraButton extends StatelessWidget {
                   ),
                 ),
 
-              // Button UI (visual only, entire container is clickable)
+              // Button UI with simplified structure
               Stack(
                 alignment: Alignment.center,
                 children: [
@@ -87,56 +85,50 @@ class CameraButton extends StatelessWidget {
                   ),
 
                   // Inner circle with animation
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // The colored button
-                      TweenAnimationBuilder<double>(
-                        tween: Tween<double>(
-                          begin: 1.0,
-                          end: controller.isButtonPressed.value ? 0.85 : 1.0,
-                        ),
-                        duration: const Duration(milliseconds: 150),
-                        builder: (context, scale, child) {
-                          return Transform.scale(
-                            scale: scale,
-                            child: Container(
-                              width: 68,
-                              height: 68,
-                              decoration: BoxDecoration(
-                                color: shutterColor,
-                                shape:
-                                    controller.selectedMode.value == 'VIDEO' &&
-                                            controller.isRecordingVideo.value
-                                        ? BoxShape.rectangle
-                                        : BoxShape.circle,
-                                borderRadius:
-                                    controller.selectedMode.value == 'VIDEO' &&
-                                            controller.isRecordingVideo.value
-                                        ? BorderRadius.circular(12)
-                                        : null,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-
-                      // Loading indicator - only shows when processing
-                      if (controller.isProcessingPhoto.value)
-                        SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              shutterColor == Colors.white
-                                  ? Colors.black
-                                  : Colors.white,
-                            ),
-                            strokeWidth: 3,
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(
+                      begin: 1.0,
+                      end: controller.isButtonPressed.value ? 0.85 : 1.0,
+                    ),
+                    duration: const Duration(milliseconds: 150),
+                    builder: (context, scale, child) {
+                      return Transform.scale(
+                        scale: scale,
+                        child: Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(
+                            color: shutterColor,
+                            shape:
+                                controller.selectedMode.value == 'VIDEO' &&
+                                        controller.isRecordingVideo.value
+                                    ? BoxShape.rectangle
+                                    : BoxShape.circle,
+                            borderRadius:
+                                controller.selectedMode.value == 'VIDEO' &&
+                                        controller.isRecordingVideo.value
+                                    ? BorderRadius.circular(12)
+                                    : null,
                           ),
                         ),
-                    ],
+                      );
+                    },
                   ),
+
+                  // Loading indicator - only shows when processing
+                  if (controller.isProcessingPhoto.value)
+                    SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          shutterColor == Colors.white
+                              ? Colors.black
+                              : Colors.white,
+                        ),
+                        strokeWidth: 3,
+                      ),
+                    ),
                 ],
               ),
             ],

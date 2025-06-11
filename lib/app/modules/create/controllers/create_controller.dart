@@ -524,7 +524,7 @@ class CreateController extends GetxController {
       Get.snackbar(
         'Camera Not Ready',
         'Please wait for the camera to initialize',
-        backgroundColor: Colors.red.withOpacity(0.7),
+        backgroundColor: Colors.red,
         colorText: Colors.white,
         duration: Duration(seconds: 2),
       );
@@ -582,8 +582,8 @@ class CreateController extends GetxController {
         // Navigate to image crop/edit page
         _navigateToImageEditPage(File(photo.path));
       } else if (selectedMode.value == 'STORY') {
-        // Create story directly with the captured image
-        await _createStoryWithImage(File(photo.path));
+        // Navigate to story edit view with the captured image
+        _navigateToStoryEditPage(File(photo.path));
       }
 
       // Reset processing flag
@@ -619,7 +619,7 @@ class CreateController extends GetxController {
         Get.snackbar(
           'Success',
           'Video recorded successfully',
-          backgroundColor: Colors.green.withOpacity(0.7),
+          backgroundColor: Colors.green,
           colorText: Colors.white,
         );
 
@@ -705,8 +705,8 @@ class CreateController extends GetxController {
           if (selectedMode.value == 'POST') {
             _navigateToImageEditPage(File(images.first.path));
           } else if (selectedMode.value == 'STORY') {
-            // Create story directly with the first image
-            await _createStoryWithImage(File(images.first.path));
+            // Navigate to story edit view with the first image
+            _navigateToStoryEditPage(File(images.first.path));
           }
         }
       }
@@ -1033,8 +1033,29 @@ class CreateController extends GetxController {
     return _storyRepository!;
   }
 
-  /// Create story with captured image
-  Future<void> _createStoryWithImage(File imageFile) async {
+  /// Navigate to story edit page
+  void _navigateToStoryEditPage(File imageFile) {
+    // Navigate to story edit page
+    Get.toNamed('/story-edit', arguments: {'imageFile': imageFile})?.then((
+      result,
+    ) {
+      if (result != null && result is Map<String, dynamic>) {
+        // Handle edited story data returned from edit page
+        _publishStory(
+          imageFile: result['image'] as File,
+          textItems: result['textItems'],
+          doodlePoints: result['doodlePoints'],
+        );
+      }
+    });
+  }
+
+  /// Publish story with edited content
+  Future<void> _publishStory({
+    required File imageFile,
+    required dynamic textItems,
+    required dynamic doodlePoints,
+  }) async {
     try {
       isLoading.value = true;
 
@@ -1052,8 +1073,8 @@ class CreateController extends GetxController {
         id: '',
         userId: currentUser.id,
         imageUrl: null,
-        textItems: [],
-        doodlePoints: [],
+        textItems: textItems,
+        doodlePoints: doodlePoints,
         createdAt: now,
         expiresAt: expiresAt,
       );

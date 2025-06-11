@@ -88,11 +88,11 @@ class ProfileAvatarWidget extends StatelessWidget {
                     ),
           ),
 
-          // Add button for current user's story
+          // Add button for current user's story - fixed position regardless of border width
           if (showAddButton)
             Positioned(
-              bottom: borderWidth + 5,
-              right: borderWidth + 10,
+              bottom: 5, // Fixed position
+              right: 10, // Fixed position
               child: GestureDetector(
                 onTap: onTap, // Make the plus button clickable
                 child: Container(

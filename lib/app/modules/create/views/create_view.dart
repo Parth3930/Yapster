@@ -39,7 +39,7 @@ class CreateView extends GetView<CreateController> {
               top: 0,
               left: 0,
               right: 0,
-              height: MediaQuery.of(context).size.height * 0.85,
+              height: MediaQuery.of(context).size.height * 0.82,
               child: ClipRRect(
                 borderRadius: const BorderRadius.only(
                   bottomLeft: Radius.circular(30),
@@ -237,7 +237,6 @@ class CreateView extends GetView<CreateController> {
       return _buildIconButton(
         icon: FontAwesomeIcons.clock,
         onTap: () {
-          // Cycle through timer options: 0 -> 3 -> 10 -> 0
           int nextTimer =
               controller.timerSeconds.value == 0
                   ? 3
@@ -253,37 +252,28 @@ class CreateView extends GetView<CreateController> {
 
   Widget _buildCameraControls(BuildContext context) {
     return Positioned(
-      bottom: MediaQuery.of(context).size.height * 0.15 + 20,
+      bottom: MediaQuery.of(context).size.height * 0.15 + 40,
       left: 0,
       right: 0,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Gallery button - moved closer to center
-            GestureDetector(
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Camera button centered
+          CameraButton(controller: controller),
+          Positioned(
+            left:
+                MediaQuery.of(context).size.width *
+                0.2, // Positioned at 20% from the left edge
+            child: GestureDetector(
               onTap: controller.pickImages,
-              child: Container(
-                width: 50,
-                height: 50,
-                alignment: Alignment.center,
-                child: Image.asset(
-                  'assets/uploadIcons/gallery.png',
-                  width: 30,
-                  height: 30,
-                ),
+              child: Image.asset(
+                'assets/uploadIcons/gallery.png',
+                width: 30,
+                height: 30,
               ),
             ),
-
-            const SizedBox(width: 40),
-
-            // Use the new simplified camera button widget
-            CameraButton(controller: controller),
-
-            const SizedBox(width: 90),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -303,7 +293,7 @@ class CreateView extends GetView<CreateController> {
       left: 0,
       right: 0,
       child: Container(
-        height: 200,
+        height: 50,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,

@@ -1,5 +1,7 @@
 // ignore_for_file: constant_identifier_names
 
+import 'dart:io';
+
 import 'package:get/get.dart';
 import 'package:yapster/app/modules/account_setup/bindings/account_setup_binding.dart';
 import 'package:yapster/app/modules/account_setup/views/account_avatar.dart';
@@ -12,6 +14,7 @@ import 'package:yapster/app/modules/create/views/create_view.dart';
 import 'package:yapster/app/modules/create/views/image_edit_view.dart';
 import 'package:yapster/app/modules/create/views/video_edit_view.dart';
 import 'package:yapster/app/modules/create/views/post_create_view.dart';
+import 'package:yapster/app/modules/create/bindings/create_binding.dart';
 import 'package:yapster/app/modules/error/bindings/error_binding.dart';
 import 'package:yapster/app/modules/error/views/error_view.dart';
 import 'package:yapster/app/modules/explore/views/explore_view.dart';
@@ -27,6 +30,7 @@ import 'package:yapster/app/modules/videos/bindings/videos_binding.dart';
 import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/stories/views/story_viewer_view.dart';
+import 'package:yapster/app/modules/stories/views/story_edit_view.dart';
 import 'package:yapster/app/modules/stories/bindings/stories_binding.dart';
 import 'package:yapster/app/modules/post/views/post_detail_view.dart';
 import 'package:yapster/app/modules/post/bindings/post_detail_binding.dart';
@@ -191,21 +195,21 @@ class AppPages {
     GetPage(
       name: _Paths.IMAGE_EDIT,
       page: () => const ImageEditView(),
-      binding: OptimizedCreateBinding(),
+      binding: ImageEditBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
     ),
     GetPage(
       name: _Paths.VIDEO_EDIT,
       page: () => const VideoEditView(),
-      binding: OptimizedCreateBinding(),
+      binding: VideoEditBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
     ),
     GetPage(
       name: _Paths.CREATE_POST,
       page: () => const PostCreateView(),
-      binding: OptimizedCreateBinding(),
+      binding: PostCreateBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
     ),
@@ -311,6 +315,23 @@ class AppPages {
       transitionDuration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
       fullscreenDialog: false,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: true,
+    ),
+    // Story edit page
+    GetPage(
+      name: _Paths.STORY_EDIT,
+      page: () {
+        final arguments = Get.arguments as Map<String, dynamic>;
+        final File imageFile = arguments['imageFile'] as File;
+        return StoryEditView(imageFile: imageFile);
+      },
+      binding: StoriesBinding(),
+      transition: Transition.fadeIn,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      fullscreenDialog: true,
       opaque: true,
       preventDuplicates: true,
       popGesture: true,
