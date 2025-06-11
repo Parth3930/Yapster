@@ -116,7 +116,7 @@ class PostsFeedController extends GetxController {
           await _supabase.client
               .from('profiles')
               .select('username, nickname, avatar, google_avatar')
-              .eq('id', userId)
+              .eq('user_id', userId) // Changed from 'id' to 'user_id'
               .maybeSingle();
 
       debugPrint('Fetched profile data for $userId: $response');
@@ -124,6 +124,31 @@ class PostsFeedController extends GetxController {
     } catch (e) {
       debugPrint('Error fetching profile data for user $userId: $e');
       return null;
+    }
+  }
+
+  /// Update profile data for a specific post
+  void updatePostProfileData(String postId, Map<String, dynamic> profileData) {
+    try {
+      final index = posts.indexWhere((post) => post.id == postId);
+      if (index != -1) {
+        final post = posts[index];
+        final updatedPost = post.copyWith(
+          username: profileData['username'],
+          nickname: profileData['nickname'],
+          avatar: profileData['avatar'],
+          googleAvatar: profileData['google_avatar'],
+        );
+
+        posts[index] = updatedPost;
+        update(); // Trigger UI update
+
+        debugPrint(
+          'Updated profile data for post $postId from widget callback',
+        );
+      }
+    } catch (e) {
+      debugPrint('Error updating post profile data: $e');
     }
   }
 

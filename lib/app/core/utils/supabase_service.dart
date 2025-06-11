@@ -206,8 +206,8 @@ class SupabaseService extends GetxService {
             updateData['following_count'] = 0;
           }
 
-          if (existingUserData['user_posts'] == null) {
-            updateData['user_posts'] = {'post_count': 0};
+          if (existingUserData['post_count'] == null) {
+            updateData['post_count'] = 0;
           }
 
           // Update Google avatar if needed

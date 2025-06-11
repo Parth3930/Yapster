@@ -8,21 +8,21 @@ class ImageEditController extends GetxController {
   final imageFile = Rx<File?>(null);
   final isLoading = false.obs;
   final aspectRatio = (4.0 / 5.0).obs;
-  
+
   @override
   void onInit() {
     super.onInit();
-    
+
     // Get arguments passed from navigation
     if (Get.arguments != null) {
       if (Get.arguments['imageFile'] != null) {
         imageFile.value = Get.arguments['imageFile'] as File;
       }
-      
+
       if (Get.arguments['aspectRatio'] != null) {
         aspectRatio.value = Get.arguments['aspectRatio'] as double;
       }
-      
+
       // Start cropping immediately
       cropImage();
     } else {
@@ -30,10 +30,10 @@ class ImageEditController extends GetxController {
       Get.back();
     }
   }
-  
+
   Future<void> cropImage() async {
     isLoading.value = true;
-    
+
     try {
       final croppedFile = await ImageCropper().cropImage(
         sourcePath: imageFile.value!.path,
@@ -48,16 +48,28 @@ class ImageEditController extends GetxController {
             lockAspectRatio: true,
             hideBottomControls: false,
             statusBarColor: Colors.black,
+            backgroundColor: Colors.black,
+            activeControlsWidgetColor: Colors.blue,
+            dimmedLayerColor: Colors.black.withOpacity(0.7),
+            cropFrameColor: Colors.white,
+            cropGridColor: Colors.white,
+            showCropGrid: true,
           ),
           IOSUiSettings(
             title: 'Edit Image',
             aspectRatioLockEnabled: true,
             resetAspectRatioEnabled: false,
             aspectRatioPickerButtonHidden: true,
+            doneButtonTitle: 'Done',
+            cancelButtonTitle: 'Cancel',
+          ),
+          WebUiSettings(
+            context: Get.context!,
+            presentStyle: WebPresentStyle.dialog,
           ),
         ],
       );
-      
+
       if (croppedFile != null) {
         imageFile.value = File(croppedFile.path);
       }
@@ -68,7 +80,7 @@ class ImageEditController extends GetxController {
       isLoading.value = false;
     }
   }
-  
+
   void finishEditing() {
     if (!isLoading.value && imageFile.value != null) {
       Get.back(result: {'editedImage': imageFile.value});

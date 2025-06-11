@@ -493,7 +493,10 @@ class _FollowListViewState extends State<FollowListView> {
                 init: _exploreController,
                 initState: (_) {
                   // Ensure follow state is up to date when item is first shown
-                  _exploreController.refreshFollowState(userId);
+                  // Use Future.microtask to schedule this after the build is complete
+                  Future.microtask(() {
+                    _exploreController.refreshFollowState(userId);
+                  });
                 },
                 builder: (controller) {
                   final bool isFollowing = controller.isFollowingUser(userId);

@@ -147,6 +147,29 @@ class PostRepository extends GetxService {
       final postData = post.toDatabaseMap();
       postData.remove('id'); // Remove ID so database generates it
 
+      // Try to fetch profile data to include with post
+      try {
+        final profileData =
+            await _supabase.client
+                .from('profiles')
+                .select('username, nickname, avatar, google_avatar')
+                .eq('user_id', post.userId)
+                .maybeSingle();
+
+        if (profileData != null) {
+          // Add profile data to post metadata
+          if (postData['metadata'] is Map) {
+            (postData['metadata'] as Map)['profile_data'] = profileData;
+          } else {
+            postData['metadata'] = {'profile_data': profileData};
+          }
+          debugPrint('Added profile data to post metadata: $profileData');
+        }
+      } catch (e) {
+        debugPrint('Error fetching profile data for post creation: $e');
+        // Continue without profile data
+      }
+
       debugPrint('Creating post with data: $postData');
 
       final response =
@@ -178,10 +201,35 @@ class PostRepository extends GetxService {
             },
           };
 
-          await _supabase.client
-              .from('posts')
-              .update(updateData)
-              .eq('id', postId);
+          // Add a small delay to ensure the post is fully created before updating
+          await Future.delayed(const Duration(milliseconds: 300));
+
+          try {
+            await _supabase.client
+                .from('posts')
+                .update(updateData)
+                .eq('id', postId);
+
+            // Double check the update
+            final updatedPost =
+                await _supabase.client
+                    .from('posts')
+                    .select()
+                    .eq('id', postId)
+                    .maybeSingle();
+
+            debugPrint(
+              'Post update verified: ${updatedPost?['image_url'] != null}',
+            );
+          } catch (e) {
+            debugPrint('Error updating post with images: $e');
+            // Try one more time after a longer delay
+            await Future.delayed(const Duration(milliseconds: 500));
+            await _supabase.client
+                .from('posts')
+                .update(updateData)
+                .eq('id', postId);
+          }
 
           debugPrint('Post updated with ${imageUrls.length} images');
         }
@@ -290,25 +338,92 @@ class PostRepository extends GetxService {
     }
   }
 
-  /// Get user's own posts with pagination support
+  /// Get user's own posts with pagination support and privacy filter
   Future<List<PostModel>> getUserPosts(
     String userId, {
     int limit = 20,
     int offset = 0,
   }) async {
     try {
-      // First get the posts with pagination
-      final response = await _supabase.client
-          .from('posts')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', ascending: false)
-          .range(offset, offset + limit - 1);
+      final currentUserId = _supabase.client.auth.currentUser?.id;
+      final isCurrentUser = userId == currentUserId;
+      List posts;
 
-      final posts = response as List;
+      // For the current user, fetch all their posts
+      if (isCurrentUser) {
+        // First get the posts with pagination
+        final response = await _supabase.client
+            .from('posts')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', ascending: false)
+            .range(offset, offset + limit - 1);
 
-      if (posts.isEmpty) {
-        return [];
+        posts = response as List;
+
+        if (posts.isEmpty) {
+          return [];
+        }
+      } else {
+        // For other users, check if current user follows them
+        bool isFollowing = false;
+
+        try {
+          // Check if current user follows the profile user
+          if (currentUserId != null) {
+            final followResponse = await _supabase.client
+                .from('follows')
+                .select()
+                .eq('follower_id', currentUserId)
+                .eq('following_id', userId)
+                .limit(1);
+
+            isFollowing = followResponse.isNotEmpty;
+            debugPrint(
+              'Current user ${isFollowing ? "follows" : "does not follow"} profile user $userId',
+            );
+          }
+        } catch (e) {
+          debugPrint('Error checking follow status: $e');
+          isFollowing = false;
+        }
+
+        // If user follows the profile owner, get all posts
+        // Otherwise, only get public/global posts
+        final List response;
+
+        if (isFollowing) {
+          // If following, show all posts
+          final followingResponse = await _supabase.client
+              .from('posts')
+              .select('*')
+              .eq('user_id', userId)
+              .order('created_at', ascending: false)
+              .range(offset, offset + limit - 1);
+          response = followingResponse as List;
+          debugPrint('Showing all posts because user is following');
+        } else {
+          // If not following, only show public posts
+          final publicResponse = await _supabase.client
+              .from('posts')
+              .select('*')
+              .eq('user_id', userId)
+              .eq('global', true)
+              .order('created_at', ascending: false)
+              .range(offset, offset + limit - 1);
+          response = publicResponse as List;
+          debugPrint('Showing only global posts because user is not following');
+        }
+
+        posts = response;
+
+        debugPrint(
+          'Retrieved ${posts.length} posts for other user (following: $isFollowing)',
+        );
+
+        if (posts.isEmpty) {
+          return [];
+        }
       }
 
       // Then get the user profile data
@@ -343,14 +458,155 @@ class PostRepository extends GetxService {
     }
   }
 
-  /// Delete a specific post
+  /// Delete a specific post and its associated media
   Future<bool> deletePost(String postId, String userId) async {
     try {
+      // 1. Get the post details to find associated media
+      final postData =
+          await _supabase.client
+              .from('posts')
+              .select('image_url, video_url, metadata')
+              .eq('id', postId)
+              .eq('user_id', userId)
+              .maybeSingle();
+
+      if (postData == null) {
+        debugPrint('Post not found or not owned by user: $postId');
+        return false;
+      }
+
+      // 2. Delete from posts table
       await _supabase.client
           .from('posts')
           .delete()
           .eq('id', postId)
           .eq('user_id', userId);
+
+      debugPrint('Post deleted from database: $postId');
+
+      // 3. Delete associated media from storage - Delete the entire post folder
+      try {
+        // Delete the entire post folder in storage (userId/postId/)
+        final storagePath = '$userId/$postId';
+        debugPrint('Attempting to delete post folder: $storagePath');
+
+        // First try the posts bucket (for images)
+        try {
+          // List all files in the post folder
+          final postsResponse = await _supabase.client.storage
+              .from('posts')
+              .list(path: storagePath);
+
+          // Get file paths to delete
+          final List<String> filesToDelete =
+              postsResponse.map((FileObject file) {
+                return '$storagePath/${file.name}';
+              }).toList();
+
+          if (filesToDelete.isNotEmpty) {
+            // Delete all files in the folder
+            await _supabase.client.storage.from('posts').remove(filesToDelete);
+            debugPrint(
+              'Deleted ${filesToDelete.length} files from posts storage: $storagePath',
+            );
+          } else {
+            debugPrint('No files found in posts folder: $storagePath');
+          }
+        } catch (postsError) {
+          debugPrint('Error handling posts storage deletion: $postsError');
+        }
+
+        // Then try the videos bucket
+        try {
+          // List all files in the post folder in the videos bucket
+          final videosResponse = await _supabase.client.storage
+              .from('videos')
+              .list(path: storagePath);
+
+          // Get file paths to delete
+          final List<String> videosToDelete =
+              videosResponse.map((FileObject file) {
+                return '$storagePath/${file.name}';
+              }).toList();
+
+          if (videosToDelete.isNotEmpty) {
+            // Delete all files in the folder
+            await _supabase.client.storage
+                .from('videos')
+                .remove(videosToDelete);
+            debugPrint(
+              'Deleted ${videosToDelete.length} files from videos storage: $storagePath',
+            );
+          } else {
+            debugPrint('No files found in videos folder: $storagePath');
+          }
+        } catch (videosError) {
+          debugPrint('Error handling videos storage deletion: $videosError');
+        }
+
+        // Fallback: If listing fails, try to extract paths from URLs
+        if (postData['image_url'] != null || postData['video_url'] != null) {
+          debugPrint('Using fallback URL-based deletion method');
+
+          // Handle image URL
+          if (postData['image_url'] != null) {
+            try {
+              final uri = Uri.parse(postData['image_url']);
+              final pathSegments = uri.pathSegments;
+              if (pathSegments.length >= 5) {
+                final bucket = pathSegments[3]; // 'posts' or 'videos'
+                final filePath = pathSegments.sublist(4).join('/');
+                await _supabase.client.storage.from(bucket).remove([filePath]);
+                debugPrint('Deleted image from URL path: $filePath');
+              }
+            } catch (imgError) {
+              debugPrint('Error deleting image from URL: $imgError');
+            }
+          }
+
+          // Handle video URL
+          if (postData['video_url'] != null) {
+            try {
+              final uri = Uri.parse(postData['video_url']);
+              final pathSegments = uri.pathSegments;
+              if (pathSegments.length >= 5) {
+                final bucket = pathSegments[3]; // 'posts' or 'videos'
+                final filePath = pathSegments.sublist(4).join('/');
+                await _supabase.client.storage.from(bucket).remove([filePath]);
+                debugPrint('Deleted video from URL path: $filePath');
+              }
+            } catch (videoError) {
+              debugPrint('Error deleting video from URL: $videoError');
+            }
+          }
+        }
+      } catch (mediaError) {
+        debugPrint('Error processing media deletion: $mediaError');
+        // Continue despite media errors - the post is already deleted
+      }
+
+      // 4. Update post count in profile
+      try {
+        // Get current count from database
+        final response = await _supabase.client
+            .from('posts')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('is_deleted', false);
+
+        final postCount = response.length;
+
+        // Update the profile
+        await _supabase.client
+            .from('profiles')
+            .update({'post_count': postCount})
+            .eq('user_id', userId);
+
+        debugPrint('Updated post count for user $userId to $postCount');
+      } catch (countError) {
+        debugPrint('Error updating post count: $countError');
+      }
+
       return true;
     } catch (e) {
       debugPrint('Error deleting post: $e');

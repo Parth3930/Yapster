@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:yapster/app/data/models/post_model.dart';
+import 'package:get/get.dart';
+import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 
 /// Optimized avatar widget for post headers that handles caching and fallbacks properly
 class PostAvatarWidget extends StatelessWidget {
@@ -91,6 +94,10 @@ class PostAvatarWidget extends StatelessWidget {
       }
     }
 
+    // Try to load profile data directly from Supabase if we have no avatar yet
+    // This will be done asynchronously and trigger a widget update once complete
+    _fetchProfileDataAsync();
+
     // Fallback: try to get google_avatar from metadata
     if (post.metadata.containsKey('google_avatar')) {
       final googleAvatar = post.metadata['google_avatar'];
@@ -124,5 +131,45 @@ class PostAvatarWidget extends StatelessWidget {
     // No avatar found - this indicates missing user data
     debugPrint('  - NO AVATAR FOUND - falling back to default icon');
     return null;
+  }
+
+  /// Asynchronously fetch profile data to update this post's avatar
+  Future<void> _fetchProfileDataAsync() async {
+    // Skip if we already have profile data
+    if (post.avatar != null &&
+        post.avatar!.isNotEmpty &&
+        post.avatar != "null" &&
+        post.avatar != "skiped") {
+      return;
+    }
+
+    // This is a stateless widget, so we need to get feed controller to update the post
+
+    try {
+      // Get Supabase client through GetX dependency injection
+      final supabase = Get.find<SupabaseService>();
+
+      // Fetch profile data
+      final response =
+          await supabase.client
+              .from('profiles')
+              .select('username, nickname, avatar, google_avatar')
+              .eq('user_id', post.userId) // Using user_id instead of id
+              .maybeSingle();
+
+      if (response != null) {
+        debugPrint('  - Async fetched profile data: $response');
+
+        // Try to update post in the feed controller
+        try {
+          final feedController = Get.find<PostsFeedController>();
+          feedController.updatePostProfileData(post.id, response);
+        } catch (e) {
+          debugPrint('  - Could not update feed controller: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('  - Error fetching profile data async: $e');
+    }
   }
 }

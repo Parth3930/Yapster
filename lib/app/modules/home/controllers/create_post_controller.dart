@@ -129,13 +129,29 @@ class CreatePostController extends GetxController {
         _cacheService.addPostToCache(currentUser.id, createdPost);
 
         // Add to profile posts controller if it exists
-        try {
-          final profileController = Get.find<ProfilePostsController>(
-            tag: 'profile_threads_current',
-          );
-          profileController.addNewPost(createdPost);
-        } catch (e) {
-          debugPrint('Profile posts controller not found: $e');
+        if (Get.isRegistered<ProfilePostsController>(
+          tag: 'profile_threads_current',
+        )) {
+          try {
+            final profileController = Get.find<ProfilePostsController>(
+              tag: 'profile_threads_current',
+            );
+            profileController.addNewPost(createdPost);
+          } catch (e) {
+            debugPrint('Error adding post to profile controller: $e');
+          }
+        } else if (Get.isRegistered<ProfilePostsController>(
+          tag: 'profile_posts_current',
+        )) {
+          // Try the posts tab controller as fallback
+          try {
+            final profileController = Get.find<ProfilePostsController>(
+              tag: 'profile_posts_current',
+            );
+            profileController.addNewPost(createdPost);
+          } catch (e) {
+            debugPrint('Error adding post to profile controller: $e');
+          }
         }
 
         // Add to feed controller if it exists

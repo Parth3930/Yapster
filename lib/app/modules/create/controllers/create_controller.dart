@@ -15,6 +15,7 @@ import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import 'package:yapster/app/data/repositories/story_repository.dart';
 import 'package:yapster/app/data/models/story_model.dart';
 import 'package:yapster/app/modules/home/controllers/stories_home_controller.dart';
+import 'package:yapster/app/routes/app_pages.dart';
 
 class CreateController extends GetxController {
   final AccountDataProvider _accountDataProvider =
@@ -38,6 +39,7 @@ class CreateController extends GetxController {
   final RxList<File> selectedImages = <File>[].obs;
   final RxBool isLoading = false.obs;
   final RxBool canPost = false.obs;
+  final RxBool isPublic = true.obs; // Default to public posts
 
   // Media URLs
   final RxString imageUrl = ''.obs;
@@ -199,6 +201,18 @@ class CreateController extends GetxController {
     selectedPostType.value = type;
   }
 
+  // Method to toggle post privacy setting
+  void togglePostPrivacy(bool value) {
+    isPublic.value = value;
+    debugPrint('Post privacy updated: isPublic = ${isPublic.value}');
+  }
+
+  // Method to toggle isPublic value (used in the UI)
+  void toggleIsPublic() {
+    isPublic.value = !isPublic.value;
+    debugPrint('Post privacy toggled: isPublic = ${isPublic.value}');
+  }
+
   /// Fallback to single camera initialization
   Future<void> _initializeSingleCamera() async {
     try {
@@ -238,7 +252,7 @@ class CreateController extends GetxController {
       // Create new controller
       cameraController = CameraController(
         camera,
-        ResolutionPreset.high, // Use high instead of max for better performance
+        ResolutionPreset.max, // Use maximum resolution for best quality
         enableAudio: selectedMode.value == 'VIDEO',
       );
 
@@ -317,7 +331,7 @@ class CreateController extends GetxController {
       // Create a new controller
       cameraController = CameraController(
         camera,
-        ResolutionPreset.high, // Use high instead of max for better performance
+        ResolutionPreset.max, // Use maximum resolution for best quality
         enableAudio: selectedMode.value == 'VIDEO',
       );
 
@@ -582,8 +596,8 @@ class CreateController extends GetxController {
         // Navigate to image crop/edit page
         _navigateToImageEditPage(File(photo.path));
       } else if (selectedMode.value == 'STORY') {
-        // Navigate to story edit view with the captured image
-        _navigateToStoryEditPage(File(photo.path));
+        // Create story directly with the captured image
+        await _createStoryWithImage(File(photo.path));
       }
 
       // Reset processing flag
@@ -682,6 +696,12 @@ class CreateController extends GetxController {
   /// Pick media from gallery based on current mode
   Future<void> pickImages() async {
     try {
+      // Ensure camera is stopped before picking media
+      if (cameraController != null && cameraController!.value.isInitialized) {
+        debugPrint('Stopping camera before picking media from gallery');
+        stopCamera();
+      }
+
       if (selectedMode.value == 'VIDEO') {
         // Pick video
         final XFile? video = await _picker.pickVideo(
@@ -691,13 +711,16 @@ class CreateController extends GetxController {
 
         if (video != null) {
           _navigateToVideoEditPage(File(video.path));
+        } else {
+          // If user cancels selection, ensure camera is stopped
+          debugPrint('Video selection canceled, ensuring camera is stopped');
         }
       } else {
         // Pick images
         final List<XFile> images = await _picker.pickMultiImage(
-          maxWidth: 1080,
-          maxHeight: 1080,
-          imageQuality: 85,
+          // Remove width/height limits for maximum resolution
+          // and use higher quality
+          imageQuality: 100,
         );
 
         if (images.isNotEmpty) {
@@ -705,9 +728,12 @@ class CreateController extends GetxController {
           if (selectedMode.value == 'POST') {
             _navigateToImageEditPage(File(images.first.path));
           } else if (selectedMode.value == 'STORY') {
-            // Navigate to story edit view with the first image
-            _navigateToStoryEditPage(File(images.first.path));
+            // Create story directly with the first image
+            await _createStoryWithImage(File(images.first.path));
           }
+        } else {
+          // If user cancels selection, ensure camera is stopped
+          debugPrint('Image selection canceled, ensuring camera is stopped');
         }
       }
     } catch (e) {
@@ -739,6 +765,12 @@ class CreateController extends GetxController {
   /// Create and publish post
   // Navigate to image edit page
   void _navigateToImageEditPage(File imageFile) {
+    // Ensure camera is stopped before navigating
+    if (cameraController != null && cameraController!.value.isInitialized) {
+      debugPrint('Stopping camera before navigating to image edit page');
+      stopCamera();
+    }
+
     // Create a temporary image in the selected images list
     selectedImages.clear();
     selectedImages.add(imageFile);
@@ -768,6 +800,12 @@ class CreateController extends GetxController {
 
   // Navigate to video edit page
   void _navigateToVideoEditPage(File videoFile) {
+    // Ensure camera is stopped before navigating
+    if (cameraController != null && cameraController!.value.isInitialized) {
+      debugPrint('Stopping camera before navigating to video edit page');
+      stopCamera();
+    }
+
     // Navigate to video edit page
     Get.toNamed('/video-edit', arguments: {'videoFile': videoFile})?.then((
       result,
@@ -797,20 +835,54 @@ class CreateController extends GetxController {
     );
   }
 
-  Future<void> createPost({bool isGlobal = false}) async {
-    if (!canPost.value) return;
+  Future<void> createPost({
+    bool isGlobal = false,
+    bool isPublic = true,
+    bool bypassValidation = false,
+  }) async {
+    debugPrint(
+      'Starting post creation process (isGlobal: $isGlobal, isPublic: $isPublic, bypass: $bypassValidation)',
+    );
+
+    // Check if post content is valid, unless validation bypass is enabled
+    if (!bypassValidation && !canPost.value) {
+      debugPrint('Cannot post: canPost is false. Aborting.');
+      return;
+    }
+
+    // Force update canPost for UI
+    _updateCanPost();
 
     try {
       isLoading.value = true;
+      debugPrint('isLoading set to true');
 
       final currentUser = _supabase.client.auth.currentUser;
       if (currentUser == null) {
+        debugPrint('Error: User not authenticated');
         Get.snackbar('Error', 'User not authenticated');
         return;
       }
+      debugPrint('Current user authenticated: ${currentUser.id}');
 
       // Check if we're posting a video
       bool isVideoPost = videoFilePath.value.isNotEmpty;
+
+      // Set appropriate post type based on content
+      if (isVideoPost && selectedPostType.value != 'video') {
+        selectedPostType.value = 'video';
+      } else if (selectedImages.isNotEmpty &&
+          selectedPostType.value == 'text') {
+        selectedPostType.value = 'image';
+      }
+
+      debugPrint(
+        'Post type: ${isVideoPost ? "video" : selectedPostType.value}',
+      );
+      debugPrint(
+        'Text content length: ${postTextController.text.trim().length}',
+      );
+      debugPrint('Selected images: ${selectedImages.length}');
 
       // Create post model
       final post = PostModel(
@@ -818,67 +890,125 @@ class CreateController extends GetxController {
         userId: currentUser.id,
         content: postTextController.text.trim(),
         postType: isVideoPost ? 'video' : selectedPostType.value,
-        metadata: {}, // Will be updated with URLs after upload
+        metadata: {
+          'isPublic': isPublic, // Add isPublic flag to post metadata
+        }, // Will be updated with URLs after upload
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         global: isGlobal,
       );
+      debugPrint('Post model created: ${post.toDatabaseMap()}');
 
       String? postId;
+      debugPrint('Starting database operations...');
 
       if (isVideoPost) {
         // For video posts, create a different upload flow
+        debugPrint('Creating video post...');
+
         // First create post to get ID
         postId = await _postRepository.createPost(post);
+        debugPrint('Initial post created with ID: $postId');
 
         if (postId != null) {
           // Upload video file
+          debugPrint('Uploading video file...');
           final videoUrl = await _postRepository.uploadPostVideo(
             File(videoFilePath.value),
             currentUser.id,
             postId,
           );
+          debugPrint('Video uploaded with URL: $videoUrl');
 
           if (videoUrl != null) {
             // Update post with video URL
-            await _postRepository.updatePostWithVideo(postId, videoUrl);
+            debugPrint('Updating post with video URL...');
+            final success = await _postRepository.updatePostWithVideo(
+              postId,
+              videoUrl,
+            );
+            debugPrint('Post updated with video URL: $success');
+          } else {
+            debugPrint('ERROR: Video upload failed, null URL returned');
           }
+        } else {
+          debugPrint('ERROR: Failed to create initial post, null ID returned');
         }
       } else {
         // Create post with images
+        debugPrint('Creating post with ${selectedImages.length} images...');
         postId = await _postRepository.createPostWithImages(
           post,
           selectedImages.toList(),
         );
+        debugPrint('Post created with ID: $postId');
       }
 
       if (postId != null) {
+        debugPrint('Post created successfully with ID: $postId');
+
         // Create the complete post model with the generated ID
         final createdPost = post.copyWith(id: postId);
+        debugPrint('Created complete post model with ID');
 
         // Add to cache immediately
-        _cacheService.addPostToCache(currentUser.id, createdPost);
+        try {
+          debugPrint('Adding post to cache...');
+          _cacheService.addPostToCache(currentUser.id, createdPost);
+
+          // Also add to user posts cache for post count updates
+          try {
+            final userPostsCache = Get.find<UserPostsCacheService>();
+            userPostsCache.addNewPostToCache(createdPost);
+            debugPrint(
+              'Added new post to cache for current user: ${createdPost.userId}',
+            );
+          } catch (e) {
+            debugPrint('Error updating user posts cache: $e');
+          }
+
+          debugPrint('Post added to cache successfully');
+        } catch (e) {
+          debugPrint('Error adding post to cache: $e');
+          // Continue despite cache error
+        }
 
         // Add to profile posts controller if it exists
         try {
+          debugPrint('Updating profile posts controller...');
           final profileController = Get.find<ProfilePostsController>(
-            tag: 'profile_threads_current',
+            tag: 'profile_posts_current', // Fixed tag name
           );
           profileController.addNewPost(createdPost);
+          debugPrint('Profile posts controller updated');
         } catch (e) {
-          debugPrint('Profile posts controller not found: $e');
+          debugPrint('Profile posts controller not found or error: $e');
+          // Try alternate tag
+          try {
+            final profileController = Get.find<ProfilePostsController>(
+              tag: 'profile_threads_current',
+            );
+            profileController.addNewPost(createdPost);
+            debugPrint('Profile posts controller (alternate tag) updated');
+          } catch (e2) {
+            debugPrint('All profile controller attempts failed: $e2');
+          }
         }
 
         // Add to feed controller if it exists
         try {
+          debugPrint('Updating feed controller...');
           final feedController = Get.find<PostsFeedController>();
           feedController.addNewPost(createdPost);
+          debugPrint('Feed controller updated successfully');
         } catch (e) {
-          debugPrint('Posts feed controller not found: $e');
+          debugPrint('Posts feed controller not found or error: $e');
         }
 
         // Clear form
+        debugPrint('Clearing form data...');
         _clearForm();
+        debugPrint('Form cleared');
 
         // Show bottom navigation and navigate back to home
         try {
@@ -888,8 +1018,8 @@ class CreateController extends GetxController {
           debugPrint('BottomNavAnimationController not found: $e');
         }
 
-        // Navigate back to home
-        Get.offAllNamed('/home');
+        // Navigate back to home using safer method
+        _safeNavigateToHome();
       } else {
         Get.snackbar(
           'Error',
@@ -919,6 +1049,45 @@ class CreateController extends GetxController {
     selectedImages.clear();
     selectedPostType.value = 'text';
     canPost.value = false;
+  }
+
+  /// Safely navigate back to home with fallbacks
+  void _safeNavigateToHome() {
+    debugPrint('_safeNavigateToHome: Starting navigation to home');
+
+    try {
+      // First try to use the bottom navigation controller for smoother transition
+      try {
+        final bottomNavController = Get.find<BottomNavAnimationController>();
+        bottomNavController.onReturnToHome();
+        debugPrint('_safeNavigateToHome: Bottom nav controller method called');
+      } catch (e) {
+        debugPrint('_safeNavigateToHome: Bottom nav controller not found: $e');
+      }
+
+      // Then try the standard navigation
+      debugPrint('_safeNavigateToHome: Attempting primary navigation to home');
+      Get.offAllNamed('/home');
+      debugPrint('_safeNavigateToHome: Primary navigation succeeded');
+    } catch (e) {
+      debugPrint('_safeNavigateToHome: Primary navigation failed: $e');
+      try {
+        debugPrint('_safeNavigateToHome: Trying fallback navigation 1');
+        Get.until((route) => route.settings.name == '/home' || route.isFirst);
+        debugPrint('_safeNavigateToHome: Fallback navigation 1 succeeded');
+      } catch (e2) {
+        debugPrint('_safeNavigateToHome: Fallback navigation 1 failed: $e2');
+        try {
+          debugPrint('_safeNavigateToHome: Trying fallback navigation 2');
+          Get.offAllNamed(Routes.HOME);
+          debugPrint('_safeNavigateToHome: Fallback navigation 2 succeeded');
+        } catch (e3) {
+          debugPrint(
+            '_safeNavigateToHome: All navigation attempts failed: $e3',
+          );
+        }
+      }
+    }
   }
 
   /// Get image layout for UI
@@ -964,7 +1133,7 @@ class CreateController extends GetxController {
       // Create new controller with audio enabled
       cameraController = CameraController(
         camera,
-        ResolutionPreset.high,
+        ResolutionPreset.max, // Maximum quality
         enableAudio: true, // Enable audio for video
       );
 
@@ -1010,7 +1179,7 @@ class CreateController extends GetxController {
       // Create new controller without audio
       cameraController = CameraController(
         camera,
-        ResolutionPreset.high,
+        ResolutionPreset.max, // Maximum quality
         enableAudio: false, // Disable audio for photo/story
       );
 
@@ -1033,29 +1202,8 @@ class CreateController extends GetxController {
     return _storyRepository!;
   }
 
-  /// Navigate to story edit page
-  void _navigateToStoryEditPage(File imageFile) {
-    // Navigate to story edit page
-    Get.toNamed('/story-edit', arguments: {'imageFile': imageFile})?.then((
-      result,
-    ) {
-      if (result != null && result is Map<String, dynamic>) {
-        // Handle edited story data returned from edit page
-        _publishStory(
-          imageFile: result['image'] as File,
-          textItems: result['textItems'],
-          doodlePoints: result['doodlePoints'],
-        );
-      }
-    });
-  }
-
-  /// Publish story with edited content
-  Future<void> _publishStory({
-    required File imageFile,
-    required dynamic textItems,
-    required dynamic doodlePoints,
-  }) async {
+  /// Create story with captured image
+  Future<void> _createStoryWithImage(File imageFile) async {
     try {
       isLoading.value = true;
 
@@ -1073,8 +1221,8 @@ class CreateController extends GetxController {
         id: '',
         userId: currentUser.id,
         imageUrl: null,
-        textItems: textItems,
-        doodlePoints: doodlePoints,
+        textItems: [],
+        doodlePoints: [],
         createdAt: now,
         expiresAt: expiresAt,
       );

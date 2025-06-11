@@ -442,4 +442,88 @@ class UserPostsCacheService extends GetxService {
       }
     }
   }
+
+  /// Add a new post to the cache for a user
+  void addNewPostToCache(PostModel post) {
+    try {
+      final userId = post.userId;
+      debugPrint('Adding new post to cache for user: $userId');
+
+      // Add to in-memory cache
+      if (_userPostsCache.containsKey(userId)) {
+        // Add at the beginning since it's the newest post
+        _userPostsCache[userId]!.insert(0, post);
+      } else {
+        _userPostsCache[userId] = [post];
+      }
+
+      // Save to local storage for current user
+      final currentUserId = _supabase?.client.auth.currentUser?.id;
+      if (userId == currentUserId && _userPostsCache.containsKey(userId)) {
+        _saveCachedPosts(userId, _userPostsCache[userId]!);
+        debugPrint('Added new post to cache for current user: $userId');
+      }
+
+      // Update post count in user's profile if it's the current user
+      _updateUserPostCount(userId);
+    } catch (e) {
+      debugPrint('Error adding new post to cache: $e');
+    }
+  }
+
+  /// Update user's post count in their profile
+  Future<void> _updateUserPostCount(String userId) async {
+    try {
+      // Only update for current user
+      final currentUserId = _supabase?.client.auth.currentUser?.id;
+      if (userId != currentUserId || _supabase == null) return;
+
+      // Get current count from database to ensure accuracy
+      final response = await _supabase!.client
+          .from('posts')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('is_deleted', false);
+
+      final postCount = response.length;
+
+      // Update the profile
+      await _supabase!.client
+          .from('profiles')
+          .update({'post_count': postCount})
+          .eq('user_id', userId);
+
+      debugPrint('Updated post count for user $userId to $postCount');
+    } catch (e) {
+      debugPrint('Error updating user post count: $e');
+    }
+  }
+
+  /// Refresh posts for a user in cache
+  Future<void> refreshUserPosts(String userId) async {
+    try {
+      debugPrint('Refreshing posts cache for user: $userId');
+
+      // Remove from cache to force reload
+      _userPostsCache.remove(userId);
+      _lastFetchTime.remove(userId);
+
+      // Fetch fresh posts from database
+      final posts = await _loadUserPostsFromDatabase(userId, useCache: false);
+
+      // Update cache with new posts
+      _userPostsCache[userId] = posts;
+      _lastFetchTime[userId] = DateTime.now();
+
+      // Save to local storage
+      _saveCachedPosts(userId, posts);
+
+      debugPrint('Refreshed ${posts.length} posts for user: $userId');
+
+      // Update post count in profile
+      _updateUserPostCount(userId);
+    } catch (e) {
+      debugPrint('Error refreshing user posts: $e');
+    }
+  }
 }

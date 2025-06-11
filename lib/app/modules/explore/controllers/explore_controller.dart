@@ -76,9 +76,13 @@ class ExploreController extends GetxController {
   // Call this when explore page is opened
   void onExplorePageOpened() {
     _isOnExplorePage.value = true;
-    // Load any cached searches
-    loadCachedSearchResults();
-    debugPrint('Loaded cached search results');
+
+    // Load any cached searches after the frame is built
+    // This prevents setState during build errors
+    Future.microtask(() {
+      loadCachedSearchResults();
+      debugPrint('Loaded cached search results');
+    });
   }
 
   // Call this when leaving the explore page
@@ -698,8 +702,10 @@ class ExploreController extends GetxController {
     // Then check in the AccountDataProvider for cached state (fast check)
     if (_accountDataProvider.isFollowing(userId)) {
       debugPrint('User $userId found in following cache - already following');
-      // Update our cache to match
-      _followStateCache[userId] = true;
+      // Schedule the cache update for after the current build cycle
+      Future.microtask(() {
+        _followStateCache[userId] = true;
+      });
       return true;
     }
 
@@ -707,7 +713,10 @@ class ExploreController extends GetxController {
     debugPrint(
       'User $userId not found in following cache - not following or needs refresh',
     );
-    _followStateCache[userId] = false;
+    // Schedule the cache update for after the current build cycle
+    Future.microtask(() {
+      _followStateCache[userId] = false;
+    });
     return false;
   }
 

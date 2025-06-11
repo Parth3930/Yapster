@@ -228,11 +228,7 @@ class HomeView extends GetView<HomeController> {
                       ),
                     ),
                   // Fix 3: Add bottom padding as a sliver to ensure proper spacing
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 120, // Space for floating bottom navigation
-                    ),
-                  ),
+                  SliverToBoxAdapter(child: SizedBox(height: 80)),
                 ],
               ),
             ),

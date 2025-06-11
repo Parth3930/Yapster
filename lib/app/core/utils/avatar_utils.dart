@@ -377,10 +377,22 @@ class AvatarUtils {
     dynamic exploreController,
   }) {
     if (isCurrentUser) {
-      return accountDataProvider.avatar.value;
+      // If avatar is "skiped", use Google avatar instead
+      final avatar = accountDataProvider.avatar.value;
+      if (avatar == "skiped" || avatar == "null" || avatar.isEmpty) {
+        return accountDataProvider.googleAvatar.value;
+      }
+      return avatar;
     } else {
-      return (exploreController?.selectedUserProfile?['avatar'] as String?) ??
-          '';
+      // For other users, check if their avatar is "skiped"
+      final avatar =
+          (exploreController?.selectedUserProfile?['avatar'] as String?) ?? '';
+      if (avatar == "skiped" || avatar == "null" || avatar.isEmpty) {
+        return (exploreController?.selectedUserProfile?['google_avatar']
+                as String?) ??
+            '';
+      }
+      return avatar;
     }
   }
 
@@ -478,4 +490,3 @@ class AvatarUtils {
     return '';
   }
 }
-  

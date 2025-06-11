@@ -3,6 +3,8 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
+import 'package:yapster/app/modules/profile/widgets/builders/build_posts.dart';
+import 'package:yapster/app/modules/profile/widgets/builders/build_video_tab.dart';
 import 'package:yapster/app/routes/app_pages.dart';
 import '../controllers/profile_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -14,7 +16,6 @@ import 'package:yapster/app/data/repositories/story_repository.dart';
 
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 import 'package:yapster/app/modules/profile/widgets/profile_post_widget_factory.dart';
-import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 
 class ProfileView extends GetView<ProfileController> {
   final String? userId;
@@ -27,7 +28,6 @@ class ProfileView extends GetView<ProfileController> {
   static final Map<String, bool> _initialDataLoaded = <String, bool>{};
 
   // Track if posts have been initialized to prevent infinite loops
-  static final Map<String, bool> _postsInitialized = <String, bool>{};
 
   // Story status tracking
   final RxBool hasStory = false.obs;
@@ -58,33 +58,21 @@ class ProfileView extends GetView<ProfileController> {
     // Load data only once when the view is first built for this specific user
     if (!_initialDataLoaded.containsKey(cacheKey) ||
         _initialDataLoaded[cacheKey] != true) {
+      // Initialize ProfilePostsController here to avoid creating it during build
+      // This prevents the setState during build error
+      Get.put(
+        ProfilePostsController(),
+        tag: 'profile_posts_${userId ?? 'current'}',
+      );
+
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (isCurrentUser) {
           final currentUserId =
               Get.find<SupabaseService>().currentUser.value?.id;
           if (currentUserId != null) {
-            // CRITICAL FIX: Debug current data state
-            debugPrint('=== PROFILE VIEW DEBUG ===');
-            debugPrint('Current user data state:');
-            debugPrint('  Username: ${accountDataProvider.username.value}');
-            debugPrint('  Nickname: ${accountDataProvider.nickname.value}');
-            debugPrint('  Bio: ${accountDataProvider.bio.value}');
-            debugPrint('  Avatar: ${accountDataProvider.avatar.value}');
-            debugPrint(
-              '  Google Avatar: ${accountDataProvider.googleAvatar.value}',
-            );
-            debugPrint('  Posts count: ${accountDataProvider.posts.length}');
-            debugPrint(
-              '  Followers count: ${accountDataProvider.followers.length}',
-            );
-            debugPrint(
-              '  Following count: ${accountDataProvider.following.length}',
-            );
-
             // CRITICAL FIX: Force load user data if empty
             if (accountDataProvider.username.value.isEmpty ||
                 accountDataProvider.nickname.value.isEmpty) {
-              debugPrint('User data is empty, forcing reload...');
               await accountDataProvider.preloadUserData();
             }
 
@@ -622,32 +610,13 @@ class ProfileView extends GetView<ProfileController> {
                           ),
                         ),
                       ),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => selectedTabIndex.value = 2,
-                          child: Container(
-                            color: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 16,
-                              horizontal: 24,
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              'Threads',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
                 Obx(() {
-                  final tabWidth = MediaQuery.of(context).size.width / 3;
+                  final tabWidth =
+                      MediaQuery.of(context).size.width /
+                      2; // Changed from 3 to 2 tabs
                   final center =
                       tabWidth * selectedTabIndex.value + (tabWidth / 2);
                   return TweenAnimationBuilder<double>(
@@ -679,16 +648,9 @@ class ProfileView extends GetView<ProfileController> {
                   MediaQuery.of(context).size.height *
                   0.6, // Give it a fixed height
               child: Obx(() {
-                switch (selectedTabIndex.value) {
-                  case 0:
-                    return _buildPostsTab();
-                  case 1:
-                    return _buildVideosTab();
-                  case 2:
-                    return _buildThreadsTab();
-                  default:
-                    return _buildPostsTab();
-                }
+                return selectedTabIndex.value == 0
+                    ? buildPostsTab(userId, isCurrentUser)
+                    : buildVideosTab();
               }),
             ),
           ],
@@ -961,249 +923,6 @@ class ProfileView extends GetView<ProfileController> {
     );
   }
 
-  // Tab content builders
-  Widget _buildPostsTab() {
-    // Create or get the ProfilePostsController
-    final profilePostsController = Get.put(
-      ProfilePostsController(),
-      tag: 'profile_posts_${userId ?? 'current'}',
-    );
-
-    final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
-    final targetUserId = isCurrentUser ? currentUserId ?? '' : userId ?? '';
-
-    // CRITICAL FIX: Move loading logic to a one-time initialization
-    // Use the static map to track if we've already initialized posts for this user
-    final initKey = 'posts_$targetUserId';
-
-    if (!_postsInitialized.containsKey(initKey)) {
-      _postsInitialized[initKey] = true;
-
-      // OPTIMIZATION: Check if posts are already cached using the cache service
-      final cacheService = Get.find<UserPostsCacheService>();
-      final hasCachedPosts = cacheService.hasCachedPosts(targetUserId);
-      final hasPostsInController =
-          profilePostsController.profilePosts.isNotEmpty;
-      final isTargetCurrentUser = targetUserId == currentUserId;
-
-      // For other users, only load once and don't cache
-      if (!isTargetCurrentUser) {
-        // Check if we've already attempted to load posts for this user
-        final hasAttempted = profilePostsController.hasLoadAttempted(
-          targetUserId,
-        );
-        if (!hasPostsInController &&
-            !profilePostsController.isLoading.value &&
-            !hasAttempted) {
-          debugPrint('Loading posts once for other user: $targetUserId');
-          Future.microtask(() {
-            profilePostsController.loadUserPosts(targetUserId);
-          });
-        } else {
-          debugPrint(
-            'Posts already loaded, loading, or attempted for other user: $targetUserId (attempted: $hasAttempted)',
-          );
-        }
-      } else {
-        // For current user, use caching logic
-        if (!hasCachedPosts &&
-            !hasPostsInController &&
-            !profilePostsController.isLoading.value) {
-          debugPrint(
-            'No cached posts found, loading for current user: $targetUserId',
-          );
-          Future.microtask(() {
-            profilePostsController.loadUserPosts(targetUserId);
-          });
-        } else if (hasCachedPosts && !hasPostsInController) {
-          debugPrint(
-            'Loading cached posts instantly for current user: $targetUserId',
-          );
-          // Load cached posts immediately and synchronously
-          _loadCachedPostsInstantly(
-            profilePostsController,
-            Get.find<UserPostsCacheService>(),
-            targetUserId,
-          );
-        } else {
-          debugPrint(
-            'Using existing posts data for current user: $targetUserId (cached: $hasCachedPosts, controller: $hasPostsInController)',
-          );
-        }
-      }
-    }
-
-    return Obx(() {
-      final posts = profilePostsController.profilePosts;
-
-      // Show loading only if we have no cached posts and are currently loading
-      if (posts.isEmpty && profilePostsController.isLoading.value) {
-        return Center(child: CircularProgressIndicator(color: Colors.white));
-      }
-
-      if (posts.isEmpty) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.post_add_outlined, size: 64, color: Colors.grey[600]),
-              SizedBox(height: 16),
-              Text(
-                isCurrentUser ? 'No posts yet' : 'No posts to show',
-                style: TextStyle(color: Colors.grey[400], fontSize: 16),
-              ),
-              if (isCurrentUser) ...[
-                SizedBox(height: 8),
-                Text(
-                  'Create your first post!',
-                  style: TextStyle(color: Colors.grey[500], fontSize: 14),
-                ),
-              ],
-            ],
-          ),
-        );
-      }
-
-      // Show cached posts immediately
-      return ListView.builder(
-        padding: EdgeInsets.all(16),
-        itemCount: posts.length,
-        itemBuilder: (context, index) {
-          final post = posts[index];
-          return ProfilePostWidgetFactory.createPostWidget(
-            post: post,
-            controller: profilePostsController,
-          );
-        },
-      );
-    });
-  }
-
-  Widget _buildVideosTab() {
-    return Center(
-      child: Text(
-        'Videos content coming soon',
-        style: TextStyle(color: Colors.grey[400], fontSize: 16),
-      ),
-    );
-  }
-
-  Widget _buildThreadsTab() {
-    // Create or get the ProfilePostsController
-    final profilePostsController = Get.put(
-      ProfilePostsController(),
-      tag: 'profile_threads_${userId ?? 'current'}',
-    );
-
-    final targetUserId =
-        isCurrentUser
-            ? Get.find<SupabaseService>().currentUser.value?.id ?? ''
-            : userId ?? '';
-
-    return FutureBuilder<void>(
-      future: profilePostsController.loadUserPosts(targetUserId),
-      builder: (context, snapshot) {
-        return Obx(() {
-          if (profilePostsController.isLoading.value) {
-            return Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            );
-          }
-
-          final allPosts = profilePostsController.profilePosts;
-          // Filter for text posts only
-          final textPosts =
-              allPosts
-                  .where((post) => post.postType.toLowerCase() == 'text')
-                  .toList();
-
-          if (textPosts.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.text_fields, size: 64, color: Colors.grey[600]),
-                  SizedBox(height: 16),
-                  Text(
-                    isCurrentUser
-                        ? 'No text posts yet'
-                        : 'No text posts to show',
-                    style: TextStyle(color: Colors.grey[400], fontSize: 16),
-                  ),
-                  if (isCurrentUser) ...[
-                    SizedBox(height: 8),
-                    Text(
-                      'Create your first text post!',
-                      style: TextStyle(color: Colors.grey[500], fontSize: 14),
-                    ),
-                  ],
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            padding: EdgeInsets.all(16),
-            itemCount: textPosts.length,
-            itemBuilder: (context, index) {
-              final post = textPosts[index];
-              return ProfilePostWidgetFactory.createPostWidget(
-                post: post,
-                controller: profilePostsController,
-              );
-            },
-          );
-        });
-      },
-    );
-  }
-
-  // Helper method to load cached posts instantly without async delay
-  void _loadCachedPostsInstantly(
-    ProfilePostsController profilePostsController,
-    UserPostsCacheService cacheService,
-    String targetUserId,
-  ) {
-    try {
-      // Prevent multiple calls to this method for the same user
-      if (profilePostsController.profilePosts.isNotEmpty) {
-        debugPrint(
-          'Posts already loaded for user: $targetUserId, skipping instant load',
-        );
-        return;
-      }
-
-      // Get cached posts synchronously from the cache service
-      final cachedPosts = cacheService.getCachedPosts(targetUserId);
-      if (cachedPosts.isNotEmpty) {
-        // Load posts immediately into the controller
-        profilePostsController.profilePosts.assignAll(cachedPosts);
-        debugPrint(
-          'Instantly loaded ${cachedPosts.length} cached posts for user: $targetUserId',
-        );
-
-        // Load engagement states in background without blocking UI
-        Future.microtask(() async {
-          await profilePostsController.loadEngagementStatesForCachedPosts(
-            cachedPosts,
-          );
-        });
-      } else {
-        debugPrint('No cached posts found for user: $targetUserId');
-        // If no cached posts, fall back to async loading only once
-        Future.microtask(() {
-          profilePostsController.loadUserPosts(targetUserId);
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading cached posts instantly: $e');
-      // Fall back to async loading on error only once
-      Future.microtask(() {
-        profilePostsController.loadUserPosts(targetUserId);
-      });
-    }
-  }
-
   // Helper method to get display nickname for other users
   String _getDisplayNickname(ExploreController exploreController) {
     final nickname =
@@ -1222,19 +941,6 @@ class ProfileView extends GetView<ProfileController> {
   bool get isCurrentUser =>
       userId == null ||
       userId == Get.find<SupabaseService>().currentUser.value?.id;
-
-  // Clear posts initialization cache for a specific user (useful for refresh)
-  static void clearPostsInitialization(String userId) {
-    final initKey = 'posts_$userId';
-    _postsInitialized.remove(initKey);
-    debugPrint('Cleared posts initialization for user: $userId');
-  }
-
-  // Clear all posts initialization cache
-  static void clearAllPostsInitialization() {
-    _postsInitialized.clear();
-    debugPrint('Cleared all posts initialization cache');
-  }
 
   // Check story status for the current user or other user
   Future<void> _checkStoryStatus() async {

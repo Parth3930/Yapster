@@ -313,6 +313,11 @@ class ProfilePostsController extends GetxController {
     }
   }
 
+  /// Check if we have attempted to load posts for a user
+  bool hasLoadAttempted(String userId) {
+    return _loadAttempts.contains(userId);
+  }
+
   /// Clear all posts
   void clearPosts() {
     profilePosts.clear();
@@ -327,6 +332,30 @@ class ProfilePostsController extends GetxController {
     _cacheService.addPostToCache(post.userId, post);
 
     debugPrint('Added new post to profile: ${post.id}');
+  }
+
+  /// Refresh posts for the current user
+  Future<void> refreshPosts({bool forceRefresh = true}) async {
+    try {
+      final userId =
+          currentUserId.value.isEmpty
+              ? _supabase.client.auth.currentUser?.id
+              : currentUserId.value;
+
+      if (userId == null || userId.isEmpty) {
+        debugPrint('Cannot refresh posts: No user ID available');
+        return;
+      }
+
+      // Clear failed load markers to allow retry
+      _failedPostLoads.remove(userId);
+      _loadAttempts.remove(userId);
+
+      debugPrint('Refreshing posts for user: $userId');
+      await loadUserPosts(userId, forceRefresh: forceRefresh);
+    } catch (e) {
+      debugPrint('Error refreshing posts: $e');
+    }
   }
 
   /// Remove a post from profile and cache
@@ -465,10 +494,5 @@ class ProfilePostsController extends GetxController {
   void clearLoadAttempt(String userId) {
     _loadAttempts.remove(userId);
     debugPrint('Cleared load attempt for user: $userId');
-  }
-
-  /// Check if load was attempted for user
-  bool hasLoadAttempted(String userId) {
-    return _loadAttempts.contains(userId);
   }
 }

@@ -22,12 +22,16 @@ class _ExploreViewState extends State<ExploreView> {
   @override
   void initState() {
     super.initState();
-    // Notify the controller that we're on the explore page
-    controller.onExplorePageOpened();
 
-    // Hide bottom navigation with animation after page loads
-    Future.delayed(const Duration(milliseconds: 300), () {
-      _bottomNavController.hideBottomNav();
+    // Use post-frame callback to ensure all widgets are built before making state changes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Notify the controller that we're on the explore page
+      controller.onExplorePageOpened();
+
+      // Hide bottom navigation with animation after page loads
+      Future.delayed(const Duration(milliseconds: 300), () {
+        _bottomNavController.hideBottomNav();
+      });
     });
   }
 
@@ -183,7 +187,12 @@ class UserListItem extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => onTap(), // This will call the openUserProfile method
+        onTap: () {
+          // Use Future.microtask to avoid setState during build
+          Future.microtask(
+            () => onTap(),
+          ); // This will call the openUserProfile method
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Row(
@@ -225,7 +234,10 @@ class UserListItem extends StatelessWidget {
                     icon: const Icon(Icons.close, size: 20, color: Colors.grey),
                     onPressed: () {
                       debugPrint('Deleting search history item');
-                      controller.removeFromRecentSearches(user);
+                      // Use Future.microtask to avoid setState during build
+                      Future.microtask(() {
+                        controller.removeFromRecentSearches(user);
+                      });
                     },
                   ),
             ],

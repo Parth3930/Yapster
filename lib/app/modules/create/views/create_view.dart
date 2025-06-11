@@ -265,7 +265,11 @@ class CreateView extends GetView<CreateController> {
                 MediaQuery.of(context).size.width *
                 0.2, // Positioned at 20% from the left edge
             child: GestureDetector(
-              onTap: controller.pickImages,
+              onTap: () {
+                // Stop the camera before picking images from gallery
+                controller.stopCamera();
+                controller.pickImages();
+              },
               child: Image.asset(
                 'assets/uploadIcons/gallery.png',
                 width: 30,

@@ -41,10 +41,10 @@ class ImagePostWidget extends StatelessWidget {
                   onTap:
                       () => _showImageFullscreen(context, post.imageUrl ?? ''),
                   child: SizedBox(
-                    height: 500,
+                    height: 400,
                     child: Image.network(
                       post.imageUrl ?? '',
-                      fit: BoxFit.contain,
+                      fit: BoxFit.cover,
                       width: double.infinity,
                       errorBuilder:
                           (context, error, stackTrace) => Container(
