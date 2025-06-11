@@ -37,11 +37,27 @@ class PostCreateController extends GetxController {
   @override
   void onClose() {
     videoController?.dispose();
+
+    // Reset main CreateController state so next entry is clean
+    createController.videoFilePath.value = '';
+    createController.selectedImages.clear();
+    createController.postTextController.clear();
+    createController.canPost.value = false;
+
     super.onClose();
   }
 
   void _initializeVideoPlayer() {
     if (videoPath.isNotEmpty) {
+      // Dispose any previously created controller to avoid exceeding buffer limits
+      if (videoController != null) {
+        try {
+          videoController!.dispose();
+        } catch (_) {
+          // Ignore dispose errors
+        }
+      }
+
       videoController = VideoPlayerController.file(File(videoPath.value))
         ..initialize().then((_) {
           videoController?.setLooping(true);

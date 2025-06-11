@@ -54,12 +54,13 @@ class PostRepository extends GetxService {
   }
 
   /// Upload post video to storage with proper structure
-  /// Storage structure: videos/{user_id}/{post_id}/video.{extension}
+  /// Storage structure: {bucket}/{user_id}/{post_id}/video.{extension}
   Future<String?> uploadPostVideo(
     File videoFile,
     String userId,
     String postId,
   ) async {
+    const bucket = 'Video Posts'; // Supabase bucket for post videos
     try {
       final fileExtension = videoFile.path.split('.').last.toLowerCase();
       final fileName = 'video.$fileExtension';
@@ -68,9 +69,9 @@ class PostRepository extends GetxService {
       // Read file as bytes
       final fileBytes = await videoFile.readAsBytes();
 
-      // Upload to Supabase storage with proper structure
+      // Upload to Supabase storage
       await _supabase.client.storage
-          .from('videos')
+          .from(bucket)
           .uploadBinary(
             storagePath,
             fileBytes,
@@ -82,7 +83,7 @@ class PostRepository extends GetxService {
 
       // Get public URL
       final publicUrl = _supabase.client.storage
-          .from('videos')
+          .from(bucket)
           .getPublicUrl(storagePath);
 
       return publicUrl;
@@ -95,12 +96,25 @@ class PostRepository extends GetxService {
   /// Update post with video URL
   Future<bool> updatePostWithVideo(String postId, String videoUrl) async {
     try {
+      // Fetch existing metadata to merge video details
+      final existing = await _supabase.client
+          .from('posts')
+          .select('metadata')
+          .eq('id', postId)
+          .maybeSingle();
+
+      Map<String, dynamic> metadata = {};
+      if (existing != null && existing['metadata'] is Map) {
+        metadata = Map<String, dynamic>.from(existing['metadata'] as Map);
+      }
+
+      metadata['video_url'] = videoUrl;
+
       await _supabase.client
           .from('posts')
           .update({
-            'image_url': null, // Clear image URL if any
             'video_url': videoUrl,
-            'metadata': {'video_url': videoUrl, 'video_type': 'mp4'},
+            'metadata': metadata,
           })
           .eq('id', postId);
       return true;
@@ -259,7 +273,7 @@ class PostRepository extends GetxService {
                 .eq('id', postId)
                 .single();
 
-        if (createdPostResponse != null) {
+        if (createdPostResponse.isNotEmpty) {
           final createdPost = PostModel.fromMap(createdPostResponse);
           // Use the UserPostsCacheService to update the cache
           final cacheService = Get.find<UserPostsCacheService>();
@@ -691,9 +705,13 @@ class PostRepository extends GetxService {
               .from('profiles')
               .update({'post_count': postCount})
               .eq('user_id', userId);
-          debugPrint('Updated post_count in profiles table for user $userId after deletion.');
+          debugPrint(
+            'Updated post_count in profiles table for user $userId after deletion.',
+          );
         } catch (e) {
-          debugPrint('Error updating post_count in profiles table after deletion: $e');
+          debugPrint(
+            'Error updating post_count in profiles table after deletion: $e',
+          );
         }
 
         // Notify controllers about post deletion
@@ -1051,6 +1069,23 @@ class PostRepository extends GetxService {
     } catch (e) {
       debugPrint('Error updating post: $e');
       return false;
+    }
+  }
+
+  /// Insert bare post (used for video posts before media upload)
+  Future<String?> insertPost(PostModel post) async {
+    try {
+      final postData = post.toDatabaseMap();
+      final response =
+          await _supabase.client
+              .from('posts')
+              .insert(postData)
+              .select('id')
+              .single();
+      return response['id'] as String;
+    } catch (e) {
+      debugPrint('Error inserting post: $e');
+      return null;
     }
   }
 }

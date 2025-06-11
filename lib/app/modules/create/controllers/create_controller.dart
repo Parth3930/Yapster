@@ -134,8 +134,8 @@ class CreateController extends GetxController {
   void onClose() async {
     debugPrint('CreateController: Disposing resources');
 
-    // Stop camera (no longer disposes controllers, just nullifies them)
-    stopCamera();
+    // Stop camera
+    await stopCamera();
 
     // Stop any active recording timer
     _stopRecordingTimer();
@@ -153,25 +153,25 @@ class CreateController extends GetxController {
   }
 
   /// Stop camera when leaving create page
-  void stopCamera() {
+  Future<void> stopCamera() async {
     try {
       debugPrint('Stopping camera and properly disposing controllers');
 
       // Properly dispose the camera controllers to release camera resources
       if (cameraController != null && cameraController!.value.isInitialized) {
-        cameraController!.dispose();
+        await cameraController!.dispose();
         debugPrint('Main camera controller disposed');
       }
 
       if (_rearCameraController != null &&
           _rearCameraController!.value.isInitialized) {
-        _rearCameraController!.dispose();
+        await _rearCameraController!.dispose();
         debugPrint('Rear camera controller disposed');
       }
 
       if (_frontCameraController != null &&
           _frontCameraController!.value.isInitialized) {
-        _frontCameraController!.dispose();
+        await _frontCameraController!.dispose();
         debugPrint('Front camera controller disposed');
       }
 
@@ -698,7 +698,7 @@ class CreateController extends GetxController {
       // Ensure camera is stopped before picking media
       if (cameraController != null && cameraController!.value.isInitialized) {
         debugPrint('Stopping camera before picking media from gallery');
-        stopCamera();
+        await stopCamera();
       }
 
       if (selectedMode.value == 'VIDEO') {
@@ -824,6 +824,11 @@ class CreateController extends GetxController {
 
   // Navigate to post creation page
   void _navigateToPostPage() {
+    // Ensure the camera is fully stopped and resources are released
+    // before navigating away. This prevents the camera preview from
+    // continuing to run behind the PostCreateView.
+    stopCamera();
+
     Get.toNamed(
       '/create-post',
       arguments: {
@@ -899,6 +904,8 @@ class CreateController extends GetxController {
       debugPrint('Post model created: ${post.toDatabaseMap()}');
 
       String? postId;
+      bool postReady =
+          false; // will be set true when media (if any) is uploaded successfully
       debugPrint('Starting database operations...');
 
       if (isVideoPost) {
@@ -906,7 +913,7 @@ class CreateController extends GetxController {
         debugPrint('Creating video post...');
 
         // First create post to get ID
-        postId = await _postRepository.createPost(post);
+        postId = await _postRepository.insertPost(post);
         debugPrint('Initial post created with ID: $postId');
 
         if (postId != null) {
@@ -927,8 +934,17 @@ class CreateController extends GetxController {
               videoUrl,
             );
             debugPrint('Post updated with video URL: $success');
+            postReady = success; // mark ready only if update succeeded
+            if (!success) {
+              // Clean up the empty post record to avoid ghost posts
+              await _postRepository.deletePost(postId, currentUser.id);
+              debugPrint('Cleaned up incomplete post with ID: $postId');
+            }
           } else {
             debugPrint('ERROR: Video upload failed, null URL returned');
+            // Clean up if upload failed
+            await _postRepository.deletePost(postId, currentUser.id);
+            postId = null;
           }
         } else {
           debugPrint('ERROR: Failed to create initial post, null ID returned');
@@ -941,9 +957,11 @@ class CreateController extends GetxController {
           selectedImages.toList(),
         );
         debugPrint('Post created with ID: $postId');
+        postReady =
+            postId != null; // For image posts, creation includes uploads
       }
 
-      if (postId != null) {
+      if (postReady && postId != null) {
         debugPrint('Post created successfully with ID: $postId');
 
         // Create the complete post model with the generated ID
@@ -1018,6 +1036,9 @@ class CreateController extends GetxController {
         // Navigate to profile using safer method
         _safeNavigateToProfile();
       } else {
+        debugPrint(
+          'Post creation not fully completed, skipping cache and post count update',
+        );
         Get.snackbar(
           'Error',
           'Failed to create post',
@@ -1061,7 +1082,9 @@ class CreateController extends GetxController {
       debugPrint('_safeNavigateToProfile: Primary navigation failed: $e');
       try {
         debugPrint('_safeNavigateToProfile: Trying fallback navigation 1');
-        Get.until((route) => route.settings.name == Routes.PROFILE || route.isFirst);
+        Get.until(
+          (route) => route.settings.name == Routes.PROFILE || route.isFirst,
+        );
         debugPrint('_safeNavigateToProfile: Fallback navigation 1 succeeded');
       } catch (e2) {
         debugPrint('_safeNavigateToProfile: Fallback navigation 1 failed: $e2');
@@ -1070,7 +1093,9 @@ class CreateController extends GetxController {
           Get.toNamed(Routes.PROFILE);
           debugPrint('_safeNavigateToProfile: Fallback navigation 2 succeeded');
         } catch (e3) {
-          debugPrint('_safeNavigateToProfile: All navigation attempts failed: $e3');
+          debugPrint(
+            '_safeNavigateToProfile: All navigation attempts failed: $e3',
+          );
         }
       }
     }

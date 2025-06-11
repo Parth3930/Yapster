@@ -142,12 +142,11 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
 
         // Determine aspect ratio for the post card to achieve masonry effect
         double aspectRatio;
-        if (post.postType.toLowerCase() == 'image') {
+        if (post.postType.toLowerCase() == 'image' ||
+            post.postType.toLowerCase() == 'video') {
           // Use a set of predefined aspect ratios and cycle through for visual variety
           const ratios = [0.8, 1.0, 1.25, 1.5];
           aspectRatio = ratios[index % ratios.length];
-        } else if (post.postType.toLowerCase() == 'video') {
-          aspectRatio = 0.7; // Slightly taller for videos
         } else {
           // Text posts: scale height with content length for visual balance
           final textLength = post.content.length;
@@ -191,7 +190,7 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
                       post.imageUrl != null)
                     Image.network(post.imageUrl!, fit: BoxFit.cover)
                   else if (post.postType.toLowerCase() == 'video' &&
-                      post.content.isNotEmpty)
+                      post.videoUrl != null && post.videoUrl!.isNotEmpty)
                     Stack(
                       fit: StackFit.expand,
                       children: [
