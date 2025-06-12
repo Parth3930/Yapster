@@ -54,6 +54,11 @@ class ExploreController extends GetxController {
   // Cache for follow state to reduce database calls
   final _followStateCache = <String, bool>{}.obs;
   final _followStateFetchTime = <String, DateTime>{};
+
+  // Cache for follow request state
+  final _requestSentCache = <String, bool>{}.obs;
+  final _requestSentFetchTime = <String, DateTime>{};
+
   static const Duration followStateCacheDuration = Duration(minutes: 15);
 
   // Cache for recent searches
@@ -797,7 +802,49 @@ class ExploreController extends GetxController {
   void clearAllFollowStateCaches() {
     _followStateCache.clear();
     _followStateFetchTime.clear();
+    _requestSentCache.clear();
+    _requestSentFetchTime.clear();
     debugPrint('Cleared all follow state caches');
+  }
+
+  /// Check if a follow request has been sent to a user
+  Future<bool> hasRequestedToFollow(
+    String userId, {
+    bool forceRefresh = false,
+  }) async {
+    try {
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId == null || userId.isEmpty) return false;
+
+      // Check cache first if not forcing refresh
+      if (!forceRefresh && _requestSentCache.containsKey(userId)) {
+        return _requestSentCache[userId] ?? false;
+      }
+
+      // Query follow_requests table
+      final response = await _supabaseService.client
+          .from('follow_requests')
+          .select()
+          .eq('requester_id', currentUserId)
+          .eq('receiver_id', userId);
+
+      final bool requestSent = response.isNotEmpty;
+
+      // Cache the result
+      _requestSentCache[userId] = requestSent;
+      _requestSentFetchTime[userId] = DateTime.now();
+
+      return requestSent;
+    } catch (e) {
+      debugPrint('Error checking if follow request sent: $e');
+      return false;
+    }
+  }
+
+  /// Clear follow request cache for a user
+  void clearRequestCache(String userId) {
+    _requestSentCache.remove(userId);
+    _requestSentFetchTime.remove(userId);
   }
 
   /// Check if follow state is cached for a user
@@ -1034,7 +1081,7 @@ class ExploreController extends GetxController {
     }
   }
 
-  // Follow or unfollow a user
+  // Follow or unfollow a user (handles private accounts)
   Future<void> toggleFollowUser(String userId) async {
     if (userId.isEmpty) return;
 
@@ -1056,7 +1103,10 @@ class ExploreController extends GetxController {
         return;
       }
 
-      // Get ACTUAL current state from database, not cache
+      // Show a loading indicator
+      EasyLoading.show(status: 'Processing...');
+
+      // Get current follow status
       final dbResponse = await _supabaseService.client
           .from('follows')
           .select()
@@ -1066,17 +1116,52 @@ class ExploreController extends GetxController {
       final isFollowing = dbResponse.isNotEmpty;
       debugPrint('Database state: currently following $userId: $isFollowing');
 
-      // Show a loading indicator
-      EasyLoading.show(status: 'Processing...');
+      // Get current follow request status
+      final requestSent = await hasRequestedToFollow(
+        userId,
+        forceRefresh: true,
+      );
+      debugPrint('Follow request sent to $userId: $requestSent');
 
       if (isFollowing) {
         // UNFOLLOW using repository
         await _accountDataProvider.unfollowUser(userId);
         debugPrint('Unfollowed user via repository');
+
+        // Show feedback to user
+        EasyLoading.showSuccess('You have unfollowed this user');
+      } else if (requestSent) {
+        // If request already sent, cancel it by removing from follow_requests table
+        await _supabaseService.client
+            .from('follow_requests')
+            .delete()
+            .eq('requester_id', currentUserId)
+            .eq('receiver_id', userId);
+
+        // Clear request cache
+        clearRequestCache(userId);
+
+        // Show feedback to user
+        EasyLoading.showSuccess('Follow request cancelled');
       } else {
-        // FOLLOW using repository
-        await _accountDataProvider.followUser(userId);
-        debugPrint('Followed user via repository');
+        // FOLLOW/SEND REQUEST using repository
+        final result = await _accountDataProvider.followUser(userId);
+
+        if (result['status'] == 'request_sent') {
+          // Update request sent cache
+          _requestSentCache[userId] = true;
+          _requestSentFetchTime[userId] = DateTime.now();
+
+          // Show feedback for private account
+          EasyLoading.showSuccess('Follow request sent');
+        } else {
+          // Show feedback for public account
+          EasyLoading.showSuccess('You are now following this user');
+        }
+
+        debugPrint(
+          'Follow action completed via repository: ${result['status']}',
+        );
       }
 
       // Close loading indicator

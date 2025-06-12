@@ -149,7 +149,6 @@ class PostModel {
   /// Returns only the database fields for insertion (excludes profile data)
   Map<String, dynamic> toDatabaseMap() {
     return {
-      'id': id,
       'user_id': userId,
       'content': content,
       'post_type': postType,

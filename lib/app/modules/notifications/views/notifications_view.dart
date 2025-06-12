@@ -7,6 +7,7 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/profile/views/profile_view.dart';
 import 'package:yapster/app/startup/preloader/optimized_bindings.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
+import 'package:yapster/app/modules/notifications/widgets/follow_request_item.dart';
 import '../controllers/notifications_controller.dart';
 
 class NotificationsView extends StatefulWidget {
@@ -211,38 +212,51 @@ class _NotificationsViewState extends State<NotificationsView> {
         final notificationIndex = index - currentIndex;
         final notification = groupNotifications[notificationIndex];
 
-        return NotificationItem(
-          notification: notification,
-          onTap: () {
-            // Mark as read when tapped
-            controller.markAsRead(notification.id);
+        // Use special widget for follow requests
+        if (notification.type == 'follow_request') {
+          return FollowRequestItem(
+            notification: notification,
+            onDismiss: () => controller.deleteNotification(notification.id),
+            onRequestHandled: () {
+              // Refresh notifications after handling request
+              controller.loadNotifications();
+            },
+          );
+        } else {
+          // Use standard notification item for other types
+          return NotificationItem(
+            notification: notification,
+            onTap: () {
+              // Mark as read when tapped
+              controller.markAsRead(notification.id);
 
-            // Navigate based on notification type
-            if (notification.type == 'follow') {
-              // Navigate to the actor's profile
-              Get.to(
-                () => ProfileView(userId: notification.actorId),
-                binding: OptimizedProfileBinding(),
-                transition: Transition.noTransition,
-                duration: Duration.zero,
-              );
-            } else if (notification.type == 'like' ||
-                notification.type == 'comment') {
-              if (notification.postId != null) {
-                // Navigate to the specific post (implement post detail view if needed)
-                debugPrint('Navigate to post: ${notification.postId}');
-                // For now, navigate to the actor's profile
+              // Navigate based on notification type
+              if (notification.type == 'follow') {
+                // Navigate to the actor's profile
                 Get.to(
                   () => ProfileView(userId: notification.actorId),
                   binding: OptimizedProfileBinding(),
                   transition: Transition.noTransition,
                   duration: Duration.zero,
                 );
+              } else if (notification.type == 'like' ||
+                  notification.type == 'comment') {
+                if (notification.postId != null) {
+                  // Navigate to the specific post (implement post detail view if needed)
+                  debugPrint('Navigate to post: ${notification.postId}');
+                  // For now, navigate to the actor's profile
+                  Get.to(
+                    () => ProfileView(userId: notification.actorId),
+                    binding: OptimizedProfileBinding(),
+                    transition: Transition.noTransition,
+                    duration: Duration.zero,
+                  );
+                }
               }
-            }
-          },
-          onDismiss: () => controller.deleteNotification(notification.id),
-        );
+            },
+            onDismiss: () => controller.deleteNotification(notification.id),
+          );
+        }
       }
       currentIndex += groupNotifications.length;
     }

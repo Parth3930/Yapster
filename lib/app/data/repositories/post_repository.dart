@@ -60,66 +60,153 @@ class PostRepository extends GetxService {
     String userId,
     String postId,
   ) async {
-    const bucket = 'Video Posts'; // Supabase bucket for post videos
+    const bucket = 'videos'; // Supabase bucket for post videos
+    debugPrint(
+      '🎬 VIDEO UPLOAD: Starting upload for post $postId by user $userId',
+    );
+    debugPrint(
+      '🎬 VIDEO UPLOAD: File size: ${(await videoFile.length()) ~/ 1024} KB',
+    );
+    debugPrint('🎬 VIDEO UPLOAD: File path: ${videoFile.path}');
+
     try {
       final fileExtension = videoFile.path.split('.').last.toLowerCase();
       final fileName = 'video.$fileExtension';
       final storagePath = '$userId/$postId/$fileName';
+      debugPrint(
+        '🎬 VIDEO UPLOAD: Target storage path: $storagePath in bucket "$bucket"',
+      );
+
+      // Check if file exists and is readable
+      if (!await videoFile.exists()) {
+        debugPrint(
+          '🎬 VIDEO UPLOAD ERROR: File does not exist at path: ${videoFile.path}',
+        );
+        return null;
+      }
 
       // Read file as bytes
+      debugPrint('🎬 VIDEO UPLOAD: Reading file as bytes...');
       final fileBytes = await videoFile.readAsBytes();
+      debugPrint(
+        '🎬 VIDEO UPLOAD: Successfully read ${fileBytes.length} bytes',
+      );
 
       // Upload to Supabase storage
-      await _supabase.client.storage
-          .from(bucket)
-          .uploadBinary(
-            storagePath,
-            fileBytes,
-            fileOptions: const FileOptions(
-              cacheControl: '3600', // Cache for 1 hour
-              upsert: true,
-            ),
+      debugPrint('🎬 VIDEO UPLOAD: Starting upload to Supabase storage...');
+      try {
+        await _supabase.client.storage
+            .from(bucket)
+            .uploadBinary(
+              storagePath,
+              fileBytes,
+              fileOptions: const FileOptions(
+                cacheControl: '3600', // Cache for 1 hour
+                upsert: true,
+              ),
+            );
+        debugPrint('🎬 VIDEO UPLOAD: Upload to storage successful');
+      } catch (storageError) {
+        debugPrint(
+          '🎬 VIDEO UPLOAD ERROR: Storage upload failed: $storageError',
+        );
+        // Check if this is a permissions error
+        if (storageError.toString().contains('permission') ||
+            storageError.toString().contains('not authorized') ||
+            storageError.toString().contains('security')) {
+          debugPrint(
+            '🎬 VIDEO UPLOAD ERROR: This appears to be a row-level security issue. '
+            'Please check RLS policies for the "$bucket" bucket.',
           );
+        }
+        return null;
+      }
 
-      // Get public URL
-      final publicUrl = _supabase.client.storage
+      // Generate a long-lived signed URL (7 days)
+      debugPrint('🎬 VIDEO UPLOAD: Generating signed URL...');
+      final signedUrlResp = await _supabase.client.storage
           .from(bucket)
-          .getPublicUrl(storagePath);
+          .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
 
-      return publicUrl;
+      debugPrint('🎬 VIDEO UPLOAD: Success! Video URL: $signedUrlResp');
+      return signedUrlResp;
     } catch (e) {
-      debugPrint('Error uploading post video: $e');
+      debugPrint('🎬 VIDEO UPLOAD ERROR: General error: $e');
       return null;
     }
   }
 
   /// Update post with video URL
   Future<bool> updatePostWithVideo(String postId, String videoUrl) async {
+    debugPrint('🎬 VIDEO POST UPDATE: Updating post $postId with video URL');
     try {
       // Fetch existing metadata to merge video details
-      final existing = await _supabase.client
-          .from('posts')
-          .select('metadata')
-          .eq('id', postId)
-          .maybeSingle();
+      debugPrint('🎬 VIDEO POST UPDATE: Fetching existing post metadata');
+      final existing =
+          await _supabase.client
+              .from('posts')
+              .select('metadata')
+              .eq('id', postId)
+              .maybeSingle();
 
       Map<String, dynamic> metadata = {};
       if (existing != null && existing['metadata'] is Map) {
         metadata = Map<String, dynamic>.from(existing['metadata'] as Map);
+        debugPrint(
+          '🎬 VIDEO POST UPDATE: Found existing metadata: ${metadata.keys.join(', ')}',
+        );
+      } else {
+        debugPrint(
+          '🎬 VIDEO POST UPDATE: No existing metadata found, creating new',
+        );
       }
 
+      // Add video URL to metadata
       metadata['video_url'] = videoUrl;
 
+      // Add timestamp for tracking
+      metadata['video_processed_at'] = DateTime.now().toIso8601String();
+
+      debugPrint('🎬 VIDEO POST UPDATE: Executing database update');
       await _supabase.client
           .from('posts')
-          .update({
-            'video_url': videoUrl,
-            'metadata': metadata,
-          })
+          .update({'video_url': videoUrl, 'metadata': metadata})
           .eq('id', postId);
-      return true;
+
+      // Verify update
+      final verification =
+          await _supabase.client
+              .from('posts')
+              .select('video_url')
+              .eq('id', postId)
+              .maybeSingle();
+
+      if (verification != null && verification['video_url'] == videoUrl) {
+        debugPrint(
+          '🎬 VIDEO POST UPDATE: Success! Video URL was saved correctly',
+        );
+        return true;
+      } else {
+        debugPrint(
+          '🎬 VIDEO POST UPDATE: Warning - database update completed but verification failed',
+        );
+        return false;
+      }
     } catch (e) {
-      debugPrint('Error updating post with video: $e');
+      debugPrint(
+        '🎬 VIDEO POST UPDATE ERROR: Failed to update post with video: $e',
+      );
+
+      // Try to determine if this is a permissions issue
+      if (e.toString().contains('permission') ||
+          e.toString().contains('not authorized') ||
+          e.toString().contains('security')) {
+        debugPrint(
+          '🎬 VIDEO POST UPDATE ERROR: This appears to be a permissions issue. '
+          'Check RLS policies for the posts table.',
+        );
+      }
+
       return false;
     }
   }
@@ -164,7 +251,7 @@ class PostRepository extends GetxService {
 
       // First, create the post to get the ID
       final postData = post.toDatabaseMap();
-      postData.remove('id'); // Remove ID so database generates it
+
       debugPrint('⚠️ Post data prepared: ${postData.keys.join(', ')}');
 
       // Try to fetch profile data to include with post
@@ -1076,6 +1163,7 @@ class PostRepository extends GetxService {
   Future<String?> insertPost(PostModel post) async {
     try {
       final postData = post.toDatabaseMap();
+
       final response =
           await _supabase.client
               .from('posts')

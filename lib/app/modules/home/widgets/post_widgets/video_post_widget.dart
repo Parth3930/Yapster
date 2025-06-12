@@ -60,7 +60,12 @@ class VideoPostWidget extends BasePostWidget {
   }
 
   Widget _buildVideoContent() {
-    final videoUrl = _getMetadataValue(post.metadata, 'video_url') as String?;
+    // Check both direct property and metadata for video URL
+    String? videoUrl = post.videoUrl;
+    if (videoUrl == null || videoUrl.isEmpty) {
+      videoUrl = _getMetadataValue(post.metadata, 'video_url') as String?;
+    }
+
     final thumbnailUrl =
         _getMetadataValue(post.metadata, 'video_thumbnail') as String?;
     final duration =
@@ -89,7 +94,7 @@ class VideoPostWidget extends BasePostWidget {
     }
 
     return GestureDetector(
-      onTap: () => _playVideo(videoUrl),
+      onTap: () => _playVideo(videoUrl!),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
@@ -289,6 +294,7 @@ class VideoPostWidget extends BasePostWidget {
 
   Widget _buildPostHeader() {
     return Row(
+      mainAxisSize: MainAxisSize.min, // Set to min to prevent expanding
       children: [
         PostAvatarWidget(
           post: post,
@@ -297,79 +303,74 @@ class VideoPostWidget extends BasePostWidget {
         ),
         SizedBox(width: 10),
         Expanded(
-          child: Row(
+          // Changed from Flexible to Expanded to properly constrain inner layout
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
+                mainAxisSize: MainAxisSize.min, // Set to min
                 children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: GestureDetector(
-                          onTap: () => _navigateToProfile(),
-                          child: Text(
-                            _getTruncatedDisplayName(),
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: GestureDetector(
+                      onTap: () => _navigateToProfile(),
+                      child: Text(
+                        _getTruncatedDisplayName(),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
                         ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                      SizedBox(width: 4),
-                      if (_getMetadataValue(post.metadata, 'verified') == true)
-                        Icon(Icons.verified, color: Colors.blue, size: 16),
-                      SizedBox(width: 8),
-                      // Only show follow button if this is not the current user's post
-                      if (!_isCurrentUserPost())
-                        Obx(() {
-                          final exploreController =
-                              Get.find<ExploreController>();
-                          final isFollowing = exploreController.isFollowingUser(
-                            post.userId,
-                          );
-
-                          // Don't show follow button if already following
-                          if (isFollowing) {
-                            return SizedBox.shrink();
-                          }
-
-                          return TextButton(
-                            onPressed: () async {
-                              await exploreController.toggleFollowUser(
-                                post.userId,
-                              );
-                            },
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: Text(
-                              'Follow',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          );
-                        }),
-                    ],
-                  ),
-                  Text(
-                    _formatTimeAgo(post.createdAt),
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
                     ),
                   ),
+                  SizedBox(width: 4),
+                  if (_getMetadataValue(post.metadata, 'verified') == true)
+                    Icon(Icons.verified, color: Colors.blue, size: 16),
+                  SizedBox(width: 8),
+                  // Only show follow button if this is not the current user's post
+                  if (!_isCurrentUserPost())
+                    Obx(() {
+                      final exploreController = Get.find<ExploreController>();
+                      final isFollowing = exploreController.isFollowingUser(
+                        post.userId,
+                      );
+
+                      // Don't show follow button if already following
+                      if (isFollowing) {
+                        return SizedBox.shrink();
+                      }
+
+                      return TextButton(
+                        onPressed: () async {
+                          await exploreController.toggleFollowUser(post.userId);
+                        },
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          'Follow',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }),
                 ],
+              ),
+              Text(
+                _formatTimeAgo(post.createdAt),
+                style: TextStyle(
+                  color: Colors.grey[500],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ],
           ),
@@ -443,7 +444,10 @@ class VideoPostWidget extends BasePostWidget {
   }
 
   // Helper method to safely access metadata values
-  dynamic _getMetadataValue(Map<String, dynamic> metadata, String key) {
+  dynamic _getMetadataValue(Map<String, dynamic>? metadata, String key) {
+    if (metadata == null || metadata.isEmpty) {
+      return null;
+    }
     try {
       return metadata[key];
     } catch (e) {

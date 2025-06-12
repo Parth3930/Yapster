@@ -188,27 +188,66 @@ class AccountRepository {
     }
   }
 
-  /// Follow/unfollow user operations
-  Future<void> followUser(String targetUserId) async {
+  /// Follow/unfollow user operations with private account support
+  Future<Map<String, dynamic>> followUser(String targetUserId) async {
     final userId = _getCurrentUserId();
-    await _supabase.client.rpc(
-      'follow_user',
-      params: {'p_follower_id': userId, 'p_following_id': targetUserId},
-    );
 
-    // Create follow notification
     try {
-      final notificationService = Get.find<NotificationService>();
-      await notificationService.createFollowNotification(
-        followerId: userId,
-        followingId: targetUserId,
-      );
-    } catch (e) {
-      debugPrint('Error creating follow notification: $e');
-      // Don't throw error - follow operation should still succeed
-    }
+      // First check if the target account is private
+      final response =
+          await _supabase.client
+              .from('profiles')
+              .select('private')
+              .eq('user_id', targetUserId)
+              .single();
 
-    await _provider.loadFollowing(userId);
+      final bool isPrivate = response['private'] ?? false;
+
+      if (isPrivate) {
+        // For private accounts, send a follow request
+        await _supabase.client.rpc(
+          'request_follow',
+          params: {'p_requester_id': userId, 'p_receiver_id': targetUserId},
+        );
+
+        // Return status indicating request was sent
+        return {
+          'status': 'request_sent',
+          'message': 'Follow request sent',
+          'isPrivate': true,
+        };
+      } else {
+        // For public accounts, follow directly
+        await _supabase.client.rpc(
+          'follow_user',
+          params: {'p_follower_id': userId, 'p_following_id': targetUserId},
+        );
+
+        // Create follow notification
+        try {
+          final notificationService = Get.find<NotificationService>();
+          await notificationService.createFollowNotification(
+            followerId: userId,
+            followingId: targetUserId,
+          );
+        } catch (e) {
+          debugPrint('Error creating follow notification: $e');
+          // Don't throw error - follow operation should still succeed
+        }
+
+        await _provider.loadFollowing(userId);
+
+        // Return status indicating follow was successful
+        return {
+          'status': 'followed',
+          'message': 'Successfully followed user',
+          'isPrivate': false,
+        };
+      }
+    } catch (e) {
+      debugPrint('Error in followUser: $e');
+      rethrow;
+    }
   }
 
   Future<void> unfollowUser(String targetUserId) async {
@@ -218,6 +257,97 @@ class AccountRepository {
       params: {'p_follower_id': userId, 'p_following_id': targetUserId},
     );
     await _provider.loadFollowing(userId);
+  }
+
+  /// Accept a follow request
+  Future<void> acceptFollowRequest(String requesterId) async {
+    final userId = _getCurrentUserId();
+
+    try {
+      await _supabase.client.rpc(
+        'accept_follow_request',
+        params: {'p_requester_id': requesterId, 'p_receiver_id': userId},
+      );
+
+      // Load updated following data
+      await _provider.loadFollowers(userId);
+    } catch (e) {
+      debugPrint('Error accepting follow request: $e');
+      rethrow;
+    }
+  }
+
+  /// Reject a follow request
+  Future<void> rejectFollowRequest(String requesterId) async {
+    final userId = _getCurrentUserId();
+
+    try {
+      await _supabase.client.rpc(
+        'reject_follow_request',
+        params: {'p_requester_id': requesterId, 'p_receiver_id': userId},
+      );
+    } catch (e) {
+      debugPrint('Error rejecting follow request: $e');
+      rethrow;
+    }
+  }
+
+  /// Check if a follow request exists
+  Future<bool> hasFollowRequest(String targetUserId) async {
+    final userId = _getCurrentUserId();
+
+    try {
+      final response = await _supabase.client
+          .from('follow_requests')
+          .select()
+          .eq('requester_id', userId)
+          .eq('receiver_id', targetUserId);
+
+      return response.isNotEmpty;
+    } catch (e) {
+      debugPrint('Error checking follow request: $e');
+      return false;
+    }
+  }
+
+  /// Get pending follow requests for the current user
+  Future<List<Map<String, dynamic>>> getFollowRequests() async {
+    final userId = _getCurrentUserId();
+
+    try {
+      final response = await _supabase.client
+          .from('follow_requests')
+          .select('''
+            id,
+            requester_id,
+            receiver_id,
+            created_at,
+            profiles:requester_id (
+              username,
+              nickname,
+              avatar
+            )
+          ''')
+          .eq('receiver_id', userId)
+          .order('created_at', ascending: false);
+
+      // Format the response to include requester profile info
+      return response.map<Map<String, dynamic>>((item) {
+        final profile = item['profiles'] as Map<String, dynamic>;
+        return {
+          'id': item['id'],
+          'requester_id': item['requester_id'],
+          'receiver_id': item['receiver_id'],
+          'requester_username': profile['username'] ?? '',
+          'requester_nickname': profile['nickname'] ?? '',
+          'requester_avatar': profile['avatar'] ?? '',
+          'created_at': item['created_at'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('Error getting follow requests: $e');
+      return [];
+    }
   }
 
   /// Get current user ID or throw if not authenticated

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:camera/camera.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
@@ -112,13 +113,32 @@ class CreateController extends GetxController {
   /// Initialize camera in background to avoid blocking UI
   Future<void> _initCameraInBackground() async {
     try {
+      // Skip if camera is already being initialized or is already initialized
+      if (isCameraInitialized.value) {
+        debugPrint('Camera is already initialized, skipping initialization');
+        return;
+      }
+
       // Make sure we have cameras available first
       if (cameras.isEmpty) {
-        cameras = await availableCameras();
-        debugPrint('Available cameras: ${cameras.length}');
+        try {
+          cameras = await availableCameras();
+          debugPrint('Available cameras: ${cameras.length}');
+        } catch (e) {
+          debugPrint('Error getting available cameras: $e');
+          isCameraInitialized.value = false;
+          return;
+        }
       }
 
       if (cameras.isNotEmpty) {
+        // Make sure any existing camera controllers are properly disposed first
+        await stopCamera();
+
+        // Add a small delay to allow resources to be fully released
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        // Now initialize the new camera
         await _initializeSingleCamera();
       } else {
         debugPrint('No cameras available');
@@ -157,22 +177,66 @@ class CreateController extends GetxController {
     try {
       debugPrint('Stopping camera and properly disposing controllers');
 
+      // Prevent multiple simultaneous dispose operations
+      if (!isCameraInitialized.value) {
+        debugPrint('Camera already stopped, skipping disposal');
+        return;
+      }
+
+      // Set initialized state to false first to prevent new operations
+      isCameraInitialized.value = false;
+
       // Properly dispose the camera controllers to release camera resources
-      if (cameraController != null && cameraController!.value.isInitialized) {
-        await cameraController!.dispose();
-        debugPrint('Main camera controller disposed');
+      if (cameraController != null) {
+        try {
+          if (cameraController!.value.isInitialized) {
+            // First stop any active recording to release ImageReader buffers
+            if (cameraController!.value.isRecordingVideo) {
+              try {
+                await cameraController!.stopVideoRecording();
+                debugPrint('Stopped active video recording before disposal');
+              } catch (e) {
+                debugPrint('Error stopping video recording: $e');
+              }
+            }
+
+            // Explicitly unlock any flash resources
+            try {
+              await cameraController!.setFlashMode(FlashMode.off);
+            } catch (e) {
+              debugPrint('Error resetting flash mode: $e');
+            }
+
+            await cameraController!.dispose();
+            debugPrint('Main camera controller disposed');
+          }
+        } catch (e) {
+          debugPrint('Error disposing main camera controller: $e');
+        }
       }
 
-      if (_rearCameraController != null &&
-          _rearCameraController!.value.isInitialized) {
-        await _rearCameraController!.dispose();
-        debugPrint('Rear camera controller disposed');
+      // Dispose rear camera controller
+      if (_rearCameraController != null) {
+        try {
+          if (_rearCameraController!.value.isInitialized) {
+            await _rearCameraController!.dispose();
+            debugPrint('Rear camera controller disposed');
+          }
+        } catch (e) {
+          debugPrint('Error disposing rear camera controller: $e');
+        }
       }
 
-      if (_frontCameraController != null &&
-          _frontCameraController!.value.isInitialized) {
-        await _frontCameraController!.dispose();
-        debugPrint('Front camera controller disposed');
+      // Dispose front camera controller
+      if (_frontCameraController != null) {
+        try {
+          if (_frontCameraController!.value.isInitialized) {
+            await _frontCameraController!.dispose();
+            debugPrint('Front camera controller disposed');
+          }
+        } catch (e) {
+          debugPrint('Error disposing front camera controller: $e');
+        }
       }
 
       // Clear all controller references
@@ -181,9 +245,11 @@ class CreateController extends GetxController {
       _frontCameraController = null;
 
       // Reset camera state
-      isCameraInitialized.value = false;
       _rearCameraReady.value = false;
       _frontCameraReady.value = false;
+
+      // Add a small delay to allow Android to release resources
+      await Future.delayed(const Duration(milliseconds: 300));
 
       debugPrint('Camera resources released and references cleared');
     } catch (e) {
@@ -523,6 +589,12 @@ class CreateController extends GetxController {
   Future<void> takePhoto() async {
     debugPrint('🔥 takePhoto called');
 
+    // Prevent multiple simultaneous photo captures
+    if (isProcessingPhoto.value) {
+      debugPrint('⚠️ Already processing a photo, ignoring request');
+      return;
+    }
+
     // Set processing flag to true
     isProcessingPhoto.value = true;
 
@@ -544,6 +616,8 @@ class CreateController extends GetxController {
 
       // Try to initialize the camera again
       ensureCameraInitialized();
+      // Reset processing flag when camera is not ready
+      isProcessingPhoto.value = false;
       return;
     }
 
@@ -559,6 +633,8 @@ class CreateController extends GetxController {
           debugPrint('❌ Camera not ready for video recording');
           Get.snackbar('Error', 'Camera not ready for video recording');
         }
+        // Reset processing flag after video handling
+        isProcessingPhoto.value = false;
         return;
       }
 
@@ -589,14 +665,23 @@ class CreateController extends GetxController {
         }
       }
 
-      final XFile photo = await cameraController!.takePicture();
+      // Create a local variable for the controller to avoid null issues
+      final controller = cameraController;
+      if (controller == null || !controller.value.isInitialized) {
+        throw Exception('Camera controller is not available');
+      }
+
+      final XFile photo = await controller.takePicture();
+
+      // Create file reference immediately to ensure proper cleanup
+      final imageFile = File(photo.path);
 
       if (selectedMode.value == 'POST') {
         // Navigate to image crop/edit page
-        _navigateToImageEditPage(File(photo.path));
+        _navigateToImageEditPage(imageFile);
       } else if (selectedMode.value == 'STORY') {
         // Create story directly with the captured image
-        await _createStoryWithImage(File(photo.path));
+        await _createStoryWithImage(imageFile);
       }
 
       // Reset processing flag
@@ -845,12 +930,14 @@ class CreateController extends GetxController {
     bool bypassValidation = false,
   }) async {
     debugPrint(
-      'Starting post creation process (isGlobal: $isGlobal, isPublic: $isPublic, bypass: $bypassValidation)',
+      '📝 POST CREATION: Starting (isGlobal: $isGlobal, isPublic: $isPublic, bypass: $bypassValidation)',
     );
 
     // Check if post content is valid, unless validation bypass is enabled
     if (!bypassValidation && !canPost.value) {
-      debugPrint('Cannot post: canPost is false. Aborting.');
+      debugPrint(
+        '📝 POST CREATION: Validation failed - canPost is false. Aborting.',
+      );
       return;
     }
 
@@ -859,34 +946,36 @@ class CreateController extends GetxController {
 
     try {
       isLoading.value = true;
-      debugPrint('isLoading set to true');
 
       final currentUser = _supabase.client.auth.currentUser;
       if (currentUser == null) {
-        debugPrint('Error: User not authenticated');
+        debugPrint('📝 POST CREATION ERROR: User not authenticated');
         Get.snackbar('Error', 'User not authenticated');
         return;
       }
-      debugPrint('Current user authenticated: ${currentUser.id}');
+      debugPrint('📝 POST CREATION: User authenticated: ${currentUser.id}');
 
       // Check if we're posting a video
       bool isVideoPost = videoFilePath.value.isNotEmpty;
 
+      if (isVideoPost) {
+        debugPrint(
+          '📝 POST CREATION: Video post detected with path: ${videoFilePath.value}',
+        );
+        debugPrint(
+          '📝 POST CREATION: Video file exists: ${await File(videoFilePath.value).exists()}',
+        );
+      }
+
       // Set appropriate post type based on content
       if (isVideoPost && selectedPostType.value != 'video') {
         selectedPostType.value = 'video';
+        debugPrint('📝 POST CREATION: Type automatically set to video');
       } else if (selectedImages.isNotEmpty &&
           selectedPostType.value == 'text') {
         selectedPostType.value = 'image';
+        debugPrint('📝 POST CREATION: Type automatically set to image');
       }
-
-      debugPrint(
-        'Post type: ${isVideoPost ? "video" : selectedPostType.value}',
-      );
-      debugPrint(
-        'Text content length: ${postTextController.text.trim().length}',
-      );
-      debugPrint('Selected images: ${selectedImages.length}');
 
       // Create post model
       final post = PostModel(
@@ -901,64 +990,161 @@ class CreateController extends GetxController {
         updatedAt: DateTime.now(),
         global: isGlobal,
       );
-      debugPrint('Post model created: ${post.toDatabaseMap()}');
+      debugPrint(
+        '📝 POST CREATION: Post model created: ${post.toDatabaseMap()}',
+      );
 
       String? postId;
       bool postReady =
           false; // will be set true when media (if any) is uploaded successfully
-      debugPrint('Starting database operations...');
 
       if (isVideoPost) {
         // For video posts, create a different upload flow
-        debugPrint('Creating video post...');
+        debugPrint('📝 POST CREATION: Starting video post creation flow');
 
         // First create post to get ID
         postId = await _postRepository.insertPost(post);
-        debugPrint('Initial post created with ID: $postId');
+        debugPrint(
+          '📝 POST CREATION: Initial post record created with ID: $postId',
+        );
 
         if (postId != null) {
+          // Subscribe to real-time updates for this post
+          try {
+            // Create a channel to monitor post updates
+            _supabase.client
+                .channel('public:posts:id=eq.$postId')
+                .onPostgresChanges(
+                  event: PostgresChangeEvent.update,
+                  schema: 'public',
+                  table: 'posts',
+                  filter: PostgresChangeFilter(
+                    type: PostgresChangeFilterType.eq,
+                    column: 'id',
+                    value: postId,
+                  ),
+                  callback: (payload) {
+                    debugPrint(
+                      '📝 POST CREATION: Received real-time update for post: ${payload.newRecord}',
+                    );
+                  },
+                )
+                .subscribe((status, error) {
+                  debugPrint(
+                    '📝 POST CREATION: Notification subscription status: $status',
+                  );
+                  if (error != null) {
+                    debugPrint('📝 POST CREATION: Subscription error: $error');
+                  }
+                });
+
+            debugPrint(
+              '📝 POST CREATION: Successfully subscribed to post updates',
+            );
+          } catch (e) {
+            debugPrint(
+              '📝 POST CREATION: Error setting up real-time subscription: $e',
+            );
+          }
+
           // Upload video file
-          debugPrint('Uploading video file...');
+          debugPrint('📝 POST CREATION: Starting video upload process');
+          final videoFile = File(videoFilePath.value);
+
+          // Check file properties before upload
+          if (await videoFile.exists()) {
+            final videoSize = await videoFile.length();
+            debugPrint(
+              '📝 POST CREATION: Video file size: ${videoSize ~/ 1024} KB',
+            );
+          } else {
+            debugPrint(
+              '📝 POST CREATION ERROR: Video file does not exist at path: ${videoFilePath.value}',
+            );
+          }
+
           final videoUrl = await _postRepository.uploadPostVideo(
-            File(videoFilePath.value),
+            videoFile,
             currentUser.id,
             postId,
           );
-          debugPrint('Video uploaded with URL: $videoUrl');
 
           if (videoUrl != null) {
+            debugPrint(
+              '📝 POST CREATION: Video uploaded successfully with URL: $videoUrl',
+            );
             // Update post with video URL
-            debugPrint('Updating post with video URL...');
             final success = await _postRepository.updatePostWithVideo(
               postId,
               videoUrl,
             );
-            debugPrint('Post updated with video URL: $success');
-            postReady = success; // mark ready only if update succeeded
-            if (!success) {
+
+            if (success) {
+              debugPrint(
+                '📝 POST CREATION: Post successfully updated with video URL',
+              );
+              postReady = true;
+            } else {
+              debugPrint(
+                '📝 POST CREATION ERROR: Failed to update post with video URL',
+              );
               // Clean up the empty post record to avoid ghost posts
               await _postRepository.deletePost(postId, currentUser.id);
-              debugPrint('Cleaned up incomplete post with ID: $postId');
+              debugPrint(
+                '📝 POST CREATION: Cleaned up incomplete post with ID: $postId',
+              );
             }
           } else {
-            debugPrint('ERROR: Video upload failed, null URL returned');
+            debugPrint(
+              '📝 POST CREATION ERROR: Video upload failed, null URL returned',
+            );
+            debugPrint(
+              '📝 POST CREATION ERROR: This may be due to a row-level security issue in the "videos" bucket',
+            );
+
+            // Run permissions diagnostic
+            debugPrint(
+              '📝 POST CREATION: Running storage bucket permissions diagnostic...',
+            );
+            final bucketPermissionsOk = await _supabase.checkBucketPermissions(
+              'videos',
+            );
+            if (!bucketPermissionsOk) {
+              debugPrint(
+                '📝 POST CREATION ERROR: Bucket permissions test failed. \n'
+                'Please check RLS policies for the "videos" bucket in the Supabase dashboard.',
+              );
+            }
+
             // Clean up if upload failed
             await _postRepository.deletePost(postId, currentUser.id);
             postId = null;
           }
         } else {
-          debugPrint('ERROR: Failed to create initial post, null ID returned');
+          debugPrint(
+            '📝 POST CREATION ERROR: Failed to create initial post record, null ID returned',
+          );
         }
       } else {
         // Create post with images
-        debugPrint('Creating post with ${selectedImages.length} images...');
+        debugPrint(
+          '📝 POST CREATION: Creating post with ${selectedImages.length} images',
+        );
         postId = await _postRepository.createPostWithImages(
           post,
           selectedImages.toList(),
         );
-        debugPrint('Post created with ID: $postId');
-        postReady =
-            postId != null; // For image posts, creation includes uploads
+
+        if (postId != null) {
+          debugPrint(
+            '📝 POST CREATION: Post with images created successfully, ID: $postId',
+          );
+          postReady = true;
+        } else {
+          debugPrint(
+            '📝 POST CREATION ERROR: Failed to create post with images',
+          );
+        }
       }
 
       if (postReady && postId != null) {
@@ -973,22 +1159,12 @@ class CreateController extends GetxController {
           debugPrint('Adding post to cache...');
           _cacheService.addPostToCache(currentUser.id, createdPost);
 
-          // Increment post count optimistically
+          // Refresh counts from database to keep post_count accurate
           try {
-            _accountDataProvider.incrementPostCount();
+            await _postRepository.updateUserPostCount(currentUser.id);
+            await _accountDataProvider.refreshCounts(currentUser.id);
           } catch (e) {
-            debugPrint('Error incrementing post count: $e');
-          }
-
-          // Also add to user posts cache for post count updates
-          try {
-            final userPostsCache = Get.find<UserPostsCacheService>();
-            userPostsCache.addNewPostToCache(createdPost);
-            debugPrint(
-              'Added new post to cache for current user: ${createdPost.userId}',
-            );
-          } catch (e) {
-            debugPrint('Error updating user posts cache: $e');
+            debugPrint('Error refreshing post count after creation: $e');
           }
 
           debugPrint('Post added to cache successfully');

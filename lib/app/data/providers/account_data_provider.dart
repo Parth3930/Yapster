@@ -526,12 +526,11 @@ class AccountDataProvider extends GetxController {
       // Get posts from db cache or fetch from API
       final postsList = await dbCacheService.getUserPosts(userId, () async {
         // Fetch posts from the database
-        final response =
-            await supabaseService.client
-                .from('posts')
-                .select()
-                .eq('user_id', userId)
-                .order('created_at', ascending: false);
+        final response = await supabaseService.client
+            .from('posts')
+            .select()
+            .eq('user_id', userId)
+            .order('created_at', ascending: false);
 
         return List<Map<String, dynamic>>.from(response);
       });
@@ -574,13 +573,33 @@ class AccountDataProvider extends GetxController {
   }
 
   /// Follow a user using AccountRepository
-  Future<void> followUser(String targetUserId) async {
-    await _accountRepository.followUser(targetUserId);
+  Future<Map<String, dynamic>> followUser(String targetUserId) async {
+    return await _accountRepository.followUser(targetUserId);
   }
 
   /// Unfollow a user using AccountRepository
   Future<void> unfollowUser(String targetUserId) async {
     await _accountRepository.unfollowUser(targetUserId);
+  }
+
+  /// Accept a follow request
+  Future<void> acceptFollowRequest(String requesterId) async {
+    await _accountRepository.acceptFollowRequest(requesterId);
+  }
+
+  /// Reject a follow request
+  Future<void> rejectFollowRequest(String requesterId) async {
+    await _accountRepository.rejectFollowRequest(requesterId);
+  }
+
+  /// Check if there's a pending follow request
+  Future<bool> hasFollowRequest(String targetUserId) async {
+    return await _accountRepository.hasFollowRequest(targetUserId);
+  }
+
+  /// Get list of pending follow requests
+  Future<List<Map<String, dynamic>>> getFollowRequests() async {
+    return await _accountRepository.getFollowRequests();
   }
 
   /// Process followers data using AccountRepository
@@ -885,5 +904,10 @@ class AccountDataProvider extends GetxController {
     userPostData['post_count'] = newCount;
     userPostData.refresh();
     debugPrint('AccountDataProvider: decremented post_count to $newCount');
+  }
+
+  /// Public helper to refresh follower/following/post counts from database
+  Future<void> refreshCounts(String userId) async {
+    await _loadCountsFromProfiles(userId);
   }
 }

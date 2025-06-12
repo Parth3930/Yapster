@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -260,6 +261,76 @@ class SupabaseService extends GetxService {
     _accountDataProvider.username.value = '';
     _accountDataProvider.email.value = '';
     _accountDataProvider.avatar.value = '';
+  }
+
+  /// Diagnose bucket permissions issue
+  /// This function can be called to check if the user has proper permissions
+  /// for a specific bucket
+  Future<bool> checkBucketPermissions(String bucketName) async {
+    if (currentUser.value == null) {
+      debugPrint(
+        '🔐 SECURITY CHECK: Cannot check bucket permissions - no authenticated user',
+      );
+      return false;
+    }
+
+    debugPrint(
+      '🔐 SECURITY CHECK: Testing permissions for bucket "$bucketName"',
+    );
+
+    try {
+      // Try to list the bucket (doesn't need to succeed, just checking permissions)
+      await client.storage.from(bucketName).list();
+      debugPrint(
+        '🔐 SECURITY CHECK: Success! User can list the "$bucketName" bucket',
+      );
+
+      // Create a test file path with timestamp to avoid conflicts
+      final testPath =
+          'permission_test_${DateTime.now().millisecondsSinceEpoch}.txt';
+
+      // Try to upload a small test file
+      try {
+        await client.storage
+            .from(bucketName)
+            .uploadBinary(
+              testPath,
+              Uint8List.fromList('test'.codeUnits),
+              fileOptions: const FileOptions(upsert: true),
+            );
+        debugPrint(
+          '🔐 SECURITY CHECK: Success! User can upload to "$bucketName" bucket',
+        );
+
+        // Try to delete the test file
+        try {
+          await client.storage.from(bucketName).remove([testPath]);
+          debugPrint(
+            '🔐 SECURITY CHECK: Success! User can delete from "$bucketName" bucket',
+          );
+        } catch (e) {
+          debugPrint(
+            '🔐 SECURITY CHECK: User cannot delete from "$bucketName" bucket: $e',
+          );
+        }
+
+        return true;
+      } catch (e) {
+        debugPrint(
+          '🔐 SECURITY CHECK: User cannot upload to "$bucketName" bucket: $e',
+        );
+        debugPrint(
+          '🔐 SECURITY CHECK: This indicates a Row Level Security (RLS) issue',
+        );
+        return false;
+      }
+    } catch (e) {
+      debugPrint('🔐 SECURITY CHECK: Cannot access "$bucketName" bucket: $e');
+      debugPrint(
+        '🔐 SECURITY CHECK: Bucket may not exist or user lacks basic permissions',
+      );
+      return false;
+    }
   }
 
   /// Initialize real-time subscriptions for follow updates

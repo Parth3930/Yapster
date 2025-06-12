@@ -70,6 +70,8 @@ class NotificationModel {
       switch (type) {
         case 'follow':
           return 'started following you';
+        case 'follow_request':
+          return 'requested to follow you';
         case 'like':
           return 'liked your post';
         case 'comment':

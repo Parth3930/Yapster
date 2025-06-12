@@ -13,6 +13,8 @@ class PostCreateController extends GetxController {
   final videoPath = RxString('');
   final isGlobalPost = false.obs;
   final isLoading = false.obs;
+  // Track if video player finished initialization
+  final videoInitialized = false.obs;
 
   // Video player
   VideoPlayerController? videoController;
@@ -37,6 +39,7 @@ class PostCreateController extends GetxController {
   @override
   void onClose() {
     videoController?.dispose();
+    videoInitialized.value = false;
 
     // Reset main CreateController state so next entry is clean
     createController.videoFilePath.value = '';
@@ -48,6 +51,8 @@ class PostCreateController extends GetxController {
   }
 
   void _initializeVideoPlayer() {
+    videoInitialized.value = false;
+
     if (videoPath.isNotEmpty) {
       // Dispose any previously created controller to avoid exceeding buffer limits
       if (videoController != null) {
@@ -62,7 +67,7 @@ class PostCreateController extends GetxController {
         ..initialize().then((_) {
           videoController?.setLooping(true);
           videoController?.play();
-          update(); // Notify UI to rebuild
+          videoInitialized.value = true; // Trigger UI rebuild via Obx
         });
     }
   }
@@ -73,24 +78,14 @@ class PostCreateController extends GetxController {
 
   Future<void> createPost() async {
     isLoading.value = true;
-    debugPrint('PostCreateController: Starting post creation');
 
     // Force the CreateController to allow posting
     createController.canPost.value = true;
 
     try {
-      // Use the main CreateController to create the post
-      // Pass the isPublic value from the CreateController
-      debugPrint(
-        'PostCreateController: Calling main controller (isGlobal: ${isGlobalPost.value}, isPublic: ${createController.isPublic.value})',
-      );
-
       // Transfer video path to main controller if needed
       if (videoPath.isNotEmpty &&
           createController.videoFilePath.value.isEmpty) {
-        debugPrint(
-          'Transferring video path to main controller: ${videoPath.value}',
-        );
         createController.videoFilePath.value = videoPath.value;
       }
 
@@ -98,7 +93,6 @@ class PostCreateController extends GetxController {
       if (createController.postTextController.text.trim().isEmpty &&
           createController.selectedImages.isEmpty &&
           videoPath.isEmpty) {
-        debugPrint('Adding default post text to ensure validation passes');
         createController.postTextController.text = "New post";
       }
 
@@ -107,28 +101,21 @@ class PostCreateController extends GetxController {
         isPublic: createController.isPublic.value,
         bypassValidation: true, // Bypass the empty content validation
       );
-
-      // No navigation here - let the CreateController handle it
-      debugPrint('PostCreateController: Post creation finished successfully');
     } catch (e) {
-      debugPrint('PostCreateController: Error creating post: $e');
+      debugPrint('📱 POST CREATE VIEW: Error creating post: $e');
       Get.snackbar('Error', 'Failed to create post');
 
       // Only on error, try to navigate back to home
       try {
-        debugPrint(
-          'PostCreateController: Attempting emergency navigation to home after error',
-        );
         // Use a gentler navigation approach on error
         Get.until((route) => route.settings.name == '/home' || route.isFirst);
       } catch (navError) {
         debugPrint(
-          'PostCreateController: Error navigating after post creation failed: $navError',
+          '📱 POST CREATE VIEW: Error navigating after failure: $navError',
         );
       }
     } finally {
       isLoading.value = false;
-      debugPrint('PostCreateController: Post creation process completed');
     }
   }
 }

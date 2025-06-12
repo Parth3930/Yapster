@@ -189,20 +189,12 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
                   if (post.postType.toLowerCase() == 'image' &&
                       post.imageUrl != null)
                     Image.network(post.imageUrl!, fit: BoxFit.cover)
-                  else if (post.postType.toLowerCase() == 'video' &&
-                      post.videoUrl != null && post.videoUrl!.isNotEmpty)
+                  else if (post.postType.toLowerCase() == 'video')
                     Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.network(
-                          post.videoUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder:
-                              (context, error, stackTrace) => Icon(
-                                Icons.movie,
-                                size: 40,
-                                color: Colors.grey,
-                              ),
+                        Container(
+                          color: Colors.black26,
                         ),
                         Center(
                           child: Container(

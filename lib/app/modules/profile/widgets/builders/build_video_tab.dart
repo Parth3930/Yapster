@@ -88,13 +88,27 @@ Widget buildVideosTab() {
               fit: StackFit.expand,
               children: [
                 // Video thumbnail/preview
-                Image.network(
-                  post.videoUrl ?? '',
-                  fit: BoxFit.cover,
-                  errorBuilder:
-                      (context, error, stackTrace) =>
-                          Icon(Icons.movie, size: 40, color: Colors.grey),
-                ),
+                (() {
+                  final thumb = post.metadata['video_thumbnail'] as String?;
+                  if (thumb != null && thumb.isNotEmpty) {
+                    return Image.network(
+                      thumb,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          color: Colors.black26,
+                          child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.movie, size: 40, color: Colors.grey),
+                    );
+                  }
+                  return Container(color: Colors.black26);
+                })(),
                 // Play button overlay
                 Center(
                   child: Container(
