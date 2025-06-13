@@ -1268,6 +1268,9 @@ class CreateController extends GetxController {
           debugPrint('Adding post to cache...');
           _cacheService.addPostToCache(currentUser.id, createdPost);
 
+          // Increment post count optimistically for immediate UI feedback
+          _accountDataProvider.incrementPostCount();
+
           // Refresh counts from database to keep post_count accurate
           try {
             await _postRepository.updateUserPostCount(currentUser.id);

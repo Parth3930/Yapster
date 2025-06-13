@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
+import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'base_post_widget.dart';
 
 /// Widget for displaying video posts
@@ -246,26 +247,39 @@ class VideoPostWidget extends BasePostWidget {
   }
 
   void _playVideo(String videoUrl) {
-    // Implement video player
-    // You can use video_player package or chewie for better video controls
     debugPrint('Play video: $videoUrl');
 
-    // For now, show a dialog indicating video would play
-    Get.dialog(
-      AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: Text('Video Player', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Video player would open here.\nURL: $videoUrl',
-          style: TextStyle(color: Colors.grey[300]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: Text('Close', style: TextStyle(color: Colors.red[300])),
-          ),
-        ],
-      ),
+    // Get all video posts from the feed controller
+    final feedController = Get.find<PostsFeedController>();
+    final videos =
+        feedController.posts
+            .where(
+              (p) =>
+                  p.postType.toLowerCase() == 'video' ||
+                  p.videoUrl != null ||
+                  p.metadata['video_url'] != null,
+            )
+            .toList();
+
+    // Find the index of the current video
+    int initialIndex = 0;
+    for (int i = 0; i < videos.length; i++) {
+      final post = videos[i];
+      final postVideoUrl =
+          post.videoUrl?.isNotEmpty == true
+              ? post.videoUrl!
+              : post.metadata['video_url'] as String?;
+
+      if (postVideoUrl == videoUrl) {
+        initialIndex = i;
+        break;
+      }
+    }
+
+    // Navigate to videos view with the video list and initial index
+    Get.toNamed(
+      '/videos',
+      arguments: {'videos': videos, 'initialIndex': initialIndex},
     );
   }
 

@@ -254,7 +254,9 @@ class UserPostsCacheService extends GetxService {
     // Save to local storage for current user
     _saveCachedPosts(userId, cachedPosts);
 
-    debugPrint('Added new post to cache for current user: $userId');
+    debugPrint(
+      'Added new post to cache for current user: $userId (total cached: ${cachedPosts.length})',
+    );
   }
 
   /// Update a post in cache (only for current user)

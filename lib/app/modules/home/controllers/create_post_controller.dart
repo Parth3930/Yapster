@@ -8,11 +8,14 @@ import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
+import 'package:yapster/app/data/providers/account_data_provider.dart';
 
 class CreatePostController extends GetxController {
   final SupabaseService _supabase = Get.find<SupabaseService>();
   final PostRepository _postRepository = Get.find<PostRepository>();
   final UserPostsCacheService _cacheService = Get.find<UserPostsCacheService>();
+  final AccountDataProvider _accountDataProvider =
+      Get.find<AccountDataProvider>();
   final ImagePicker _picker = ImagePicker();
 
   // Text controller for post content
@@ -127,6 +130,9 @@ class CreatePostController extends GetxController {
 
         // Add to cache immediately
         _cacheService.addPostToCache(currentUser.id, createdPost);
+
+        // Increment post count optimistically for immediate UI feedback
+        _accountDataProvider.incrementPostCount();
 
         // Add to profile posts controller if it exists
         if (Get.isRegistered<ProfilePostsController>(

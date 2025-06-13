@@ -456,20 +456,84 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
                             ),
                           ),
                           SizedBox(width: 12),
-                          // Username and follow button
+                          // Username and time
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  post.nickname?.isNotEmpty == true
-                                      ? post.nickname!
-                                      : post.username ?? '',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                // Username and follow button row
+                                Row(
+                                  children: [
+                                    // Username/nickname
+                                    Expanded(
+                                      child: Text(
+                                        post.nickname?.isNotEmpty == true
+                                            ? post.nickname!
+                                            : post.username ?? '',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(width: 8),
+                                    // Follow button if not following and not own post
+                                    Builder(
+                                      builder: (context) {
+                                        final isCurrentUser =
+                                            currentUserId == post.userId;
+                                        if (!isCurrentUser &&
+                                            !_accountProvider.isFollowing(
+                                              post.userId,
+                                            )) {
+                                          return Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withOpacity(
+                                                0.3,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                              border: Border.all(
+                                                color: Colors.white.withOpacity(
+                                                  0.2,
+                                                ),
+                                                width: 1,
+                                              ),
+                                            ),
+                                            child: Material(
+                                              color: Colors.transparent,
+                                              child: InkWell(
+                                                onTap:
+                                                    () => _accountProvider
+                                                        .followUser(
+                                                          post.userId,
+                                                        ),
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                                child: Padding(
+                                                  padding: EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 6,
+                                                  ),
+                                                  child: Text(
+                                                    'Follow',
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return const SizedBox.shrink();
+                                      },
+                                    ),
+                                  ],
                                 ),
                                 SizedBox(height: 2),
                                 // Time ago
@@ -479,46 +543,6 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
                                     color: Colors.white70,
                                     fontSize: 12,
                                   ),
-                                ),
-                                SizedBox(height: 4),
-                                // Follow button if not following and not own post
-                                Builder(
-                                  builder: (context) {
-                                    final isCurrentUser =
-                                        currentUserId == post.userId;
-                                    if (!isCurrentUser &&
-                                        !_accountProvider.isFollowing(
-                                          post.userId,
-                                        )) {
-                                      return ElevatedButton(
-                                        onPressed:
-                                            () => _accountProvider.followUser(
-                                              post.userId,
-                                            ),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.red[300],
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 8,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              20,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          'Follow',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return const SizedBox.shrink();
-                                  },
                                 ),
                               ],
                             ),

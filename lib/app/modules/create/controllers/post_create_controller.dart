@@ -77,22 +77,16 @@ class PostCreateController extends GetxController {
 
   @override
   void onClose() {
+    debugPrint('PostCreateController: onClose called');
+    
     // Cancel any pending timers
     _focusDebounceTimer?.cancel();
 
     // Dispose focus node
     textFocusNode.dispose();
 
-    // Properly dispose video controller
-    if (videoController != null) {
-      try {
-        videoController!.pause();
-        videoController!.dispose();
-      } catch (e) {
-        debugPrint('Error disposing video controller: $e');
-      }
-      videoController = null;
-    }
+    // Safely dispose video controller using our helper method
+    _safeDisposeVideoController();
     videoInitialized.value = false;
 
     // Reset main CreateController state so next entry is clean
@@ -105,74 +99,100 @@ class PostCreateController extends GetxController {
   }
 
   void _initializeVideoPlayer() {
-    // Ensure this runs on the main thread
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Use a microtask to ensure this runs on the main thread
+    // but doesn't interfere with any ongoing UI operations
+    Future.microtask(() {
       _performVideoInitialization();
     });
   }
 
   void _performVideoInitialization() {
+    // Set initialized state to false first
     videoInitialized.value = false;
 
-    if (videoPath.isNotEmpty) {
-      // Don't initialize video if user is currently typing
-      if (isTextFieldFocused.value) {
-        debugPrint('Delaying video initialization - user is typing');
-        return;
-      }
+    if (videoPath.isEmpty) {
+      debugPrint('Video path is empty, skipping initialization');
+      return;
+    }
 
-      // Dispose any previously created controller to avoid exceeding buffer limits
-      if (videoController != null) {
-        try {
-          videoController!.pause();
-          videoController!.dispose();
-        } catch (e) {
-          debugPrint('Error disposing previous video controller: $e');
-        }
-        videoController = null;
-      }
+    // Don't initialize video if user is currently typing
+    if (isTextFieldFocused.value) {
+      debugPrint('Delaying video initialization - user is typing');
+      return;
+    }
 
-      try {
-        videoController = VideoPlayerController.file(
-          File(videoPath.value),
-          videoPlayerOptions: VideoPlayerOptions(
-            mixWithOthers: false,
-            allowBackgroundPlayback: false,
-          ),
-        );
+    // Safely dispose any previously created controller
+    _safeDisposeVideoController();
 
-        videoController!
-            .initialize()
-            .then((_) {
-              // Ensure we're still on the main thread for UI updates
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                try {
-                  if (videoController != null &&
-                      !videoController!.value.hasError) {
-                    videoController!.setLooping(true);
-                    videoController!.setVolume(
-                      0.3,
-                    ); // Lower volume to reduce resource usage
+    try {
+      // Create the video controller with explicit thread safety options
+      videoController = VideoPlayerController.file(
+        File(videoPath.value),
+        videoPlayerOptions: VideoPlayerOptions(
+          mixWithOthers: false,
+          allowBackgroundPlayback: false,
+        ),
+      );
 
-                    // Only auto-play if user is not typing
-                    if (!isTextFieldFocused.value) {
-                      videoController!.play();
-                    }
-                    videoInitialized.value = true; // Trigger UI rebuild via Obx
-                  }
-                } catch (e) {
-                  debugPrint('Error setting up video controller: $e');
-                  videoInitialized.value = false;
-                }
-              });
-            })
-            .catchError((error) {
-              debugPrint('Error initializing video player: $error');
+      // Initialize in a way that properly handles thread safety
+      videoController!.initialize().then((_) {
+        // Use a microtask to ensure we're on the main thread for UI updates
+        // but don't block the UI thread with video operations
+        Future.microtask(() {
+          try {
+            // Double-check controller is still valid after async operation
+            if (videoController != null &&
+                videoController!.value.isInitialized &&
+                !videoController!.value.hasError) {
+              
+              // Configure playback with reduced resource usage
+              videoController!.setLooping(true);
+              videoController!.setVolume(0.3);
+
+              // Only auto-play if user is not typing
+              if (!isTextFieldFocused.value) {
+                videoController!.play();
+              }
+              
+              // Mark as initialized to update UI
+              videoInitialized.value = true;
+              debugPrint('Video player initialized successfully');
+            } else {
+              debugPrint('Video controller not ready or has error');
               videoInitialized.value = false;
-            });
-      } catch (e) {
-        debugPrint('Error creating video controller: $e');
+            }
+          } catch (e) {
+            debugPrint('Error setting up video controller: $e');
+            videoInitialized.value = false;
+            _safeDisposeVideoController();
+          }
+        });
+      }).catchError((error) {
+        debugPrint('Error initializing video player: $error');
         videoInitialized.value = false;
+        _safeDisposeVideoController();
+      });
+    } catch (e) {
+      debugPrint('Error creating video controller: $e');
+      videoInitialized.value = false;
+      _safeDisposeVideoController();
+    }
+  }
+
+  // Helper method to safely dispose video controller
+  void _safeDisposeVideoController() {
+    if (videoController != null) {
+      try {
+        // Always pause before disposing to ensure resources are released
+        if (videoController!.value.isInitialized) {
+          videoController!.pause();
+        }
+        videoController!.dispose();
+        debugPrint('Video controller disposed safely');
+      } catch (e) {
+        debugPrint('Error disposing previous video controller: $e');
+      } finally {
+        videoController = null;
       }
     }
   }
@@ -189,6 +209,7 @@ class PostCreateController extends GetxController {
         scheduleMicrotask(() {
           if (videoController != null &&
               videoController!.value.isInitialized &&
+              !videoController!.value.hasError &&
               videoController!.value.isPlaying) {
             videoController!.pause();
           }
@@ -208,6 +229,7 @@ class PostCreateController extends GetxController {
           if (videoController != null &&
               videoInitialized.value &&
               videoController!.value.isInitialized &&
+              !videoController!.value.hasError &&
               !videoController!.value.isPlaying) {
             videoController!.play();
           } else if (videoPath.isNotEmpty && !videoInitialized.value) {
@@ -262,9 +284,18 @@ class PostCreateController extends GetxController {
       // Transfer video path to main controller if needed
       if (videoPath.isNotEmpty &&
           createController.videoFilePath.value.isEmpty) {
-        createController.videoFilePath.value = videoPath.value;
-        progress.value = 0.2;
-        processingMessage.value = 'Processing video...';
+        // Verify video file exists before proceeding
+        final videoFile = File(videoPath.value);
+        if (await videoFile.exists()) {
+          createController.videoFilePath.value = videoPath.value;
+          progress.value = 0.2;
+          processingMessage.value = 'Processing video...';
+        } else {
+          debugPrint(
+            '📱 POST CREATE VIEW: Video file does not exist: ${videoPath.value}',
+          );
+          throw Exception('Video file not found');
+        }
       }
 
       // Add some example text if empty to help pass validation
@@ -289,6 +320,9 @@ class PostCreateController extends GetxController {
       // Get the current user ID
       final currentUserId = _supabase.client.auth.currentUser?.id;
       if (currentUserId != null) {
+        // Increment post count optimistically first
+        _accountDataProvider.incrementPostCount();
+
         // Update post count in correct sequence
         await _updatePostCount(currentUserId);
 
@@ -298,19 +332,38 @@ class PostCreateController extends GetxController {
 
       progress.value = 1.0;
       processingMessage.value = 'Post created successfully!';
-    } catch (e) {
-      debugPrint('📱 POST CREATE VIEW: Error creating post: $e');
-      Get.snackbar('Error', 'Failed to create post');
 
-      // Only on error, try to navigate back to home
+      // Add a small delay to show success message
+      await Future.delayed(const Duration(milliseconds: 1500));
+
+      // Navigate back on success
       try {
-        // Use a gentler navigation approach on error
-        Get.until((route) => route.settings.name == '/home' || route.isFirst);
+        if (Get.isRegistered<PostCreateController>()) {
+          Get.back();
+        }
       } catch (navError) {
         debugPrint(
-          '📱 POST CREATE VIEW: Error navigating after failure: $navError',
+          '📱 POST CREATE VIEW: Error navigating after success: $navError',
         );
       }
+    } catch (e) {
+      debugPrint('📱 POST CREATE VIEW: Error creating post: $e');
+
+      // Show user-friendly error message
+      String errorMessage = 'Failed to create post';
+      if (e.toString().contains('Video file not found')) {
+        errorMessage = 'Video file is no longer available';
+      } else if (e.toString().contains('permission')) {
+        errorMessage = 'Permission error - please try again';
+      }
+
+      Get.snackbar(
+        'Error',
+        errorMessage,
+        backgroundColor: Colors.red.withOpacity(0.8),
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
     } finally {
       isLoading.value = false;
       progress.value = 0.0;
