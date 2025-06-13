@@ -1004,11 +1004,10 @@ class CreateController extends GetxController {
 
   Future<void> createPost({
     bool isGlobal = false,
-    bool isPublic = true,
     bool bypassValidation = false,
   }) async {
     debugPrint(
-      '📝 POST CREATION: Starting (isGlobal: $isGlobal, isPublic: $isPublic, bypass: $bypassValidation)',
+      '📝 POST CREATION: Starting (isGlobal: $isGlobal, bypass: $bypassValidation)',
     );
 
     // Check if post content is valid, unless validation bypass is enabled
@@ -1066,12 +1065,10 @@ class CreateController extends GetxController {
         userId: currentUser.id,
         content: postTextController.text.trim(),
         postType: isVideoPost ? 'video' : selectedPostType.value,
-        metadata: {
-          'isPublic': isPublic, // Add isPublic flag to post metadata
-        }, // Will be updated with URLs after upload
+        metadata: {}, // Will be updated with URLs after upload
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
-        global: isGlobal,
+        global: isGlobal, // Set the global flag on the post model
       );
       debugPrint(
         '📝 POST CREATION: Post model created: ${post.toDatabaseMap()}',
@@ -1162,24 +1159,30 @@ class CreateController extends GetxController {
           }
 
           uploadProgress.value = 0.3;
-          final videoUrl = await _postRepository.uploadPostVideo(
-            videoFile,
-            currentUser.id,
-            postId,
-          );
+          final uploadResult = await _postRepository
+              .uploadPostVideoWithThumbnail(videoFile, currentUser.id, postId);
           uploadProgress.value = 0.7;
+
+          final videoUrl = uploadResult['videoUrl'];
+          final thumbnailUrl = uploadResult['thumbnailUrl'];
 
           if (videoUrl != null) {
             debugPrint(
               '📝 POST CREATION: Video uploaded successfully with URL: $videoUrl',
             );
+            if (thumbnailUrl != null) {
+              debugPrint(
+                '📝 POST CREATION: Thumbnail uploaded successfully with URL: $thumbnailUrl',
+              );
+            }
             uploadStatus.value = 'Saving post...';
             uploadProgress.value = 0.8;
 
-            // Update post with video URL
+            // Update post with video URL and thumbnail
             final success = await _postRepository.updatePostWithVideo(
               postId,
               videoUrl,
+              thumbnailUrl: thumbnailUrl,
             );
 
             if (success) {

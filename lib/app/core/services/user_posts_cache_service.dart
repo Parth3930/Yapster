@@ -164,7 +164,8 @@ class UserPostsCacheService extends GetxService {
         return [];
       }
 
-      final posts = await _postRepository!.getUserPosts(userId);
+      final currentUserId = _supabase?.client.auth.currentUser?.id ?? '';
+      final posts = await _postRepository!.getUserPosts(userId, currentUserId);
 
       if (useCache) {
         // Validate cached posts against database results

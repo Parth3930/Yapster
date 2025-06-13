@@ -57,7 +57,7 @@ class PostRepository extends GetxService {
 
   /// Upload post video to storage with proper structure
   /// Storage structure: {bucket}/{user_id}/{post_id}/video.{extension}
-  Future<String?> uploadPostVideo(
+  Future<Map<String, String?>> uploadPostVideoWithThumbnail(
     File videoFile,
     String userId,
     String postId,
@@ -84,7 +84,7 @@ class PostRepository extends GetxService {
         if (info != null && info.file != null) {
           fileToUpload = info.file!;
           debugPrint(
-            '🎬 VIDEO UPLOAD: Compression successful – new size: '
+            '🎬 VIDEO UPLOAD: Compression successful  new size: '
             '${(await fileToUpload.length()) ~/ 1024} KB',
           );
         } else {
@@ -108,7 +108,7 @@ class PostRepository extends GetxService {
         debugPrint(
           '🎬 VIDEO UPLOAD ERROR: File does not exist at path: ${fileToUpload.path}',
         );
-        return null;
+        return {'videoUrl': null, 'thumbnailUrl': null};
       }
 
       // Read file as bytes
@@ -149,18 +149,70 @@ class PostRepository extends GetxService {
               '🎬 VIDEO UPLOAD ERROR: This appears to be a row-level security issue. '
               'Please check RLS policies for the "$bucket" bucket.',
             );
-            return null;
+            return {'videoUrl': null, 'thumbnailUrl': null};
           }
 
-          // If this is the last attempt, return null
+          // If this is the last attempt, return error
           if (attempt == maxRetries) {
             debugPrint('🎬 VIDEO UPLOAD ERROR: All retry attempts failed');
-            return null;
+            return {'videoUrl': null, 'thumbnailUrl': null};
           }
 
           // Wait before retrying (exponential backoff)
           await Future.delayed(Duration(seconds: attempt * 2));
         }
+      }
+
+      // Generate thumbnail from video
+      String? thumbnailUrl;
+      try {
+        debugPrint('🎬 VIDEO UPLOAD: Generating thumbnail...');
+        final thumbnailFile = await VideoCompress.getFileThumbnail(
+          fileToUpload.path,
+          quality: 50, // Medium quality thumbnail
+          position: 1000, // 1 second into the video
+        );
+
+        if (thumbnailFile != null) {
+          debugPrint('🎬 VIDEO UPLOAD: Thumbnail generated successfully');
+          final thumbnailBytes = await thumbnailFile.readAsBytes();
+
+          if (thumbnailBytes.isNotEmpty) {
+            thumbnailUrl = await uploadPostThumbnail(
+              thumbnailBytes,
+              userId,
+              postId,
+            );
+
+            if (thumbnailUrl != null) {
+              debugPrint(
+                '🎬 VIDEO UPLOAD: Thumbnail uploaded successfully: $thumbnailUrl',
+              );
+            } else {
+              debugPrint(
+                '🎬 VIDEO UPLOAD: Failed to upload thumbnail to storage',
+              );
+            }
+          } else {
+            debugPrint('🎬 VIDEO UPLOAD: Thumbnail file is empty');
+          }
+
+          // Clean up temporary thumbnail file
+          try {
+            await thumbnailFile.delete();
+          } catch (e) {
+            debugPrint(
+              '🎬 VIDEO UPLOAD: Warning - could not delete temp thumbnail: $e',
+            );
+          }
+        } else {
+          debugPrint(
+            '🎬 VIDEO UPLOAD: Failed to generate thumbnail or file does not exist',
+          );
+        }
+      } catch (e) {
+        debugPrint('🎬 VIDEO UPLOAD: Error generating thumbnail: $e');
+        // Continue without thumbnail - video upload should still succeed
       }
 
       // Generate a long-lived signed URL (7 days)
@@ -170,11 +222,27 @@ class PostRepository extends GetxService {
           .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
 
       debugPrint('🎬 VIDEO UPLOAD: Success! Video URL: $signedUrlResp');
-      return signedUrlResp;
+
+      // Return both video URL and thumbnail URL
+      return {'videoUrl': signedUrlResp, 'thumbnailUrl': thumbnailUrl};
     } catch (e) {
       debugPrint('🎬 VIDEO UPLOAD ERROR: General error: $e');
-      return null;
+      return {'videoUrl': null, 'thumbnailUrl': null};
     }
+  }
+
+  /// Legacy method for backward compatibility
+  Future<String?> uploadPostVideo(
+    File videoFile,
+    String userId,
+    String postId,
+  ) async {
+    final result = await uploadPostVideoWithThumbnail(
+      videoFile,
+      userId,
+      postId,
+    );
+    return result['videoUrl'];
   }
 
   /// Upload a generated thumbnail for a video post and return its public URL
@@ -234,8 +302,8 @@ class PostRepository extends GetxService {
         );
       }
 
-      // Add video URL to metadata
-      metadata['video_url'] = videoUrl;
+      // Don't add video_url to metadata since it has its own column
+      // Only add thumbnail and processing info to metadata
 
       // Include thumbnail if provided
       if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
@@ -385,13 +453,10 @@ class PostRepository extends GetxService {
 
         if (imageUrls.isNotEmpty) {
           // Update post with image URLs
+          // Don't store image_urls in metadata since we have separate image_url column
           final updateData = {
             'image_url': imageUrls.first,
-            'metadata': {
-              ...post.metadata,
-              'image_urls': imageUrls,
-              'image_count': imageUrls.length,
-            },
+            'metadata': {...post.metadata, 'image_count': imageUrls.length},
           };
 
           // Add a small delay to ensure the post is fully created before updating
@@ -608,89 +673,61 @@ class PostRepository extends GetxService {
 
   /// Get user's own posts with pagination support and privacy filter
   Future<List<PostModel>> getUserPosts(
-    String userId, {
-    int limit = 20,
+    String userId,
+    String currentUserId, {
     int offset = 0,
+    int limit = 20,
   }) async {
     try {
-      final currentUserId = _supabase.client.auth.currentUser?.id;
+      List<dynamic> posts;
       final isCurrentUser = userId == currentUserId;
-      List posts;
 
-      // For the current user, fetch all their posts
       if (isCurrentUser) {
-        // First get the posts with pagination
+        // For current user, show all posts
         final response = await _supabase.client
             .from('posts')
             .select('*')
             .eq('user_id', userId)
+            .eq('is_deleted', false)
             .order('created_at', ascending: false)
             .range(offset, offset + limit - 1);
-
-        posts = response as List;
-
-        if (posts.isEmpty) {
-          return [];
-        }
+        posts = response;
+        debugPrint('Showing all posts for current user');
       } else {
-        // For other users, check if current user follows them
-        bool isFollowing = false;
-
-        try {
-          // Check if current user follows the profile user
-          if (currentUserId != null) {
-            final followResponse = await _supabase.client
+        // For other users, check if following
+        final followingResponse =
+            await _supabase.client
                 .from('follows')
-                .select()
+                .select('id')
                 .eq('follower_id', currentUserId)
                 .eq('following_id', userId)
-                .limit(1);
+                .maybeSingle();
 
-            isFollowing = followResponse.isNotEmpty;
-            debugPrint(
-              'Current user ${isFollowing ? "follows" : "does not follow"} profile user $userId',
-            );
-          }
-        } catch (e) {
-          debugPrint('Error checking follow status: $e');
-          isFollowing = false;
-        }
-
-        // If user follows the profile owner, get all posts
-        // Otherwise, only get public/global posts
-        final List response;
+        final isFollowing = followingResponse != null;
 
         if (isFollowing) {
           // If following, show all posts
-          final followingResponse = await _supabase.client
+          final allResponse = await _supabase.client
               .from('posts')
               .select('*')
               .eq('user_id', userId)
+              .eq('is_deleted', false)
               .order('created_at', ascending: false)
               .range(offset, offset + limit - 1);
-          response = followingResponse as List;
+          posts = allResponse;
           debugPrint('Showing all posts because user is following');
         } else {
-          // If not following, only show public posts
+          // If not following, only show global posts
           final publicResponse = await _supabase.client
               .from('posts')
               .select('*')
               .eq('user_id', userId)
-              .eq('global', true)
+              .eq('is_deleted', false)
+              .eq('global', true) // Only show global posts
               .order('created_at', ascending: false)
               .range(offset, offset + limit - 1);
-          response = publicResponse as List;
+          posts = publicResponse;
           debugPrint('Showing only global posts because user is not following');
-        }
-
-        posts = response;
-
-        debugPrint(
-          'Retrieved ${posts.length} posts for other user (following: $isFollowing)',
-        );
-
-        if (posts.isEmpty) {
-          return [];
         }
       }
 
@@ -757,7 +794,7 @@ class PostRepository extends GetxService {
         final storagePath = '$userId/$postId';
 
         // Helper: Delete an entire folder for a bucket
-        Future<void> _deleteFolder(String bucket) async {
+        Future<void> deleteFolder(String bucket) async {
           try {
             final list = await _supabase.client.storage
                 .from(bucket)
@@ -776,11 +813,11 @@ class PostRepository extends GetxService {
           }
         }
 
-        await _deleteFolder('posts'); // images & thumbnails
-        await _deleteFolder('videos'); // videos
+        await deleteFolder('posts'); // images & thumbnails
+        await deleteFolder('videos'); // videos
 
         // --- Fallback: parse URLs directly when folder listing fails (e.g. RLS) ---
-        Map<String, String>? _parseUrl(String? url) {
+        Map<String, String>? parseUrl(String? url) {
           if (url == null || url.isEmpty) return null;
           try {
             final uri = Uri.parse(url);
@@ -799,8 +836,8 @@ class PostRepository extends GetxService {
           }
         }
 
-        Future<void> _removeByUrl(String? url) async {
-          final info = _parseUrl(url);
+        Future<void> removeByUrl(String? url) async {
+          final info = parseUrl(url);
           if (info == null) return;
           try {
             await _supabase.client.storage.from(info['bucket']!).remove([
@@ -814,8 +851,8 @@ class PostRepository extends GetxService {
           }
         }
 
-        await _removeByUrl(postData['image_url'] as String?);
-        await _removeByUrl(postData['video_url'] as String?);
+        await removeByUrl(postData['image_url'] as String?);
+        await removeByUrl(postData['video_url'] as String?);
       } catch (mediaError) {
         debugPrint('Error processing media deletion: $mediaError');
       }
@@ -995,117 +1032,66 @@ class PostRepository extends GetxService {
     }
   }
 
-  /// Toggle post engagement (stars) using user_interactions table
-  /// Also updates user_favorites table
+  /// Toggle post star using database function
+  Future<Map<String, dynamic>?> togglePostStar(
+    String postId,
+    String userId,
+  ) async {
+    try {
+      debugPrint('Toggling star for post $postId by user $userId');
+
+      final response = await _supabase.client.rpc(
+        'toggle_post_star',
+        params: {'p_post_id': postId, 'p_user_id': userId},
+      );
+
+      if (response != null && response.isNotEmpty) {
+        final result = response[0];
+        final isStarred = result['is_starred'] as bool;
+        final starCount = result['star_count'] as int;
+        final status = result['status'] as String;
+        final message = result['message'] as String;
+
+        debugPrint(
+          'Star toggle result: isStarred=$isStarred, count=$starCount, status=$status, message=$message',
+        );
+
+        if (status == 'success') {
+          return {
+            'isStarred': isStarred,
+            'starCount': starCount,
+            'status': status,
+            'message': message,
+          };
+        } else {
+          debugPrint('Star toggle failed: $message');
+          return null;
+        }
+      }
+
+      debugPrint('No response from toggle_post_star function');
+      return null;
+    } catch (e) {
+      debugPrint('Error toggling post star: $e');
+      return null;
+    }
+  }
+
+  /// Legacy method for backward compatibility - now uses togglePostStar
+  @Deprecated('Use togglePostStar instead')
   Future<bool> togglePostEngagement(
     String postId,
     String userId,
     String engagementType,
   ) async {
-    try {
-      // Only handle stars now, likes are handled by togglePostLike
-      if (engagementType != 'stars') {
-        throw Exception(
-          'Use togglePostLike for likes. This function only handles stars.',
-        );
-      }
-
-      // Check if interaction exists
-      final existingInteraction =
-          await _supabase.client
-              .from('user_interactions')
-              .select('id, metadata')
-              .eq('user_id', userId)
-              .eq('post_id', postId)
-              .maybeSingle();
-
-      bool isAddingStar = false;
-
-      if (existingInteraction != null) {
-        // Update existing interaction
-        final metadata = existingInteraction['metadata'] ?? {};
-        if (metadata is Map) {
-          // Toggle star status
-          final Map<String, dynamic> updatedMetadata =
-              Map<String, dynamic>.from(metadata);
-          if (updatedMetadata.containsKey('star')) {
-            updatedMetadata.remove('star');
-            isAddingStar = false;
-          } else {
-            updatedMetadata['star'] = true;
-            isAddingStar = true;
-          }
-
-          // Determine primary interaction type
-          String primaryInteractionType = 'star';
-          if (updatedMetadata.containsKey('like')) {
-            primaryInteractionType = 'like';
-          }
-          if (updatedMetadata.containsKey('comment')) {
-            primaryInteractionType = 'comment';
-          }
-          if (updatedMetadata.containsKey('share')) {
-            primaryInteractionType = 'share';
-          }
-
-          await _supabase.client
-              .from('user_interactions')
-              .update({
-                'interaction_type': primaryInteractionType,
-                'metadata': updatedMetadata,
-              })
-              .eq('id', existingInteraction['id']);
-        }
-      } else {
-        // Create new interaction with star
-        await _supabase.client.from('user_interactions').insert({
-          'user_id': userId,
-          'post_id': postId,
-          'interaction_type': 'star',
-          'metadata': {'star': true},
-          'created_at': DateTime.now().toIso8601String(),
-        });
-        isAddingStar = true;
-      }
-
-      // Also update user_favorites table
-      if (isAddingStar) {
-        // Check if favorite already exists to avoid duplicates
-        final existingFavorite =
-            await _supabase.client
-                .from('user_favorites')
-                .select('id')
-                .eq('user_id', userId)
-                .eq('post_id', postId)
-                .maybeSingle();
-
-        if (existingFavorite == null) {
-          // Add to favorites
-          await _supabase.client.from('user_favorites').insert({
-            'user_id': userId,
-            'post_id': postId,
-            'created_at': DateTime.now().toIso8601String(),
-          });
-          debugPrint('Added post $postId to user_favorites for user $userId');
-        }
-      } else {
-        // Remove from favorites
-        await _supabase.client
-            .from('user_favorites')
-            .delete()
-            .eq('user_id', userId)
-            .eq('post_id', postId);
-        debugPrint('Removed post $postId from user_favorites for user $userId');
-      }
-
-      debugPrint(
-        'Successfully toggled $engagementType for post $postId by user $userId using user_interactions table',
-      );
-      return true;
-    } catch (e) {
-      debugPrint('Error toggling post engagement: $e');
-      return false;
+    if (engagementType == 'stars') {
+      final result = await togglePostStar(postId, userId);
+      return result != null && result['status'] == 'success';
     }
+
+    throw Exception(
+      'Use togglePostLike for likes and togglePostStar for stars.',
+    );
   }
 
   /// Get current like state for a user and post
@@ -1159,33 +1145,33 @@ class PostRepository extends GetxService {
   }
 
   /// Check if user has interacted with a post (like or star)
-  /// Uses the new user_interactions table
-  /// Use getUserPostLikeState() for likes specifically
+  /// Uses post_likes and user_favorites tables
   Future<Map<String, bool>> getUserPostEngagement(
     String postId,
     String userId,
   ) async {
     try {
-      final response =
+      // Check if user liked the post
+      final likeResponse =
           await _supabase.client
-              .from('user_interactions')
-              .select('metadata')
+              .from('post_likes')
+              .select('id')
               .eq('post_id', postId)
               .eq('user_id', userId)
               .maybeSingle();
 
-      if (response == null) {
-        return {'isLiked': false, 'isFavorited': false};
-      }
-
-      final metadata = response['metadata'];
-      if (metadata is! Map) {
-        return {'isLiked': false, 'isFavorited': false};
-      }
+      // Check if user favorited the post
+      final favoriteResponse =
+          await _supabase.client
+              .from('user_favorites')
+              .select('id')
+              .eq('post_id', postId)
+              .eq('user_id', userId)
+              .maybeSingle();
 
       return {
-        'isLiked': metadata.containsKey('like'),
-        'isFavorited': metadata.containsKey('star'),
+        'isLiked': likeResponse != null,
+        'isFavorited': favoriteResponse != null,
       };
     } catch (e) {
       debugPrint('Error checking user post engagement: $e');

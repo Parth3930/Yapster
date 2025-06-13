@@ -4,7 +4,6 @@ import 'package:shimmer/shimmer.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import '../controllers/videos_controller.dart';
 import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart';
-import 'package:yapster/app/modules/videos/views/videos_player_view.dart';
 
 class VideosView extends GetView<VideosController> {
   const VideosView({super.key});
@@ -82,10 +81,10 @@ class VideosView extends GetView<VideosController> {
               }
 
               // Navigate to the video player with the videos list
-              Get.toNamed('/videos', arguments: {
-                'videos': videos,
-                'initialIndex': initialIndex,
-              });
+              Get.toNamed(
+                '/videos',
+                arguments: {'videos': videos, 'initialIndex': initialIndex},
+              );
               return const SizedBox.shrink();
             },
           ),

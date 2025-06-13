@@ -1,12 +1,9 @@
 import 'dart:math';
 import 'package:yapster/app/data/models/post_model.dart';
-import 'package:yapster/app/core/services/user_interaction_service.dart';
 
 /// Algorithm for scoring posts based on engagement and user preferences
 class PostScoringAlgorithm {
-  final UserInteractionService _interactionService;
-
-  PostScoringAlgorithm(this._interactionService);
+  PostScoringAlgorithm();
 
   /// Calculate comprehensive score for a post
   double calculatePostScore(PostModel post, String currentUserId) {
@@ -16,12 +13,12 @@ class PostScoringAlgorithm {
     final personalizedScore = _calculatePersonalizedScore(post, currentUserId);
     final diversityScore = _calculateDiversityScore(post);
 
-    // Weighted combination of all scores
+    // Weighted combination of all scores (increased weight for engagement and virality)
     final totalScore =
-        (engagementScore * 0.3 +
-            viralityScore * 0.25 +
+        (engagementScore * 0.4 +
+            viralityScore * 0.3 +
             freshnessScore * 0.2 +
-            personalizedScore * 0.2 +
+            personalizedScore * 0.05 +
             diversityScore * 0.05);
 
     return totalScore.clamp(0.0, 100.0);
@@ -99,7 +96,7 @@ class PostScoringAlgorithm {
     }
   }
 
-  /// Calculate personalized score based on user preferences
+  /// Calculate personalized score based on basic criteria
   double _calculatePersonalizedScore(PostModel post, String currentUserId) {
     // Don't show user their own posts in recommendations
     if (post.userId == currentUserId) {
@@ -107,57 +104,6 @@ class PostScoringAlgorithm {
     }
 
     double personalizedScore = 50.0; // Base score
-
-    // Content type preference (weighted by interaction quality)
-    final contentTypePreference = _interactionService.getContentTypePreference(
-      post.postType,
-    );
-    personalizedScore += contentTypePreference * 12; // Increased weight
-
-    // Author preference (heavily weighted for liked vs viewed)
-    final authorPreference = _interactionService.getAuthorPreference(
-      post.userId,
-    );
-    personalizedScore += authorPreference * 20; // Increased weight
-
-    // Enhanced preference scoring based on interaction patterns
-    final userPreferences = _interactionService.getUserPreferencesSummary();
-
-    // Boost posts from authors user frequently likes (not just views)
-    Map<String, dynamic> authorInteractions = {};
-    if (userPreferences['authors'] is Map<String, dynamic>) {
-      authorInteractions = userPreferences['authors'] as Map<String, dynamic>;
-    } else if (userPreferences['authors'] is Map) {
-      (userPreferences['authors'] as Map).forEach((key, value) {
-        authorInteractions[key.toString()] = value;
-      });
-    }
-    final authorScore = authorInteractions[post.userId] ?? 0.0;
-    if (authorScore > 2.0) {
-      personalizedScore += 15.0; // Significant boost for liked authors
-    } else if (authorScore > 1.0) {
-      personalizedScore += 8.0; // Moderate boost
-    } else if (authorScore < -1.0) {
-      personalizedScore -= 20.0; // Penalty for disliked authors
-    }
-
-    // Content type affinity boost
-    Map<String, dynamic> contentTypes = {};
-    if (userPreferences['content_types'] is Map<String, dynamic>) {
-      contentTypes = userPreferences['content_types'] as Map<String, dynamic>;
-    } else if (userPreferences['content_types'] is Map) {
-      (userPreferences['content_types'] as Map).forEach((key, value) {
-        contentTypes[key.toString()] = value;
-      });
-    }
-    final contentScore = contentTypes[post.postType] ?? 0.0;
-    if (contentScore > 2.0) {
-      personalizedScore += 12.0; // Strong preference for this content type
-    } else if (contentScore > 1.0) {
-      personalizedScore += 6.0; // Moderate preference
-    } else if (contentScore < -1.0) {
-      personalizedScore -= 15.0; // User dislikes this content type
-    }
 
     // Time-based preference (user's active hours)
     final currentHour = DateTime.now().hour;
@@ -167,9 +113,22 @@ class PostScoringAlgorithm {
       personalizedScore += 3.0; // Lunch time boost
     }
 
-    // Penalty for already viewed posts
-    if (!_interactionService.hasViewedPostSync(post.id)) {
-      personalizedScore *= 0.05; // Very heavy penalty for already seen posts
+    // Basic content type preferences (simplified without user interaction data)
+    switch (post.postType) {
+      case 'text':
+        personalizedScore += 2.0;
+        break;
+      case 'image':
+        personalizedScore += 5.0; // Images generally more engaging
+        break;
+      case 'gif':
+        personalizedScore += 8.0; // GIFs are popular
+        break;
+      case 'video':
+        personalizedScore += 10.0; // Videos get highest preference
+        break;
+      default:
+        personalizedScore += 0.0;
     }
 
     return personalizedScore.clamp(0.0, 100.0);

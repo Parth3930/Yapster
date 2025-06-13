@@ -1,13 +1,11 @@
 import 'dart:math';
 import 'package:get/get.dart';
 import 'package:yapster/app/data/models/post_model.dart';
-import 'package:yapster/app/core/services/user_interaction_service.dart';
+
 import 'package:yapster/app/core/algorithms/post_scoring_algorithm.dart';
 
 /// Service for managing intelligent post feed with deduplication and scoring
 class IntelligentFeedService extends GetxService {
-  UserInteractionService get _interactionService =>
-      Get.find<UserInteractionService>();
   late final PostScoringAlgorithm _scoringAlgorithm;
 
   // Feed management
@@ -27,7 +25,7 @@ class IntelligentFeedService extends GetxService {
   @override
   void onInit() {
     super.onInit();
-    _scoringAlgorithm = PostScoringAlgorithm(_interactionService);
+    _scoringAlgorithm = PostScoringAlgorithm();
   }
 
   /// Add posts to the intelligent feed system
@@ -128,10 +126,7 @@ class IntelligentFeedService extends GetxService {
       return false;
     }
 
-    // Remove posts user has already interacted with
-    if (_interactionService.hasViewedPostSync(scoredPost.post.id)) {
-      return false;
-    }
+    // Posts are now filtered by feed_queue consumed status in database
 
     return true;
   }
@@ -207,11 +202,7 @@ class IntelligentFeedService extends GetxService {
   }) {
     final scoredPosts =
         candidatePosts
-            .where(
-              (post) =>
-                  post.userId != currentUserId &&
-                  !_interactionService.hasViewedPostSync(post.id),
-            )
+            .where((post) => post.userId != currentUserId)
             .map(
               (post) => ScoredPost(
                 post: post,

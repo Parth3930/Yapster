@@ -222,27 +222,84 @@ class PostDetailController extends GetxController {
     }
   }
 
-  /// Toggle post favorite for the detail view
+  /// Toggle post favorite (star) for the detail view
   Future<void> togglePostFavorite(String postId) async {
     if (post.value == null) return;
 
     final currentPost = post.value!;
     final isCurrentlyFavorited = currentPost.metadata['isFavorited'] == true;
+    final currentStarCount = currentPost.starCount;
+
+    debugPrint(
+      'Toggling favorite for post $postId. Current state: favorited=$isCurrentlyFavorited, stars=$currentStarCount',
+    );
 
     // Optimistic update
-    final updatedMetadata = Map<String, dynamic>.from(currentPost.metadata);
-    updatedMetadata['isFavorited'] = !isCurrentlyFavorited;
+    final optimisticMetadata = Map<String, dynamic>.from(currentPost.metadata);
+    optimisticMetadata['isFavorited'] = !isCurrentlyFavorited;
 
-    post.value = currentPost.copyWith(metadata: updatedMetadata);
+    post.value = currentPost.copyWith(
+      starCount:
+          isCurrentlyFavorited ? currentStarCount - 1 : currentStarCount + 1,
+      metadata: optimisticMetadata,
+    );
+
+    final userId = _supabaseService.currentUser.value?.id;
+    if (userId == null) {
+      debugPrint('User not authenticated, cannot toggle favorite');
+      return;
+    }
 
     try {
-      // Update in database (implement favorite toggle in repository if needed)
-      // For now, just keep the optimistic update
-      debugPrint('Favorite toggled for post: $postId');
+      final result = await _postRepository.togglePostStar(postId, userId);
+
+      if (result != null && result['status'] == 'success') {
+        final newIsStarred = result['isStarred'] as bool;
+        final newStarCount = result['starCount'] as int;
+
+        debugPrint(
+          'Star toggle successful. Server state: starred=$newIsStarred, count=$newStarCount',
+        );
+
+        // Update with actual server response
+        final serverMetadata = Map<String, dynamic>.from(currentPost.metadata);
+        serverMetadata['isFavorited'] = newIsStarred;
+
+        post.value = currentPost.copyWith(
+          starCount: newStarCount,
+          metadata: serverMetadata,
+        );
+
+        debugPrint(
+          '✅ Updated post $postId with server data: starred=$newIsStarred, count=$newStarCount',
+        );
+      } else {
+        debugPrint(
+          'Failed to toggle star for post $postId - reverting optimistic update',
+        );
+
+        // Revert optimistic update on failure
+        final revertedMetadata = Map<String, dynamic>.from(
+          currentPost.metadata,
+        );
+        revertedMetadata['isFavorited'] = isCurrentlyFavorited;
+
+        post.value = currentPost.copyWith(
+          starCount: currentStarCount,
+          metadata: revertedMetadata,
+        );
+      }
     } catch (e) {
-      debugPrint('Error toggling favorite in post detail: $e');
-      // Revert optimistic update
-      post.value = currentPost;
+      debugPrint('Error toggling post star: $e - reverting optimistic update');
+
+      // Revert optimistic update on error
+      final revertedMetadata = Map<String, dynamic>.from(currentPost.metadata);
+      revertedMetadata['isFavorited'] = isCurrentlyFavorited;
+
+      post.value = currentPost.copyWith(
+        starCount: currentStarCount,
+        metadata: revertedMetadata,
+      );
     }
   }
 

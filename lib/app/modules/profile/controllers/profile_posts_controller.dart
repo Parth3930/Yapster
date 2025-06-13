@@ -218,24 +218,25 @@ class ProfilePostsController extends GetxController {
       final userId = _supabase.client.auth.currentUser?.id;
       if (userId != null) {
         try {
-          // Use the new toggle function
-          final success = await _postRepository.togglePostEngagement(
-            postId,
-            userId,
-            'stars',
-          );
+          // Use the new star toggle function
+          final result = await _postRepository.togglePostStar(postId, userId);
 
-          if (success) {
-            // Update metadata
+          if (result != null && result['status'] == 'success') {
+            final newIsStarred = result['isStarred'] as bool;
+            final newStarCount = result['starCount'] as int;
+
+            // Update metadata and star count
             final updatedMetadata = Map<String, dynamic>.from(post.metadata);
-            updatedMetadata['isFavorited'] = !isCurrentlyFavorited;
+            updatedMetadata['isFavorited'] = newIsStarred;
 
-            // Update post with new metadata
-            final updatedPost = post.copyWith(metadata: updatedMetadata);
+            final updatedPost = post.copyWith(
+              starCount: newStarCount,
+              metadata: updatedMetadata,
+            );
             profilePosts[postIndex] = updatedPost;
 
             debugPrint(
-              'Successfully ${isCurrentlyFavorited ? 'unfavorited' : 'favorited'} post: $postId',
+              'Successfully ${newIsStarred ? 'starred' : 'unstarred'} post: $postId, count: $newStarCount',
             );
           }
         } catch (e) {

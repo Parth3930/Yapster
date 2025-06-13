@@ -52,7 +52,7 @@ class PostInteractionButtons extends StatelessWidget {
               ? _buildGlassyPill(interactionButtons)
               : Row(children: interactionButtons),
           Spacer(),
-          _buildFavoriteButton(isFavorited),
+          _buildFavoriteButton(isFavorited: isFavorited),
         ],
       );
     });
@@ -85,7 +85,7 @@ class PostInteractionButtons extends StatelessWidget {
     );
   }
 
-  Widget _buildFavoriteButton(bool isFavorited) {
+  Widget _buildFavoriteButton({required bool isFavorited}) {
     return PostActionButton(
       assetPath:
           isFavorited

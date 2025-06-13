@@ -14,12 +14,7 @@ create table if not exists public.feed_queue (
 create index if not exists feed_queue_lookup_idx
     on public.feed_queue (user_id, consumed, score desc, queued_at desc);
 
--- Interaction helper index (useful when we join with interactions)
-create index if not exists user_interactions_user_idx
-    on public.user_interactions (user_id);
 
-create index if not exists user_interactions_post_idx
-    on public.user_interactions (post_id);
 
 -- Enable row level security and restrict visibility to row owner
 alter table public.feed_queue enable row level security;

@@ -38,13 +38,18 @@ class PostCreateView extends GetView<PostCreateController> {
                             LinearProgressIndicator(
                               value: controller.progress.value,
                               backgroundColor: Colors.grey[800],
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.blue,
+                              ),
                               minHeight: 8,
                             ),
                             const SizedBox(height: 20),
                             Text(
                               controller.processingMessage.value,
-                              style: TextStyle(color: Colors.white, fontSize: 16),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -210,23 +215,54 @@ class PostCreateView extends GetView<PostCreateController> {
                                   child: Container(
                                     constraints: BoxConstraints(
                                       // Ensure video takes at most 60% of height so UI doesn't stretch on error
-                                      maxHeight: MediaQuery.of(context).size.height * 0.6,
+                                      maxHeight:
+                                          MediaQuery.of(context).size.height *
+                                          0.6,
                                     ),
                                     width: double.infinity,
                                     decoration: const BoxDecoration(),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(20),
                                       child: AspectRatio(
-                                        aspectRatio: controller
-                                            .videoController!.value.aspectRatio,
-                                        child: VideoPlayer(
-                                          controller.videoController!,
+                                        aspectRatio:
+                                            controller
+                                                .videoController!
+                                                .value
+                                                .aspectRatio,
+                                        child: Stack(
+                                          children: [
+                                            VideoPlayer(
+                                              controller.videoController!,
+                                            ),
+                                            // Add a subtle overlay to indicate video is paused during typing
+                                            Obx(
+                                              () =>
+                                                  controller
+                                                          .isTextFieldFocused
+                                                          .value
+                                                      ? Container(
+                                                        color: Colors.black
+                                                            .withOpacity(0.3),
+                                                        child: const Center(
+                                                          child: Icon(
+                                                            Icons
+                                                                .pause_circle_outline,
+                                                            color:
+                                                                Colors.white70,
+                                                            size: 48,
+                                                          ),
+                                                        ),
+                                                      )
+                                                      : const SizedBox.shrink(),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
                                   ),
                                 );
-                              } else if (controller.videoPath.isNotEmpty && !controller.videoInitialized.value) {
+                              } else if (controller.videoPath.isNotEmpty &&
+                                  !controller.videoInitialized.value) {
                                 // Video controller still initializing
                                 return const Padding(
                                   padding: EdgeInsets.only(top: 40),
@@ -258,30 +294,41 @@ class PostCreateView extends GetView<PostCreateController> {
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(15),
                                 ),
-                                child: TextField(
-                                  controller:
-                                      controller
-                                          .createController
-                                          .postTextController,
-                                  style: const TextStyle(color: Colors.white),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Add a caption...',
-                                    hintStyle: TextStyle(
-                                      color: Color(0xffC1C1C1),
-                                    ),
-                                    border: InputBorder.none,
-                                    counterStyle: TextStyle(
-                                      color: Colors.white70,
-                                    ),
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
-                                  maxLines: null, // Allow unlimited lines
-                                  minLines: 3, // Start with 3 lines
-                                  maxLength:
-                                      200, // Limit caption to 200 characters
-                                  textInputAction:
-                                      TextInputAction
-                                          .newline, // Allow multiple lines
+                                child: Builder(
+                                  builder: (context) {
+                                    return TextField(
+                                      controller:
+                                          controller
+                                              .createController
+                                              .postTextController,
+                                      focusNode: controller.textFocusNode,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                      decoration: const InputDecoration(
+                                        hintText: 'Add a caption...',
+                                        hintStyle: TextStyle(
+                                          color: Color(0xffC1C1C1),
+                                        ),
+                                        border: InputBorder.none,
+                                        counterStyle: TextStyle(
+                                          color: Colors.white70,
+                                        ),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                      maxLines: null, // Allow unlimited lines
+                                      minLines: 3, // Start with 3 lines
+                                      maxLength:
+                                          200, // Limit caption to 200 characters
+                                      textInputAction:
+                                          TextInputAction
+                                              .newline, // Allow multiple lines
+                                      // Prevent keyboard from interfering with camera
+                                      keyboardType: TextInputType.multiline,
+                                      textCapitalization:
+                                          TextCapitalization.sentences,
+                                    );
+                                  },
                                 ),
                               ),
                             ),

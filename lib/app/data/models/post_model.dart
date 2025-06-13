@@ -15,6 +15,7 @@ class PostModel {
   final int commentsCount;
   final int viewsCount;
   final int sharesCount;
+  final int starCount;
   final Map<String, dynamic> engagementData;
 
   // Profile data (when fetched with joins)
@@ -40,6 +41,7 @@ class PostModel {
     this.commentsCount = 0,
     this.viewsCount = 0,
     this.sharesCount = 0,
+    this.starCount = 0,
     this.engagementData = const {},
     this.username,
     this.nickname,
@@ -110,6 +112,7 @@ class PostModel {
       commentsCount: map['comments_count'] ?? 0,
       viewsCount: map['views_count'] ?? 0,
       sharesCount: map['shares_count'] ?? 0,
+      starCount: map['star_count'] ?? 0,
       engagementData: safeEngagementData,
       username: map['username'] ?? profileUsername,
       nickname: map['nickname'] ?? profileNickname,
@@ -186,6 +189,7 @@ class PostModel {
     int? commentsCount,
     int? viewsCount,
     int? sharesCount,
+    int? starCount,
     Map<String, dynamic>? engagementData,
     String? username,
     String? nickname,
@@ -208,6 +212,7 @@ class PostModel {
       commentsCount: commentsCount ?? this.commentsCount,
       viewsCount: viewsCount ?? this.viewsCount,
       sharesCount: sharesCount ?? this.sharesCount,
+      starCount: starCount ?? this.starCount,
       engagementData: engagementData ?? this.engagementData,
       username: username ?? this.username,
       nickname: nickname ?? this.nickname,

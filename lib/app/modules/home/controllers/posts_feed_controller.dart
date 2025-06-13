@@ -5,7 +5,6 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 
-import 'package:yapster/app/core/services/user_interaction_service.dart';
 import 'package:yapster/app/core/services/intelligent_feed_service.dart';
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 import 'package:yapster/app/core/utils/avatar_utils.dart';
@@ -15,8 +14,6 @@ import 'dart:async';
 class PostsFeedController extends GetxController {
   SupabaseService get _supabase => Get.find<SupabaseService>();
   PostRepository get _postRepository => Get.find<PostRepository>();
-  UserInteractionService get _interactionService =>
-      Get.find<UserInteractionService>();
   IntelligentFeedService get _feedService => Get.find<IntelligentFeedService>();
   UserPostsCacheService get _cacheService => Get.find<UserPostsCacheService>();
 
@@ -441,7 +438,7 @@ class PostsFeedController extends GetxController {
         }
       }
 
-      // Load engagement states for posts using the new user_interactions table
+      // Load engagement states for posts
       debugPrint(
         'Loading engagement states for ${newPosts.length} posts for user: ${currentUserId.value}',
       );
@@ -588,7 +585,7 @@ class PostsFeedController extends GetxController {
       await _markPostsConsumed(newPosts);
 
       if (newPosts.isNotEmpty) {
-        // Load engagement states for new posts using the new user_interactions table
+        // Load engagement states for new posts
         debugPrint(
           'Loading engagement states for ${newPosts.length} new posts',
         );
@@ -757,15 +754,7 @@ class PostsFeedController extends GetxController {
           'Like toggle successful. Server state: $newIsLiked, Count: $newLikesCount',
         );
 
-        // Track interaction for learning (only if the state actually changed)
-        if (newIsLiked != isCurrentlyLiked) {
-          await _interactionService.trackPostLike(
-            postId,
-            post.postType,
-            post.userId,
-            newIsLiked,
-          );
-        }
+        // Interaction tracking removed - using database-level tracking instead
 
         // Update with actual server response (in case of discrepancy)
         final postIndexAfterUpdate = posts.indexWhere((p) => p.id == postId);
@@ -853,40 +842,117 @@ class PostsFeedController extends GetxController {
     }
   }
 
-  /// Toggle post favorite status
+  /// Toggle post favorite status (star)
   Future<void> togglePostFavorite(String postId) async {
     final postIndex = posts.indexWhere((post) => post.id == postId);
-    if (postIndex != -1) {
-      final post = posts[postIndex];
-      final isCurrentlyFavorited =
-          _getMetadataValue(post.metadata, 'isFavorited') == true;
+    if (postIndex == -1) return;
 
-      // Update in database using the new toggle function
-      final userId = _supabase.client.auth.currentUser?.id;
-      if (userId != null) {
-        try {
-          // Use the new toggle function
-          final success = await _postRepository.togglePostEngagement(
-            postId,
-            userId,
-            'stars',
-          );
+    final post = posts[postIndex];
+    final isCurrentlyFavorited =
+        _getMetadataValue(post.metadata, 'isFavorited') == true;
+    final currentStarCount = post.starCount;
 
-          if (success) {
-            // Update metadata
-            final updatedMetadata = Map<String, dynamic>.from(post.metadata);
-            updatedMetadata['isFavorited'] = !isCurrentlyFavorited;
+    debugPrint(
+      'Toggling favorite for post $postId. Current state: favorited=$isCurrentlyFavorited, stars=$currentStarCount',
+    );
 
-            // Update post with new metadata
-            final updatedPost = post.copyWith(metadata: updatedMetadata);
-            posts[postIndex] = updatedPost;
+    // Optimistic update
+    final optimisticMetadata = Map<String, dynamic>.from(post.metadata);
+    optimisticMetadata['isFavorited'] = !isCurrentlyFavorited;
 
-            // Force UI update
-            posts.refresh();
+    final optimisticPost = post.copyWith(
+      starCount:
+          isCurrentlyFavorited ? currentStarCount - 1 : currentStarCount + 1,
+      metadata: optimisticMetadata,
+    );
+
+    posts[postIndex] = optimisticPost;
+    posts.refresh();
+
+    // Update in database
+    final userId = _supabase.client.auth.currentUser?.id;
+    if (userId == null) {
+      debugPrint('User not authenticated, cannot toggle favorite');
+      return;
+    }
+
+    try {
+      final result = await _postRepository.togglePostStar(postId, userId);
+
+      if (result != null && result['status'] == 'success') {
+        final newIsStarred = result['isStarred'] as bool;
+        final newStarCount = result['starCount'] as int;
+
+        debugPrint(
+          'Star toggle successful. Server state: starred=$newIsStarred, count=$newStarCount',
+        );
+
+        // Update with actual server response
+        final serverMetadata = Map<String, dynamic>.from(post.metadata);
+        serverMetadata['isFavorited'] = newIsStarred;
+
+        final serverPost = post.copyWith(
+          starCount: newStarCount,
+          metadata: serverMetadata,
+        );
+
+        final serverPostIndex = posts.indexWhere((p) => p.id == postId);
+        if (serverPostIndex != -1) {
+          posts[serverPostIndex] = serverPost;
+
+          // Update cache if available
+          try {
+            _cacheService.updatePostEngagementInCache(
+              userId,
+              postId,
+              'stars',
+              newStarCount - currentStarCount,
+            );
+          } catch (e) {
+            debugPrint('Cache update failed: $e');
           }
-        } catch (e) {
-          debugPrint('Error updating favorites in database: $e');
+
+          posts.refresh();
+          debugPrint(
+            '✅ Updated post $postId with server data: starred=$newIsStarred, count=$newStarCount',
+          );
         }
+      } else {
+        debugPrint(
+          'Failed to toggle star for post $postId - reverting optimistic update',
+        );
+
+        // Revert optimistic update on failure
+        final revertedMetadata = Map<String, dynamic>.from(post.metadata);
+        revertedMetadata['isFavorited'] = isCurrentlyFavorited;
+
+        final revertedPost = post.copyWith(
+          starCount: currentStarCount,
+          metadata: revertedMetadata,
+        );
+
+        final revertPostIndex = posts.indexWhere((p) => p.id == postId);
+        if (revertPostIndex != -1) {
+          posts[revertPostIndex] = revertedPost;
+          posts.refresh();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error toggling post star: $e - reverting optimistic update');
+
+      // Revert optimistic update on error
+      final revertedMetadata = Map<String, dynamic>.from(post.metadata);
+      revertedMetadata['isFavorited'] = isCurrentlyFavorited;
+
+      final revertedPost = post.copyWith(
+        starCount: currentStarCount,
+        metadata: revertedMetadata,
+      );
+
+      final revertPostIndex = posts.indexWhere((p) => p.id == postId);
+      if (revertPostIndex != -1) {
+        posts[revertPostIndex] = revertedPost;
+        posts.refresh();
       }
     }
   }
@@ -897,12 +963,7 @@ class PostsFeedController extends GetxController {
     if (postIndex != -1) {
       final post = posts[postIndex];
 
-      // Track view interaction
-      await _interactionService.trackPostView(
-        postId,
-        post.postType,
-        post.userId,
-      );
+      // Post view tracking removed - using feed_queue consumed status instead
 
       // Update view count in database
       await updatePostEngagement(postId, 'views', 1);
@@ -911,41 +972,28 @@ class PostsFeedController extends GetxController {
 
   /// Track time spent viewing a post
   Future<void> trackTimeSpent(String postId, Duration timeSpent) async {
-    await _interactionService.trackTimeSpent(postId, timeSpent);
+    // Time tracking removed - using simplified engagement tracking
+    debugPrint(
+      'Time spent tracking removed for post: $postId, duration: ${timeSpent.inSeconds}s',
+    );
   }
 
   /// Track post comment for learning
   Future<void> trackPostComment(String postId) async {
-    final postIndex = posts.indexWhere((post) => post.id == postId);
-    if (postIndex != -1) {
-      final post = posts[postIndex];
-      await _interactionService.trackPostComment(
-        postId,
-        post.postType,
-        post.userId,
-      );
-    }
+    // Comment tracking removed - using database-level engagement tracking
+    debugPrint('Comment tracking removed for post: $postId');
   }
 
   /// Track post share for learning
   Future<void> trackPostShare(String postId) async {
-    final postIndex = posts.indexWhere((post) => post.id == postId);
-    if (postIndex != -1) {
-      final post = posts[postIndex];
-      await _interactionService.trackPostShare(
-        postId,
-        post.postType,
-        post.userId,
-      );
-    }
+    // Share tracking removed - using database-level engagement tracking
+    debugPrint('Share tracking removed for post: $postId');
   }
 
   /// Get feed statistics for debugging
   Map<String, dynamic> getFeedStatistics() {
     return {
       'total_posts': posts.length,
-      'viewed_posts': _interactionService.viewedPostsCount,
-      'user_preferences': _interactionService.getUserPreferencesSummary(),
       'feed_service_stats': _feedService.getFeedStatistics(),
     };
   }

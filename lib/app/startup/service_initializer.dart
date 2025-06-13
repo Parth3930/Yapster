@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:yapster/app/core/services/intelligent_feed_service.dart';
-import 'package:yapster/app/core/services/user_interaction_service.dart';
+
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
 import 'package:yapster/app/core/utils/storage_service.dart';
 import 'package:yapster/app/core/utils/api_service.dart';
@@ -69,7 +69,7 @@ class ServiceInitializer {
       Get.put(DeviceTokenRepository(), permanent: true);
     }
 
-    // Note: NotificationService, UserInteractionService and IntelligentFeedService moved to initializeRemainingServices
+    // Note: NotificationService and IntelligentFeedService moved to initializeRemainingServices
     // because they depend on SupabaseService which is initialized later
   }
 
@@ -105,12 +105,6 @@ class ServiceInitializer {
       }
 
       // Initialize intelligent feed services after SupabaseService is ready
-      if (!Get.isRegistered<UserInteractionService>()) {
-        Get.put(UserInteractionService(), permanent: true);
-        debugPrint(
-          'UserInteractionService initialized in ${stopwatch.elapsedMilliseconds}ms',
-        );
-      }
 
       if (!Get.isRegistered<IntelligentFeedService>()) {
         Get.put(IntelligentFeedService(), permanent: true);
@@ -301,12 +295,6 @@ class ServiceInitializer {
       }
 
       // Check if intelligent feed services are available
-      if (!Get.isRegistered<UserInteractionService>()) {
-        debugPrint(
-          'UserInteractionService not found on hot reload, initializing',
-        );
-        Get.put(UserInteractionService(), permanent: true);
-      }
 
       // Check if device token repository is available
       if (!Get.isRegistered<DeviceTokenRepository>()) {

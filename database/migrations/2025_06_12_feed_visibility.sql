@@ -1,12 +1,10 @@
--- Migration: replace previous feed RPCs with single get_feed_for_user function
--- Drops old functions if they exist, then creates the new one.
+-- Migration: Update feed visibility to properly handle global flag
+-- This migration updates the get_feed_for_user function to ensure posts are only shown to followers unless they are global
 
--- 1. Drop legacy functions
-DROP FUNCTION IF EXISTS public.intelligent_feed(uuid, int);
-DROP FUNCTION IF EXISTS public.fallback_feed(uuid, int);
+-- Drop existing function if it exists
 DROP FUNCTION IF EXISTS public.get_feed_for_user(uuid, int);
 
--- 2. Create unified feed function
+-- Create updated function with proper visibility handling
 CREATE OR REPLACE FUNCTION public.get_feed_for_user(
     _user uuid,
     _limit int DEFAULT 20
@@ -78,3 +76,15 @@ BEGIN
     LIMIT _limit;
 END;
 $$;
+
+-- Add comment to explain the function
+COMMENT ON FUNCTION public.get_feed_for_user IS 'Returns posts for user feed with proper visibility handling. Global posts are shown to everyone, non-global posts are only shown to followers.';
+
+-- Create index to optimize the visibility check
+CREATE INDEX IF NOT EXISTS posts_visibility_idx ON public.posts (global, user_id, is_deleted, is_active);
+
+-- Create index to optimize the follower check
+CREATE INDEX IF NOT EXISTS follows_lookup_idx ON public.follows (follower_id, following_id);
+
+-- Grant execute permission to authenticated users
+GRANT EXECUTE ON FUNCTION public.get_feed_for_user TO authenticated; 

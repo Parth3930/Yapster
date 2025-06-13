@@ -26,7 +26,6 @@ import 'package:yapster/app/modules/profile/views/profile_view.dart';
 import 'package:yapster/app/modules/videos/views/videos_view.dart';
 import 'package:yapster/app/modules/videos/bindings/videos_binding.dart';
 import 'package:yapster/app/modules/videos/bindings/videos_player_binding.dart';
-import 'package:yapster/app/modules/videos/views/videos_player_view.dart';
 
 import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
@@ -329,11 +328,6 @@ class AppPages {
       opaque: true,
       preventDuplicates: true,
       popGesture: true,
-    ),
-    GetPage(
-      name: '/videos',
-      page: () => const VideosPlayerView(),
-      binding: VideosPlayerBinding(),
     ),
   ];
 }
