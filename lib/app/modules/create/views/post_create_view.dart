@@ -31,16 +31,24 @@ class PostCreateView extends GetView<PostCreateController> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 20),
-                      Text(
-                        'Creating post...',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
-                      SizedBox(height: 10),
-                      Text(
-                        'Please wait',
-                        style: TextStyle(color: Colors.grey, fontSize: 14),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 40),
+                        child: Column(
+                          children: [
+                            LinearProgressIndicator(
+                              value: controller.progress.value,
+                              backgroundColor: Colors.grey[800],
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                              minHeight: 8,
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              controller.processingMessage.value,
+                              style: TextStyle(color: Colors.white, fontSize: 16),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

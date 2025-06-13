@@ -13,6 +13,8 @@ class PostCreateController extends GetxController {
   final videoPath = RxString('');
   final isGlobalPost = false.obs;
   final isLoading = false.obs;
+  final progress = 0.0.obs; // Add progress value
+  final processingMessage = ''.obs; // Add processing message
   // Track if video player finished initialization
   final videoInitialized = false.obs;
 
@@ -78,6 +80,8 @@ class PostCreateController extends GetxController {
 
   Future<void> createPost() async {
     isLoading.value = true;
+    progress.value = 0.0;
+    processingMessage.value = 'Preparing post...';
 
     // Force the CreateController to allow posting
     createController.canPost.value = true;
@@ -87,6 +91,8 @@ class PostCreateController extends GetxController {
       if (videoPath.isNotEmpty &&
           createController.videoFilePath.value.isEmpty) {
         createController.videoFilePath.value = videoPath.value;
+        progress.value = 0.2;
+        processingMessage.value = 'Processing video...';
       }
 
       // Add some example text if empty to help pass validation
@@ -96,11 +102,17 @@ class PostCreateController extends GetxController {
         createController.postTextController.text = "New post";
       }
 
+      progress.value = 0.4;
+      processingMessage.value = 'Uploading content...';
+
       await createController.createPost(
         isGlobal: isGlobalPost.value,
         isPublic: createController.isPublic.value,
         bypassValidation: true, // Bypass the empty content validation
       );
+
+      progress.value = 1.0;
+      processingMessage.value = 'Post created successfully!';
     } catch (e) {
       debugPrint('📱 POST CREATE VIEW: Error creating post: $e');
       Get.snackbar('Error', 'Failed to create post');
@@ -116,6 +128,8 @@ class PostCreateController extends GetxController {
       }
     } finally {
       isLoading.value = false;
+      progress.value = 0.0;
+      processingMessage.value = '';
     }
   }
 }

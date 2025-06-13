@@ -9,6 +9,7 @@ import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/enhanced_share_dialog.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/comment_dialog.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
+import 'package:yapster/app/core/utils/supabase_service.dart';
 
 class PostDetailView extends GetView<PostDetailController> {
   const PostDetailView({super.key});
@@ -357,7 +358,29 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
     );
   }
 
+  String _getTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 365) {
+      return '${(difference.inDays / 365).floor()}y';
+    } else if (difference.inDays > 30) {
+      return '${(difference.inDays / 30).floor()}mo';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays}d';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m';
+    } else {
+      return 'now';
+    }
+  }
+
   Widget _buildVideoPostDetail(post) {
+    final supabaseService = Get.find<SupabaseService>();
+    final currentUserId = supabaseService.currentUser.value?.id;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -388,186 +411,232 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
           right: 0,
           child: Container(
             padding: EdgeInsets.only(bottom: 16, left: 16, right: 16),
-            decoration: BoxDecoration(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // Avatar and interaction buttons row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Avatar
-                    GestureDetector(
-                      onTap: () => _navigateToUserProfile(post.userId),
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1),
-                          image: DecorationImage(
-                            image: NetworkImage(
-                              post.avatar == null || post.avatar == 'skiped'
-                                  ? post.googleAvatar ??
-                                      'https://via.placeholder.com/40'
-                                  : post.avatar!,
-                            ),
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 8),
-                    // Username and follow button
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                // Left side: Avatar, username, and content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Avatar and username row
+                      Row(
                         children: [
-                          // Follow button if not following
-                          Obx(() {
-                            if (!_accountProvider.isFollowing(post.userId)) {
-                              return ElevatedButton(
-                                onPressed: () => _accountProvider.followUser(post.userId),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red[300],
+                          // Avatar
+                          GestureDetector(
+                            onTap: () => _navigateToUserProfile(post.userId),
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1,
                                 ),
-                                child: Text('Follow'),
-                              );
-                            }
-                            return const SizedBox.shrink();
-                          }),
-                          SizedBox(height: 4),
-                          // Username
-                          Text(
-                            post.nickname?.isNotEmpty == true
-                                ? post.nickname!
-                                : post.username ?? '',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
+                                image: DecorationImage(
+                                  image: NetworkImage(
+                                    post.avatar == null ||
+                                            post.avatar == 'skiped'
+                                        ? post.googleAvatar ??
+                                            'https://via.placeholder.com/40'
+                                        : post.avatar!,
+                                  ),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                             ),
                           ),
-                          SizedBox(height: 4),
-                          // Content next to avatar
-                          Text(
-                            post.content,
-                            style: TextStyle(color: Colors.white70, fontSize: 12),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          SizedBox(width: 12),
+                          // Username and follow button
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  post.nickname?.isNotEmpty == true
+                                      ? post.nickname!
+                                      : post.username ?? '',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                // Time ago
+                                Text(
+                                  _getTimeAgo(post.createdAt),
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                // Follow button if not following and not own post
+                                Builder(
+                                  builder: (context) {
+                                    final isCurrentUser =
+                                        currentUserId == post.userId;
+                                    if (!isCurrentUser &&
+                                        !_accountProvider.isFollowing(
+                                          post.userId,
+                                        )) {
+                                      return ElevatedButton(
+                                        onPressed:
+                                            () => _accountProvider.followUser(
+                                              post.userId,
+                                            ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red[300],
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 8,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Follow',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return const SizedBox.shrink();
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                    // Interaction buttons column
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Like button
-                        GestureDetector(
-                          onTap: () {
-                            controller.togglePostLike(post.id);
-                          },
-                          child: Container(
-                            margin: EdgeInsets.only(bottom: 16),
-                            child: Column(
-                              children: [
-                                Image.asset(
-                                  post.metadata['isLiked'] == true
-                                      ? 'assets/postIcons/like_active.png'
-                                      : 'assets/postIcons/like.png',
-                                  width: 30,
-                                  height: 30,
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  '${post.likesCount}',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      SizedBox(height: 16),
+                      // Content
+                      Text(
+                        post.content,
+                        style: TextStyle(color: Colors.white, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
 
-                        // Comment button
-                        GestureDetector(
-                          onTap: () {
-                            // Track comment interaction
-                            controller.feedController.trackPostComment(post.id);
-                            // Show enhanced comment dialog
-                            CommentDialog.show(
-                              postId: post.id,
-                              post: post,
-                              onCommentSubmit: (postId, text) async {
-                                // Refresh comments and update count
-                                await controller.loadComments();
-                                final current = controller.post.value!;
-                                controller.post.value = current.copyWith(
-                                  commentsCount: current.commentsCount + 1,
-                                );
-                              },
-                            );
-                          },
-                          child: Container(
-                            margin: EdgeInsets.only(bottom: 16),
-                            child: Column(
-                              children: [
-                                Image.asset(
-                                  'assets/postIcons/comment.png',
-                                  width: 30,
-                                  height: 30,
+                // Right side: Interaction buttons in column
+                Container(
+                  margin: EdgeInsets.only(bottom: 30),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Like button
+                      GestureDetector(
+                        onTap: () {
+                          controller.togglePostLike(post.id);
+                        },
+                        child: Container(
+                          margin: EdgeInsets.only(bottom: 20),
+                          child: Column(
+                            children: [
+                              Image.asset(
+                                post.metadata['isLiked'] == true
+                                    ? 'assets/postIcons/like_active.png'
+                                    : 'assets/postIcons/like.png',
+                                width: 30,
+                                height: 30,
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                '${post.likesCount}',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
                                 ),
-                                SizedBox(height: 4),
-                                Text(
-                                  '${post.commentsCount}',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
+                      ),
 
-                        // Share button
-                        GestureDetector(
-                          onTap: () {
-                            controller.feedController.trackPostShare(post.id);
-                            // Use enhanced share dialog
-                            EnhancedShareDialog(post: post);
-                          },
-                          child: Container(
-                            margin: EdgeInsets.only(bottom: 16),
-                            child: Column(
-                              children: [
-                                Image.asset(
-                                  'assets/postIcons/send.png',
-                                  width: 30,
-                                  height: 30,
+                      // Comment button
+                      GestureDetector(
+                        onTap: () {
+                          controller.feedController.trackPostComment(post.id);
+                          CommentDialog.show(
+                            postId: post.id,
+                            post: post,
+                            onCommentSubmit: (postId, text) async {
+                              await controller.loadComments();
+                              final current = controller.post.value!;
+                              controller.post.value = current.copyWith(
+                                commentsCount: current.commentsCount + 1,
+                              );
+                            },
+                          );
+                        },
+                        child: Container(
+                          margin: EdgeInsets.only(bottom: 20),
+                          child: Column(
+                            children: [
+                              Image.asset(
+                                'assets/postIcons/comment.png',
+                                width: 30,
+                                height: 30,
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                '${post.commentsCount}',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
                                 ),
-                                SizedBox(height: 4),
-                                Text(
-                                  '${post.sharesCount}',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+
+                      // Share button
+                      GestureDetector(
+                        onTap: () {
+                          controller.feedController.trackPostShare(post.id);
+                          EnhancedShareDialog(post: post);
+                        },
+                        child: Column(
+                          children: [
+                            Image.asset(
+                              'assets/postIcons/send.png',
+                              width: 30,
+                              height: 30,
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              '${post.sharesCount}',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -600,35 +669,28 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
         Shimmer.fromColors(
           baseColor: Colors.grey[900]!,
           highlightColor: Colors.grey[800]!,
-          period: Duration(milliseconds: 800),
+          period: const Duration(milliseconds: 800),
           child: Container(
             width: double.infinity,
             height: double.infinity,
+            color: Colors.black,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
                   width: 80,
                   height: 80,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
                   ),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 Container(width: 200, height: 15, color: Colors.white),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 Container(width: 150, height: 15, color: Colors.white),
               ],
             ),
-          ),
-        ),
-
-        // Loading indicator
-        Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            strokeWidth: 3,
           ),
         ),
       ],

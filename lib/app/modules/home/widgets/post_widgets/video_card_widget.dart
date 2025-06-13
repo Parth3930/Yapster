@@ -15,36 +15,11 @@ class VideoCardController extends GetxController {
   CachedVideoPlayerPlusController? _controller;
   final RxBool isInitialized = false.obs;
   final RxBool isVisible = false.obs;
-  final RxBool showPlayPauseIcon = false.obs;
 
   @override
   void onClose() {
     _controller?.dispose();
     super.onClose();
-  }
-
-  String? getVideoUrl(PostModel post) {
-    // Prefer direct column value first
-    String? url = post.videoUrl;
-
-    // Fallback to metadata if direct value is missing / empty
-    if (url == null || url.isEmpty) {
-      final metaUrl = post.metadata['video_url'];
-      if (metaUrl is String && metaUrl.isNotEmpty) {
-        url = metaUrl;
-      }
-    }
-
-    // Treat empty strings as null for consistency
-    if (url != null && url.trim().isEmpty) {
-      url = null;
-    }
-
-    // Only log when URL exists for easier debugging
-    if (url != null) {
-      debugPrint('🎬 Video URL resolved for post ${post.id}: $url');
-    }
-    return url;
   }
 
   Future<void> initController(String url) async {
@@ -112,26 +87,10 @@ class VideoCardController extends GetxController {
     }
   }
 
-  void togglePlayPause() {
-    if (_controller != null && _controller!.value.isInitialized) {
-      if (_controller!.value.isPlaying) {
-        _controller!.pause();
-      } else {
-        _controller!.play();
-      }
-      showPlayPauseIcon.value = true;
-
-      // Hide the icon after 1 second
-      Future.delayed(const Duration(seconds: 1), () {
-        showPlayPauseIcon.value = false;
-      });
-    }
-  }
-
   CachedVideoPlayerPlusController? get videoController => _controller;
 }
 
-/// Video card with identical aesthetics to ImagePostWidget plus auto-play logic.
+/// Video card with identical aesthetics to ImagePostWidget
 class VideoCardWidget extends StatelessWidget {
   const VideoCardWidget({
     super.key,
@@ -141,6 +100,30 @@ class VideoCardWidget extends StatelessWidget {
 
   final PostModel post;
   final dynamic controller;
+
+  String? _getVideoUrl() {
+    // Prefer direct column value first
+    String? url = post.videoUrl;
+
+    // Fallback to metadata if direct value is missing / empty
+    if (url == null || url.isEmpty) {
+      final metaUrl = post.metadata['video_url'];
+      if (metaUrl is String && metaUrl.isNotEmpty) {
+        url = metaUrl;
+      }
+    }
+
+    // Treat empty strings as null for consistency
+    if (url != null && url.trim().isEmpty) {
+      url = null;
+    }
+
+    // Only log when URL exists for easier debugging
+    if (url != null) {
+      debugPrint('🎬 Video URL resolved for post ${post.id}: $url');
+    }
+    return url;
+  }
 
   void _navigateToProfile() {
     ExploreController exploreController;
@@ -228,23 +211,10 @@ class VideoCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Create a unique controller for each video post
-    final videoCardController = Get.put(
-      VideoCardController(),
-      tag: 'video_${post.id}',
-    );
-
-    final videoUrl = videoCardController.getVideoUrl(post);
     final thumb = post.metadata['video_thumbnail'] as String?;
     final duration = post.metadata['video_duration'] as String?;
-
-    // If the video is still processing on the server, we may not have a URL yet.
-    // Avoid flooding logs every build; print only once when URL is genuinely missing.
-    if (videoUrl == null) {
-      debugPrint(
-        '⏳ Video URL not available yet for post ${post.id}. Showing placeholder.',
-      );
-    }
+    final videoUrl = _getVideoUrl();
+    final videoController = Get.put(VideoCardController());
 
     return Container(
       width: MediaQuery.of(context).size.width * 0.95,
@@ -264,155 +234,99 @@ class VideoCardWidget extends StatelessWidget {
             Stack(
               children: [
                 GestureDetector(
-                  onTap: () => videoCardController.togglePlayPause(),
-                  onDoubleTap: () => Get.toNamed(Routes.VIDEOS),
+                  onTap:
+                      () => Get.toNamed(
+                        Routes.VIDEOS,
+                        arguments: {
+                          'initialIndex': controller.posts.indexOf(post),
+                        },
+                      ),
                   child: SizedBox(
                     height: 400,
                     width: double.infinity,
                     child: VisibilityDetector(
-                      key: Key('video_${post.id}'),
+                      key: Key(post.id),
                       onVisibilityChanged: (info) {
-                        if (videoUrl != null && videoUrl.isNotEmpty) {
-                          videoCardController.handleVisibility(info, videoUrl);
-                        } else {
-                          debugPrint(
-                            'Skipping visibility handling - no video URL for post ${post.id}',
-                          );
+                        if (videoUrl != null) {
+                          videoController.handleVisibility(info, videoUrl);
                         }
                       },
                       child: Obx(() {
-                        if (videoCardController.isInitialized.value &&
-                            videoCardController.videoController != null &&
-                            videoCardController
-                                .videoController!
-                                .value
-                                .isInitialized) {
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(0),
-                            child: SizedBox(
+                        if (videoController.isInitialized.value &&
+                            videoController.videoController != null) {
+                          return CachedVideoPlayerPlus(
+                            videoController.videoController!,
+                          );
+                        }
+                        return thumb != null && thumb.isNotEmpty
+                            ? Image.network(
+                              thumb,
+                              fit: BoxFit.cover,
                               width: double.infinity,
                               height: 400,
-                              child: FittedBox(
-                                fit: BoxFit.cover,
-                                child: SizedBox(
-                                  width:
-                                      videoCardController
-                                          .videoController!
-                                          .value
-                                          .size
-                                          .width,
-                                  height:
-                                      videoCardController
-                                          .videoController!
-                                          .value
-                                          .size
-                                          .height,
-                                  child: CachedVideoPlayerPlus(
-                                    videoCardController.videoController!,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        } else if (videoUrl != null && videoUrl.isNotEmpty) {
-                          return thumb != null && thumb.isNotEmpty
-                              ? Image.network(
-                                thumb,
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: 400,
-                                loadingBuilder:
-                                    (c, child, prog) =>
-                                        prog == null ? child : _placeholder(),
-                                errorBuilder: (c, e, s) => _placeholder(),
-                              )
-                              : _placeholder();
-                        } else {
-                          return _errorPlaceholder();
-                        }
+                              loadingBuilder:
+                                  (c, child, prog) =>
+                                      prog == null ? child : _placeholder(),
+                              errorBuilder: (c, e, s) => _placeholder(),
+                            )
+                            : _placeholder();
                       }),
                     ),
                   ),
                 ),
                 // User info bar
                 Positioned(
-                  left: 16,
-                  top: 16,
-                  right: 16,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      PostAvatarWidget(
-                        post: post,
-                        radius: 16,
-                        onTap: _navigateToProfile,
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.7),
+                          Colors.transparent,
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: GestureDetector(
+                    ),
+                    child: Row(
+                      children: [
+                        PostAvatarWidget(
+                          post: post,
+                          radius: 20,
                           onTap: _navigateToProfile,
-                          child: Text(
-                            _truncatedName(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
                         ),
-                      ),
-                      if (post.metadata['verified'] == true) ...[
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.verified,
-                          color: Colors.blue,
-                          size: 16,
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _displayName(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              _timeAgo(post.createdAt),
+                              style: TextStyle(
+                                color: Colors.grey[400],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                      if (!_isCurrentUserPost())
-                        Obx(() {
-                          final exploreCtrl = Get.find<ExploreController>();
-                          final following = exploreCtrl.isFollowingUser(
-                            post.userId,
-                          );
-                          if (following) return const SizedBox.shrink();
-                          return GestureDetector(
-                            onTap:
-                                () => exploreCtrl.toggleFollowUser(post.userId),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Text(
-                                'Follow',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          );
-                        }),
-                      const Spacer(),
-                      Text(
-                        _timeAgo(post.createdAt),
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.85),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                // Post text overlay
+                // Content
                 if (post.content.isNotEmpty)
                   Positioned(
                     left: 20,
@@ -472,35 +386,6 @@ class VideoCardWidget extends StatelessWidget {
                       ),
                     ),
                   ),
-                // Play/Pause icon overlay
-                Obx(() {
-                  if (videoCardController.showPlayPauseIcon.value &&
-                      videoCardController.videoController != null &&
-                      videoCardController
-                          .videoController!
-                          .value
-                          .isInitialized) {
-                    return Positioned.fill(
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            videoCardController.videoController!.value.isPlaying
-                                ? Icons.pause
-                                : Icons.play_arrow,
-                            color: Colors.white,
-                            size: 48,
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                }),
               ],
             ),
           ],

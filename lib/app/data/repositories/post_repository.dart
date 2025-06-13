@@ -140,7 +140,7 @@ class PostRepository extends GetxService {
           debugPrint(
             '🎬 VIDEO UPLOAD ERROR: Storage upload failed (attempt $attempt): $storageError',
           );
-          
+
           // Check if this is a permissions error (don't retry these)
           if (storageError.toString().contains('permission') ||
               storageError.toString().contains('not authorized') ||
@@ -151,13 +151,13 @@ class PostRepository extends GetxService {
             );
             return null;
           }
-          
+
           // If this is the last attempt, return null
           if (attempt == maxRetries) {
             debugPrint('🎬 VIDEO UPLOAD ERROR: All retry attempts failed');
             return null;
           }
-          
+
           // Wait before retrying (exponential backoff)
           await Future.delayed(Duration(seconds: attempt * 2));
         }

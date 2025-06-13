@@ -14,9 +14,9 @@ class CreateView extends GetView<CreateController> {
 
   @override
   Widget build(BuildContext context) {
-    // Initialize camera without waiting for it
-    // This avoids blocking the UI while camera initializes
+    // Initialize camera immediately when the widget is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('CreateView: Initializing camera...');
       controller.ensureCameraInitialized();
     });
 
@@ -48,22 +48,184 @@ class CreateView extends GetView<CreateController> {
                 child: Obx(() {
                   final isInitialized = controller.isCameraInitialized.value;
                   final cameraController = controller.cameraController;
+                  final cameraError = controller.cameraError.value;
+                  final hasPermission = controller.hasCameraPermission.value;
+                  final isRequestingPermission =
+                      controller.isRequestingPermission.value;
 
+                  debugPrint(
+                    'CreateView: Camera state - initialized: $isInitialized, controller: ${cameraController != null}, error: $cameraError',
+                  );
+
+                  // Show camera preview if everything is ready
                   if (cameraController != null &&
                       isInitialized &&
-                      cameraController.value.isInitialized) {
-                    return FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: cameraController.value.previewSize!.height,
-                        height: cameraController.value.previewSize!.width,
-                        child: CameraPreview(cameraController),
+                      cameraController.value.isInitialized &&
+                      cameraError.isEmpty) {
+                    debugPrint('CreateView: Showing camera preview');
+                    debugPrint(
+                      'Camera preview size: ${cameraController.value.previewSize}',
+                    );
+                    debugPrint(
+                      'Camera aspect ratio: ${cameraController.value.aspectRatio}',
+                    );
+
+                    return SizedBox(
+                      width: double.infinity,
+                      height: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: cameraController.value.previewSize!.height,
+                          height: cameraController.value.previewSize!.width,
+                          child: CameraPreview(cameraController),
+                        ),
                       ),
                     );
                   }
 
-                  // Just show black background without any loader or text
-                  return Container(color: Colors.black);
+                  // Show error state if there's an error
+                  if (cameraError.isNotEmpty) {
+                    return Container(
+                      color: Colors.black,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const FaIcon(
+                                FontAwesomeIcons.triangleExclamation,
+                                color: Colors.orange,
+                                size: 48,
+                              ),
+                              const SizedBox(height: 24),
+                              Text(
+                                'Camera Error',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                cameraError,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 24),
+                              if (cameraError.contains('permission'))
+                                ElevatedButton(
+                                  onPressed: () {
+                                    if (cameraError.contains('permanently')) {
+                                      controller.openCameraSettings();
+                                    } else {
+                                      controller.retryCameraInitialization();
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: Text(
+                                    cameraError.contains('permanently')
+                                        ? 'Open Settings'
+                                        : 'Grant Permission',
+                                  ),
+                                )
+                              else
+                                ElevatedButton(
+                                  onPressed:
+                                      controller.retryCameraInitialization,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: const Text('Retry'),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Show permission request state
+                  if (isRequestingPermission) {
+                    return Container(
+                      color: Colors.black,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CircularProgressIndicator(color: Colors.blue),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Requesting Camera Permission',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Please allow camera access to continue',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Show loading indicator while camera is initializing
+                  debugPrint('CreateView: Camera not ready - showing loading');
+                  debugPrint('  - isInitialized: $isInitialized');
+                  debugPrint(
+                    '  - cameraController != null: ${cameraController != null}',
+                  );
+                  debugPrint(
+                    '  - controller.value.isInitialized: ${cameraController?.value.isInitialized}',
+                  );
+
+                  return Container(
+                    color: Colors.black,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(color: Colors.white),
+                          const SizedBox(height: 16),
+                          Text(
+                            isInitialized
+                                ? 'Camera ready, loading preview...'
+                                : hasPermission
+                                ? 'Initializing camera...'
+                                : 'Checking camera permission...',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Controller: ${cameraController != null ? "Ready" : "Not Ready"}',
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
                 }),
               ),
             ),
@@ -82,9 +244,6 @@ class CreateView extends GetView<CreateController> {
 
             // Bottom controls (always visible)
             _buildBottomControls(context),
-
-            // Video upload progress overlay
-            _buildUploadProgressOverlay(context),
           ],
         ),
       ),
@@ -349,69 +508,5 @@ class CreateView extends GetView<CreateController> {
         );
       }),
     );
-  }
-
-  Widget _buildUploadProgressOverlay(BuildContext context) {
-    return Obx(() {
-      if (!controller.isUploadingVideo.value) {
-        return const SizedBox.shrink();
-      }
-
-      return Positioned.fill(
-        child: Container(
-          color: Colors.black.withValues(alpha: 0.7),
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              margin: const EdgeInsets.all(32),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(
-                    controller.uploadStatus.value,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  LinearProgressIndicator(
-                    value: controller.uploadProgress.value,
-                    backgroundColor: Colors.grey[300],
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${(controller.uploadProgress.value * 100).toInt()}%',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Please don\'t close the app during upload',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.orange,
-                      fontStyle: FontStyle.italic,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    });
   }
 }

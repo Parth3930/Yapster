@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:camera/camera.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/data/models/post_model.dart';
@@ -58,6 +59,12 @@ class CreateController extends GetxController {
   final RxString selectedMode = 'POST'.obs; // STORY, VIDEO, POST
   final RxString timerFeedback = ''.obs; // For showing timer feedback text
   List<CameraDescription> cameras = [];
+
+  // Camera permission and error handling
+  final RxBool hasCameraPermission = false.obs;
+  final RxBool isRequestingPermission = false.obs;
+  final RxString cameraError = ''.obs;
+  final RxBool showPermissionDialog = false.obs;
 
   // Cache camera controllers for instant switching
   CameraController? _rearCameraController;
@@ -113,12 +120,68 @@ class CreateController extends GetxController {
     }
   }
 
+  /// Check and request camera permission
+  Future<bool> _checkCameraPermission() async {
+    try {
+      debugPrint('Checking camera permission...');
+
+      final status = await Permission.camera.status;
+      debugPrint('Camera permission status: $status');
+
+      if (status.isGranted) {
+        hasCameraPermission.value = true;
+        cameraError.value = '';
+        return true;
+      } else if (status.isDenied) {
+        debugPrint('Camera permission denied, requesting...');
+        isRequestingPermission.value = true;
+
+        final result = await Permission.camera.request();
+        isRequestingPermission.value = false;
+
+        if (result.isGranted) {
+          hasCameraPermission.value = true;
+          cameraError.value = '';
+          debugPrint('Camera permission granted');
+          return true;
+        } else {
+          hasCameraPermission.value = false;
+          cameraError.value = 'Camera permission denied';
+          debugPrint('Camera permission denied by user');
+          return false;
+        }
+      } else if (status.isPermanentlyDenied) {
+        hasCameraPermission.value = false;
+        cameraError.value =
+            'Camera permission permanently denied. Please enable it in app settings.';
+        showPermissionDialog.value = true;
+        debugPrint('Camera permission permanently denied');
+        return false;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('Error checking camera permission: $e');
+      hasCameraPermission.value = false;
+      cameraError.value = 'Error checking camera permission: $e';
+      return false;
+    }
+  }
+
   /// Initialize camera in background to avoid blocking UI
   Future<void> _initCameraInBackground() async {
     try {
       // Skip if camera is already being initialized or is already initialized
       if (isCameraInitialized.value) {
         debugPrint('Camera is already initialized, skipping initialization');
+        return;
+      }
+
+      // First check camera permission
+      final hasPermission = await _checkCameraPermission();
+      if (!hasPermission) {
+        debugPrint('Camera permission not granted, cannot initialize camera');
+        isCameraInitialized.value = false;
         return;
       }
 
@@ -129,6 +192,7 @@ class CreateController extends GetxController {
           debugPrint('Available cameras: ${cameras.length}');
         } catch (e) {
           debugPrint('Error getting available cameras: $e');
+          cameraError.value = 'Error accessing cameras: $e';
           isCameraInitialized.value = false;
           return;
         }
@@ -145,12 +209,31 @@ class CreateController extends GetxController {
         await _initializeSingleCamera();
       } else {
         debugPrint('No cameras available');
+        cameraError.value = 'No cameras found on this device';
         isCameraInitialized.value = false;
       }
     } catch (e) {
       debugPrint('Error initializing camera in background: $e');
+      cameraError.value = 'Camera initialization failed: $e';
       isCameraInitialized.value = false;
     }
+  }
+
+  /// Open app settings for camera permission
+  Future<void> openCameraSettings() async {
+    try {
+      await openAppSettings();
+      showPermissionDialog.value = false;
+    } catch (e) {
+      debugPrint('Error opening app settings: $e');
+    }
+  }
+
+  /// Retry camera initialization after permission is granted
+  void retryCameraInitialization() {
+    cameraError.value = '';
+    showPermissionDialog.value = false;
+    ensureCameraInitialized();
   }
 
   @override
