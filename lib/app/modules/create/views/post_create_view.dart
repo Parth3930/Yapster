@@ -14,14 +14,12 @@ class PostCreateView extends GetView<PostCreateController> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        // Clean up video resources before popping
-        if (controller.videoController != null) {
-          await controller.videoController!.pause();
-          await controller.videoController!.dispose();
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop) {
+          await _handleBackPress();
         }
-        return true;
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -29,14 +27,7 @@ class PostCreateView extends GetView<PostCreateController> {
           backgroundColor: Colors.black,
           leading: IconButton(
             icon: const Icon(Icons.close, color: Colors.white, size: 30),
-            onPressed: () async {
-              // Clean up video resources before closing
-              if (controller.videoController != null) {
-                await controller.videoController!.pause();
-                await controller.videoController!.dispose();
-              }
-              Get.back();
-            },
+            onPressed: _handleBackPress,
           ),
         ),
         body: Obx(
@@ -188,17 +179,7 @@ class PostCreateView extends GetView<PostCreateController> {
                                         onPressed:
                                             controller.isLoading.value
                                                 ? null
-                                                : () async {
-                                                  // Pause video before posting
-                                                  if (controller
-                                                          .videoController !=
-                                                      null) {
-                                                    await controller
-                                                        .videoController!
-                                                        .pause();
-                                                  }
-                                                  await controller.createPost();
-                                                },
+                                                : _handleCreatePost,
                                         child: const Text(
                                           'Post',
                                           style: TextStyle(
@@ -270,52 +251,13 @@ class PostCreateView extends GetView<PostCreateController> {
                                       decoration: const BoxDecoration(),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(20),
-                                        child: AspectRatio(
-                                          aspectRatio:
-                                              controller
-                                                  .videoController!
-                                                  .value
-                                                  .aspectRatio,
-                                          child: Stack(
-                                            children: [
-                                              VideoPlayer(
-                                                controller.videoController!,
-                                              ),
-                                              Obx(
-                                                () =>
-                                                    controller
-                                                            .isTextFieldFocused
-                                                            .value
-                                                        ? Container(
-                                                          color: Colors.black
-                                                              .withOpacity(0.3),
-                                                          child: const Center(
-                                                            child: Icon(
-                                                              Icons
-                                                                  .pause_circle_outline,
-                                                              color:
-                                                                  Colors
-                                                                      .white70,
-                                                              size: 48,
-                                                            ),
-                                                          ),
-                                                        )
-                                                        : const SizedBox.shrink(),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
+                                        child: _buildVideoPlayer(),
                                       ),
                                     ),
                                   );
                                 } else if (controller.videoPath.isNotEmpty &&
                                     !controller.videoInitialized.value) {
-                                  return const Padding(
-                                    padding: EdgeInsets.only(top: 40),
-                                    child: Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                  );
+                                  return _buildVideoLoadingIndicator();
                                 } else {
                                   return const SizedBox();
                                 }
@@ -334,14 +276,7 @@ class PostCreateView extends GetView<PostCreateController> {
                                     borderRadius: BorderRadius.circular(15),
                                   ),
                                   child: Focus(
-                                    onFocusChange: (hasFocus) {
-                                      controller.isTextFieldFocused.value =
-                                          hasFocus;
-                                      if (hasFocus &&
-                                          controller.videoController != null) {
-                                        controller.videoController!.pause();
-                                      }
-                                    },
+                                    onFocusChange: _handleFocusChange,
                                     child: TextField(
                                       controller:
                                           controller
@@ -385,6 +320,138 @@ class PostCreateView extends GetView<PostCreateController> {
                       );
                     },
                   ),
+        ),
+      ),
+    );
+  }
+
+  // Helper methods for better organization and error handling
+  Future<void> _handleBackPress() async {
+    try {
+      // Show loading indicator briefly to prevent multiple taps
+      if (controller.isLoading.value) {
+        Get.snackbar(
+          'Please wait',
+          'Post is being created...',
+          backgroundColor: Colors.orange.withValues(alpha: 0.8),
+          colorText: Colors.white,
+          duration: const Duration(seconds: 1),
+        );
+        return;
+      }
+
+      // Clean up video resources safely
+      if (controller.videoController != null) {
+        try {
+          await controller.videoController!.pause();
+        } catch (e) {
+          debugPrint('Error pausing video on back: $e');
+        }
+      }
+
+      Get.back();
+    } catch (e) {
+      debugPrint('Error handling back press: $e');
+      Get.back(); // Fallback navigation
+    }
+  }
+
+  Future<void> _handleCreatePost() async {
+    try {
+      await controller.createPost();
+    } catch (e) {
+      debugPrint('Error in create post handler: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to create post. Please try again.',
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
+    }
+  }
+
+  void _handleFocusChange(bool hasFocus) {
+    try {
+      controller.isTextFieldFocused.value = hasFocus;
+      // Video pause/resume is handled by the controller's focus listener
+    } catch (e) {
+      debugPrint('Error handling focus change: $e');
+    }
+  }
+
+  Widget _buildVideoPlayer() {
+    return Obx(() {
+      final videoController = controller.videoController;
+
+      if (videoController == null || !videoController.value.isInitialized) {
+        return Container(
+          height: 300,
+          color: Colors.grey[900],
+          child: const Center(child: CircularProgressIndicator()),
+        );
+      }
+
+      return AspectRatio(
+        aspectRatio: videoController.value.aspectRatio,
+        child: Stack(
+          children: [
+            VideoPlayer(videoController),
+            // Show pause overlay when typing
+            if (controller.isTextFieldFocused.value)
+              Container(
+                color: Colors.black.withValues(alpha: 0.3),
+                child: const Center(
+                  child: Icon(
+                    Icons.pause_circle_outline,
+                    color: Colors.white70,
+                    size: 48,
+                  ),
+                ),
+              ),
+            // Show error overlay if video has error
+            if (videoController.value.hasError)
+              Container(
+                color: Colors.black.withValues(alpha: 0.7),
+                child: const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, color: Colors.white, size: 48),
+                      SizedBox(height: 8),
+                      Text(
+                        'Video Error',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _buildVideoLoadingIndicator() {
+    return Container(
+      height: 300,
+      margin: const EdgeInsets.only(top: 40),
+      decoration: BoxDecoration(
+        color: Colors.grey[900],
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Loading video...',
+              style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+          ],
         ),
       ),
     );
