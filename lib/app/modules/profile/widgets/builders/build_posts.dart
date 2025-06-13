@@ -9,8 +9,22 @@ import 'package:yapster/app/data/providers/account_data_provider.dart';
 import 'package:yapster/app/data/repositories/post_repository.dart';
 import 'package:yapster/app/modules/profile/controllers/profile_posts_controller.dart';
 import 'package:yapster/app/routes/app_pages.dart';
+import 'package:yapster/app/global_widgets/video_thumbnail_auto_saver.dart';
 
 final Map<String, bool> _postsInitialized = <String, bool>{};
+
+/// Clear posts initialization cache for a specific user
+void clearPostsInitialization(String userId) {
+  final initKey = 'posts_$userId';
+  _postsInitialized.remove(initKey);
+  debugPrint('Cleared posts initialization for user: $userId');
+}
+
+/// Clear all posts initialization cache
+void clearAllPostsInitialization() {
+  _postsInitialized.clear();
+  debugPrint('Cleared all posts initialization cache');
+}
 
 Widget buildPostsTab(String? userId, bool isCurrentUser) {
   ProfilePostsController profilePostsController;
@@ -30,6 +44,7 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
 
   final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
   final targetUserId = isCurrentUser ? currentUserId ?? '' : userId ?? '';
+  final cacheService = Get.find<UserPostsCacheService>();
 
   // Key used to track whether we've already initialized posts for this user
   final initKey = 'posts_$targetUserId';
@@ -39,15 +54,27 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
     _postsInitialized.remove(initKey);
   }
 
+  // CRITICAL FIX: Clear initialization flag if we detect stale data
+  // This prevents fake shimmers from showing when cache is inconsistent
+  final hasCachedPosts = cacheService.hasCachedPosts(targetUserId);
+  final cachedPostsCount = cacheService.getCachedPostsCount(targetUserId);
+  final hasPostsInController = profilePostsController.profilePosts.isNotEmpty;
+
+  // If cache says we have posts but controller is empty, or vice versa, clear init flag
+  if ((hasCachedPosts && cachedPostsCount > 0 && !hasPostsInController) ||
+      (!hasCachedPosts && hasPostsInController)) {
+    debugPrint(
+      'Detected cache inconsistency for user $targetUserId, clearing init flag',
+    );
+    _postsInitialized.remove(initKey);
+  }
+
   // CRITICAL FIX: Move loading logic to a one-time initialization
   // Use the static map to track if we've already initialized posts for this user
   if (!_postsInitialized.containsKey(initKey)) {
     _postsInitialized[initKey] = true;
 
-    // OPTIMIZATION: Check if posts are already cached using the cache service
-    final cacheService = Get.find<UserPostsCacheService>();
-    final hasCachedPosts = cacheService.hasCachedPosts(targetUserId);
-    final hasPostsInController = profilePostsController.profilePosts.isNotEmpty;
+    // Use already initialized cache service variables
     final isTargetCurrentUser = targetUserId == currentUserId;
 
     // For other users, only load once and don't cache
@@ -69,19 +96,28 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
         );
       }
     } else {
-      // For current user, use caching logic
-      if (!hasCachedPosts &&
-          !hasPostsInController &&
-          !profilePostsController.isLoading.value) {
+      // For current user, use improved caching logic
+      // Only use cached data if we actually have posts in cache AND in controller
+      final hasValidCachedData =
+          hasCachedPosts && cachedPostsCount > 0 && hasPostsInController;
+
+      if (!hasValidCachedData && !profilePostsController.isLoading.value) {
         debugPrint(
-          'No cached posts found, loading for current user: $targetUserId',
+          'No valid cached posts found, loading fresh data for current user: $targetUserId (cached: $hasCachedPosts, count: $cachedPostsCount, controller: $hasPostsInController)',
         );
+        // Clear any stale cache before loading fresh data
+        if (hasCachedPosts && cachedPostsCount == 0) {
+          cacheService.invalidateUserCache(targetUserId);
+        }
         Future.microtask(() {
-          profilePostsController.loadUserPosts(targetUserId);
+          profilePostsController.loadUserPosts(
+            targetUserId,
+            forceRefresh: true,
+          );
         });
-      } else if (hasCachedPosts && !hasPostsInController) {
+      } else if (hasValidCachedData && !hasPostsInController) {
         debugPrint(
-          'Loading cached posts instantly for current user: $targetUserId',
+          'Loading cached posts instantly for current user: $targetUserId (count: $cachedPostsCount)',
         );
         // Load cached posts immediately and synchronously
         _loadCachedPostsInstantly(
@@ -91,7 +127,7 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
         );
       } else {
         debugPrint(
-          'Using existing posts data for current user: $targetUserId (cached: $hasCachedPosts, controller: $hasPostsInController)',
+          'Using existing posts data for current user: $targetUserId (cached: $hasCachedPosts, count: $cachedPostsCount, controller: $hasPostsInController)',
         );
       }
     }
@@ -99,13 +135,20 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
 
   return Obx(() {
     final posts = profilePostsController.profilePosts;
+    final isLoading = profilePostsController.isLoading.value;
+    // Use already initialized cache service and get fresh values
+    final hasCachedPostsNow = cacheService.hasCachedPosts(targetUserId);
+    final cachedPostsCountNow = cacheService.getCachedPostsCount(targetUserId);
 
-    // Show loading only if we have no cached posts and are currently loading
-    if (posts.isEmpty && profilePostsController.isLoading.value) {
+    // Show loading only if we're actually loading and don't have valid cached data
+    if (isLoading &&
+        posts.isEmpty &&
+        (!hasCachedPostsNow || cachedPostsCountNow == 0)) {
       return Center(child: CircularProgressIndicator(color: Colors.white));
     }
 
-    if (posts.isEmpty) {
+    // If we have no posts and we're not loading, show empty state
+    if (posts.isEmpty && !isLoading) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -190,28 +233,14 @@ Widget buildPostsTab(String? userId, bool isCurrentUser) {
                       post.imageUrl != null)
                     Image.network(post.imageUrl!, fit: BoxFit.cover)
                   else if (post.postType.toLowerCase() == 'video')
-                    Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Container(
-                          color: Colors.black26,
-                        ),
-                        Center(
-                          child: Container(
-                            padding: EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.play_arrow,
-                              color: Colors.white,
-                              size: 30,
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
+                    (() {
+                      final thumb = post.metadata['video_thumbnail'] as String?;
+                      if (thumb != null && thumb.isNotEmpty) {
+                        return Image.network(thumb, fit: BoxFit.cover);
+                      }
+                      // Generate thumbnail, upload and cache automatically
+                      return VideoThumbnailAutoSaver(post: post);
+                    })()
                   else
                     Padding(
                       padding: const EdgeInsets.all(12.0),

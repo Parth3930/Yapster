@@ -56,25 +56,25 @@ class PostsFeedController extends GetxController {
 
     // Always try to load posts, even if preloaded data exists
     // This ensures consistency on hot reload
-    // Always filter viewed posts to prevent duplicates
-    _initializeFeed(filterViewedPosts: true);
+    // Initialize feed using feed_queue table
+    _initializeFeed();
     _setupRealtimeSubscription();
   }
 
   /// Initialize feed with proper fallback handling
-  Future<void> _initializeFeed({bool filterViewedPosts = true}) async {
+  Future<void> _initializeFeed() async {
     try {
       debugPrint('Initializing posts feed...');
 
-      // Load posts normally without clearing caches and always filter viewed posts
-      await loadPosts(filterViewedPosts: true);
+      // Load posts from feed_queue without any cache-based filtering
+      await loadPosts();
 
       // Start periodic refresh if feed is empty
       _startPeriodicRefreshIfNeeded();
     } catch (e) {
       debugPrint('Error initializing feed: $e');
       // Fallback to loading posts normally
-      await loadPosts(filterViewedPosts: true);
+      await loadPosts();
     }
   }
 
@@ -342,11 +342,8 @@ class PostsFeedController extends GetxController {
     }
   }
 
-  /// Load posts feed with intelligent recommendations
-  Future<void> loadPosts({
-    bool forceRefresh = false,
-    bool filterViewedPosts = false,
-  }) async {
+  /// Load posts feed from feed_queue table
+  Future<void> loadPosts({bool forceRefresh = false}) async {
     // Declare here so it's accessible after try/catch for _markPostsConsumed
     List<PostModel> newPosts = [];
     try {
@@ -358,9 +355,6 @@ class PostsFeedController extends GetxController {
           return;
         }
       }
-
-      // Ensure viewed posts are loaded for filtering
-      await _interactionService.refreshViewedPostsCache();
 
       // Only show loading on first load or force refresh
       if (!hasLoadedOnce.value || forceRefresh) {
@@ -466,18 +460,9 @@ class PostsFeedController extends GetxController {
         await _feedService.addPostsToFeed(newPosts, currentUserId.value);
         debugPrint('Successfully added posts to feed service');
 
-        // Filter out viewed posts using only synchronous cache for better performance
-        // The batch loading ensures the cache is comprehensive
-        var postsToShow =
-            newPosts
-                .where(
-                  (post) => !_interactionService.hasViewedPostSync(post.id),
-                )
-                .toList();
-
-        debugPrint(
-          'Filtered ${newPosts.length - postsToShow.length} viewed posts using cache',
-        );
+        // Use posts directly from feed_queue without cache-based filtering
+        // The feed_queue table already handles viewed/consumed posts
+        var postsToShow = newPosts;
 
         // Filter out duplicates that might already be in the posts list
         if (!forceRefresh) {
@@ -489,15 +474,17 @@ class PostsFeedController extends GetxController {
         }
 
         debugPrint(
-          'Filtered ${newPosts.length - postsToShow.length} viewed/duplicate posts',
+          'Filtered ${newPosts.length - postsToShow.length} duplicate posts',
         );
 
         if (forceRefresh) {
-          debugPrint('Refresh: Adding ${postsToShow.length} posts (filtered)');
+          debugPrint(
+            'Refresh: Adding ${postsToShow.length} posts from feed_queue',
+          );
           posts.assignAll(postsToShow);
           debugPrint('Refreshed posts list with ${postsToShow.length} posts');
         } else {
-          // Append filtered posts
+          // Append posts from feed_queue
           posts.addAll(postsToShow);
           debugPrint(
             'Added ${postsToShow.length} posts to existing list. Total: ${posts.length}',
@@ -607,36 +594,16 @@ class PostsFeedController extends GetxController {
         );
         await _loadEngagementStates(newPosts);
 
-        // Filter out already viewed posts using synchronous check first
-        final postsToShow =
-            newPosts
-                .where(
-                  (post) => !_interactionService.hasViewedPostSync(post.id),
-                )
-                .toList();
-
-        // Then do an additional async check for posts not in local cache
-        final futures = <Future<void>>[];
-        for (final post in postsToShow.toList()) {
-          futures.add(
-            _interactionService.hasViewedPost(post.id).then((hasViewed) {
-              if (hasViewed && postsToShow.contains(post)) {
-                postsToShow.remove(post);
-              }
-            }),
-          );
-        }
-        await Future.wait(futures);
-
+        // Use posts directly from feed_queue without cache-based filtering
         // Filter out duplicates that might already be in the posts list
         final existingPostIds = posts.map((p) => p.id).toSet();
         final uniquePostsToShow =
-            postsToShow
+            newPosts
                 .where((post) => !existingPostIds.contains(post.id))
                 .toList();
 
         debugPrint(
-          'Filtered ${newPosts.length - uniquePostsToShow.length} viewed/duplicate posts from pagination',
+          'Filtered ${newPosts.length - uniquePostsToShow.length} duplicate posts from pagination',
         );
 
         posts.addAll(uniquePostsToShow);
@@ -656,9 +623,9 @@ class PostsFeedController extends GetxController {
 
   /// Refresh posts feed
   Future<void> refreshPosts() async {
-    debugPrint('Refreshing posts feed...');
+    debugPrint('Refreshing posts feed from feed_queue...');
 
-    await loadPosts(forceRefresh: true, filterViewedPosts: true);
+    await loadPosts(forceRefresh: true);
 
     // Force update of reactive variables
     posts.refresh();

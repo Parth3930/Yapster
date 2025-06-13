@@ -4,7 +4,7 @@ import 'package:yapster/app/modules/home/controllers/posts_feed_controller.dart'
 import 'text_post_widget.dart';
 import 'image_post_widget.dart';
 import 'gif_post_widget.dart';
-import 'video_post_widget.dart';
+import 'video_card_widget.dart';
 import 'sticker_post_widget.dart';
 import 'post_view_tracker.dart';
 
@@ -31,7 +31,7 @@ class PostWidgetFactory {
         break;
 
       case 'video':
-        postWidget = VideoPostWidget(post: post, controller: controller);
+        postWidget = VideoCardWidget(post: post, controller: controller);
         break;
 
       case 'sticker':

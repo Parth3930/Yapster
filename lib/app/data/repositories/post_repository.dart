@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_compress/video_compress.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/core/services/user_posts_cache_service.dart';
@@ -70,7 +72,31 @@ class PostRepository extends GetxService {
     debugPrint('🎬 VIDEO UPLOAD: File path: ${videoFile.path}');
 
     try {
-      final fileExtension = videoFile.path.split('.').last.toLowerCase();
+      // ================= Video compression to 720p =================
+      File fileToUpload = videoFile;
+      try {
+        debugPrint('🎬 VIDEO UPLOAD: Compressing video to 720p...');
+        final info = await VideoCompress.compressVideo(
+          videoFile.path,
+          quality: VideoQuality.MediumQuality, // ~720p
+          deleteOrigin: false,
+        );
+        if (info != null && info.file != null) {
+          fileToUpload = info.file!;
+          debugPrint(
+            '🎬 VIDEO UPLOAD: Compression successful – new size: '
+            '${(await fileToUpload.length()) ~/ 1024} KB',
+          );
+        } else {
+          debugPrint(
+            '🎬 VIDEO UPLOAD: Compression returned null, using original',
+          );
+        }
+      } catch (e) {
+        debugPrint('🎬 VIDEO UPLOAD: Compression error – $e');
+      }
+
+      final fileExtension = fileToUpload.path.split('.').last.toLowerCase();
       final fileName = 'video.$fileExtension';
       final storagePath = '$userId/$postId/$fileName';
       debugPrint(
@@ -78,48 +104,63 @@ class PostRepository extends GetxService {
       );
 
       // Check if file exists and is readable
-      if (!await videoFile.exists()) {
+      if (!await fileToUpload.exists()) {
         debugPrint(
-          '🎬 VIDEO UPLOAD ERROR: File does not exist at path: ${videoFile.path}',
+          '🎬 VIDEO UPLOAD ERROR: File does not exist at path: ${fileToUpload.path}',
         );
         return null;
       }
 
       // Read file as bytes
       debugPrint('🎬 VIDEO UPLOAD: Reading file as bytes...');
-      final fileBytes = await videoFile.readAsBytes();
+      final fileBytes = await fileToUpload.readAsBytes();
       debugPrint(
         '🎬 VIDEO UPLOAD: Successfully read ${fileBytes.length} bytes',
       );
 
-      // Upload to Supabase storage
+      // Upload to Supabase storage with retry mechanism
       debugPrint('🎬 VIDEO UPLOAD: Starting upload to Supabase storage...');
-      try {
-        await _supabase.client.storage
-            .from(bucket)
-            .uploadBinary(
-              storagePath,
-              fileBytes,
-              fileOptions: const FileOptions(
-                cacheControl: '3600', // Cache for 1 hour
-                upsert: true,
-              ),
-            );
-        debugPrint('🎬 VIDEO UPLOAD: Upload to storage successful');
-      } catch (storageError) {
-        debugPrint(
-          '🎬 VIDEO UPLOAD ERROR: Storage upload failed: $storageError',
-        );
-        // Check if this is a permissions error
-        if (storageError.toString().contains('permission') ||
-            storageError.toString().contains('not authorized') ||
-            storageError.toString().contains('security')) {
+      const maxRetries = 3;
+      for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          debugPrint('🎬 VIDEO UPLOAD: Upload attempt $attempt of $maxRetries');
+          await _supabase.client.storage
+              .from(bucket)
+              .uploadBinary(
+                storagePath,
+                fileBytes,
+                fileOptions: const FileOptions(
+                  cacheControl: '3600', // Cache for 1 hour
+                  upsert: true,
+                ),
+              );
+          debugPrint('🎬 VIDEO UPLOAD: Upload to storage successful');
+          break; // Success, exit retry loop
+        } catch (storageError) {
           debugPrint(
-            '🎬 VIDEO UPLOAD ERROR: This appears to be a row-level security issue. '
-            'Please check RLS policies for the "$bucket" bucket.',
+            '🎬 VIDEO UPLOAD ERROR: Storage upload failed (attempt $attempt): $storageError',
           );
+          
+          // Check if this is a permissions error (don't retry these)
+          if (storageError.toString().contains('permission') ||
+              storageError.toString().contains('not authorized') ||
+              storageError.toString().contains('security')) {
+            debugPrint(
+              '🎬 VIDEO UPLOAD ERROR: This appears to be a row-level security issue. '
+              'Please check RLS policies for the "$bucket" bucket.',
+            );
+            return null;
+          }
+          
+          // If this is the last attempt, return null
+          if (attempt == maxRetries) {
+            debugPrint('🎬 VIDEO UPLOAD ERROR: All retry attempts failed');
+            return null;
+          }
+          
+          // Wait before retrying (exponential backoff)
+          await Future.delayed(Duration(seconds: attempt * 2));
         }
-        return null;
       }
 
       // Generate a long-lived signed URL (7 days)
@@ -136,8 +177,40 @@ class PostRepository extends GetxService {
     }
   }
 
+  /// Upload a generated thumbnail for a video post and return its public URL
+  Future<String?> uploadPostThumbnail(
+    Uint8List thumbData,
+    String userId,
+    String postId,
+  ) async {
+    const bucket = 'posts'; // use same bucket to keep structure simple
+    try {
+      final storagePath = '$userId/$postId/thumbnail.jpg';
+      await _supabase.client.storage
+          .from(bucket)
+          .uploadBinary(
+            storagePath,
+            thumbData,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
+
+      // Return public URL
+      final publicUrl = _supabase.client.storage
+          .from(bucket)
+          .getPublicUrl(storagePath);
+      return publicUrl;
+    } catch (e) {
+      debugPrint('Error uploading post thumbnail: $e');
+      return null;
+    }
+  }
+
   /// Update post with video URL
-  Future<bool> updatePostWithVideo(String postId, String videoUrl) async {
+  Future<bool> updatePostWithVideo(
+    String postId,
+    String videoUrl, {
+    String? thumbnailUrl,
+  }) async {
     debugPrint('🎬 VIDEO POST UPDATE: Updating post $postId with video URL');
     try {
       // Fetch existing metadata to merge video details
@@ -163,6 +236,11 @@ class PostRepository extends GetxService {
 
       // Add video URL to metadata
       metadata['video_url'] = videoUrl;
+
+      // Include thumbnail if provided
+      if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+        metadata['video_thumbnail'] = thumbnailUrl;
+      }
 
       // Add timestamp for tracking
       metadata['video_processed_at'] = DateTime.now().toIso8601String();
@@ -676,103 +754,70 @@ class PostRepository extends GetxService {
 
       // 3. Delete associated media from storage - Delete the entire post folder
       try {
-        // Delete the entire post folder in storage (userId/postId/)
         final storagePath = '$userId/$postId';
-        debugPrint('Attempting to delete post folder: $storagePath');
 
-        // First try the posts bucket (for images)
-        try {
-          // List all files in the post folder
-          final postsResponse = await _supabase.client.storage
-              .from('posts')
-              .list(path: storagePath);
-
-          // Get file paths to delete
-          final List<String> filesToDelete =
-              postsResponse.map((FileObject file) {
-                return '$storagePath/${file.name}';
-              }).toList();
-
-          if (filesToDelete.isNotEmpty) {
-            // Delete all files in the folder
-            await _supabase.client.storage.from('posts').remove(filesToDelete);
-            debugPrint(
-              'Deleted ${filesToDelete.length} files from posts storage: $storagePath',
-            );
-          } else {
-            debugPrint('No files found in posts folder: $storagePath');
-          }
-        } catch (postsError) {
-          debugPrint('Error handling posts storage deletion: $postsError');
-        }
-
-        // Then try the videos bucket
-        try {
-          // List all files in the post folder in the videos bucket
-          final videosResponse = await _supabase.client.storage
-              .from('videos')
-              .list(path: storagePath);
-
-          // Get file paths to delete
-          final List<String> videosToDelete =
-              videosResponse.map((FileObject file) {
-                return '$storagePath/${file.name}';
-              }).toList();
-
-          if (videosToDelete.isNotEmpty) {
-            // Delete all files in the folder
-            await _supabase.client.storage
-                .from('videos')
-                .remove(videosToDelete);
-            debugPrint(
-              'Deleted ${videosToDelete.length} files from videos storage: $storagePath',
-            );
-          } else {
-            debugPrint('No files found in videos folder: $storagePath');
-          }
-        } catch (videosError) {
-          debugPrint('Error handling videos storage deletion: $videosError');
-        }
-
-        // Fallback: If listing fails, try to extract paths from URLs
-        if (postData['image_url'] != null || postData['video_url'] != null) {
-          debugPrint('Using fallback URL-based deletion method');
-
-          // Handle image URL
-          if (postData['image_url'] != null) {
-            try {
-              final uri = Uri.parse(postData['image_url']);
-              final pathSegments = uri.pathSegments;
-              if (pathSegments.length >= 5) {
-                final bucket = pathSegments[3]; // 'posts' or 'videos'
-                final filePath = pathSegments.sublist(4).join('/');
-                await _supabase.client.storage.from(bucket).remove([filePath]);
-                debugPrint('Deleted image from URL path: $filePath');
-              }
-            } catch (imgError) {
-              debugPrint('Error deleting image from URL: $imgError');
+        // Helper: Delete an entire folder for a bucket
+        Future<void> _deleteFolder(String bucket) async {
+          try {
+            final list = await _supabase.client.storage
+                .from(bucket)
+                .list(path: storagePath);
+            final files = list.map((e) => '$storagePath/${e.name}').toList();
+            if (files.isNotEmpty) {
+              await _supabase.client.storage.from(bucket).remove(files);
+              debugPrint(
+                'Deleted ${files.length} files from $bucket/$storagePath',
+              );
+            } else {
+              debugPrint('No files found in $bucket/$storagePath');
             }
-          }
-
-          // Handle video URL
-          if (postData['video_url'] != null) {
-            try {
-              final uri = Uri.parse(postData['video_url']);
-              final pathSegments = uri.pathSegments;
-              if (pathSegments.length >= 5) {
-                final bucket = pathSegments[3]; // 'posts' or 'videos'
-                final filePath = pathSegments.sublist(4).join('/');
-                await _supabase.client.storage.from(bucket).remove([filePath]);
-                debugPrint('Deleted video from URL path: $filePath');
-              }
-            } catch (videoError) {
-              debugPrint('Error deleting video from URL: $videoError');
-            }
+          } catch (e) {
+            debugPrint('Error deleting folder $bucket/$storagePath: $e');
           }
         }
+
+        await _deleteFolder('posts'); // images & thumbnails
+        await _deleteFolder('videos'); // videos
+
+        // --- Fallback: parse URLs directly when folder listing fails (e.g. RLS) ---
+        Map<String, String>? _parseUrl(String? url) {
+          if (url == null || url.isEmpty) return null;
+          try {
+            final uri = Uri.parse(url);
+            final segments = uri.pathSegments;
+            // Find marker ('sign', 'public') which is followed by bucket name
+            int bucketIdx = segments.indexOf('sign');
+            if (bucketIdx == -1) bucketIdx = segments.indexOf('public');
+            if (bucketIdx == -1) bucketIdx = segments.indexOf('object') + 1;
+            if (bucketIdx < 0 || bucketIdx >= segments.length) return null;
+            final bucket = segments[bucketIdx];
+            final path = segments.sublist(bucketIdx + 1).join('/');
+            return {'bucket': bucket, 'path': path};
+          } catch (e) {
+            debugPrint('URL parse error: $e');
+            return null;
+          }
+        }
+
+        Future<void> _removeByUrl(String? url) async {
+          final info = _parseUrl(url);
+          if (info == null) return;
+          try {
+            await _supabase.client.storage.from(info['bucket']!).remove([
+              info['path']!,
+            ]);
+            debugPrint(
+              'Removed file via URL ${info['bucket']}/${info['path']}',
+            );
+          } catch (e) {
+            debugPrint('Error removing file via URL: $e');
+          }
+        }
+
+        await _removeByUrl(postData['image_url'] as String?);
+        await _removeByUrl(postData['video_url'] as String?);
       } catch (mediaError) {
         debugPrint('Error processing media deletion: $mediaError');
-        // Continue despite media errors - the post is already deleted
       }
 
       // 4. Update post count in profile (skip database update as column doesn't exist)

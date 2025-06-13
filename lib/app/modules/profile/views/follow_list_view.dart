@@ -588,18 +588,46 @@ class _FollowListViewState extends State<FollowListView> {
   }
 
   Widget _buildFollowButton(String userId, bool isFollowing) {
-    final String buttonText =
-        widget.type == FollowType.followers ? 'Follow Back' : 'Follow';
     final RxBool isButtonLoading = false.obs;
+    final RxBool hasRequestedToFollow = false.obs;
 
-    return Obx(
-      () => ElevatedButton(
+    // Initialize request state
+    Future.microtask(() async {
+      try {
+        final requestState = await _exploreController.hasRequestedToFollow(
+          userId,
+          forceRefresh: false,
+        );
+        hasRequestedToFollow.value = requestState;
+      } catch (e) {
+        debugPrint('Error checking request state in follow list: $e');
+      }
+    });
+
+    return Obx(() {
+      final String buttonText =
+          hasRequestedToFollow.value
+              ? 'Requested'
+              : (widget.type == FollowType.followers
+                  ? 'Follow Back'
+                  : 'Follow');
+
+      final Color backgroundColor =
+          hasRequestedToFollow.value
+              ? Colors.orange[600]!
+              : const Color(0xff0060FF);
+
+      return ElevatedButton(
         onPressed:
             isButtonLoading.value
                 ? null
-                : () => _handleFollowAction(userId, isButtonLoading),
+                : () => _handleFollowActionWithState(
+                  userId,
+                  isButtonLoading,
+                  hasRequestedToFollow,
+                ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xff0060FF),
+          backgroundColor: backgroundColor,
           minimumSize: const Size(90, 32),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
@@ -614,8 +642,8 @@ class _FollowListViewState extends State<FollowListView> {
                   ),
                 )
                 : Text(buttonText, style: const TextStyle(color: Colors.white)),
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildUnfollowButton(String userId) {
@@ -694,6 +722,42 @@ class _FollowListViewState extends State<FollowListView> {
     } catch (e) {
       debugPrint('Error unfollowing user: $e');
       Get.snackbar('Error', 'Failed to unfollow user');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> _handleFollowActionWithState(
+    String userId,
+    RxBool isLoading,
+    RxBool hasRequestedToFollow,
+  ) async {
+    isLoading.value = true;
+    try {
+      await _exploreController.toggleFollowUser(userId);
+
+      // Refresh both follow and request states
+      await _exploreController.refreshFollowState(userId, forceRefresh: true);
+      final requestState = await _exploreController.hasRequestedToFollow(
+        userId,
+        forceRefresh: true,
+      );
+      hasRequestedToFollow.value = requestState;
+
+      final currentUserId = _supabaseService.currentUser.value?.id;
+      if (currentUserId != null) {
+        await _accountDataProvider.loadFollowing(currentUserId);
+        await _exploreController.verifyDatabaseCounts(currentUserId, userId);
+      }
+
+      // GETX REACTIVE UPDATE: No need to reload the entire list
+      // The GetX<ExploreController> widget will automatically update
+      debugPrint(
+        'Follow action completed successfully - request state: $requestState',
+      );
+    } catch (e) {
+      debugPrint('Error following user: $e');
+      Get.snackbar('Error', 'Failed to follow user');
     } finally {
       isLoading.value = false;
     }

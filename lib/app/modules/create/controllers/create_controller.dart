@@ -69,6 +69,9 @@ class CreateController extends GetxController {
     // Listen to content changes to enable/disable post button
     postTextController.addListener(_updateCanPost);
 
+    // Clean up any incomplete posts from previous sessions
+    _cleanupIncompleteVideoPosts();
+
     // DO NOT initialize camera here - only when actually needed
     // Camera will be initialized when ensureCameraInitialized() is called from the view
     debugPrint(
@@ -582,6 +585,10 @@ class CreateController extends GetxController {
   // For recording duration in seconds
   final RxInt recordingDuration = 0.obs;
   // Timer instance for video recording
+  // Video upload progress tracking
+  final RxBool isUploadingVideo = false.obs;
+  final RxDouble uploadProgress = 0.0.obs;
+  final RxString uploadStatus = ''.obs;
   Timer? _recordingTimer;
   // Flag for processing state
   final RxBool isProcessingPhoto = false.obs;
@@ -890,21 +897,9 @@ class CreateController extends GetxController {
       stopCamera();
     }
 
-    // Navigate to video edit page
-    Get.toNamed('/video-edit', arguments: {'videoFile': videoFile})?.then((
-      result,
-    ) {
-      if (result != null && result is Map<String, dynamic>) {
-        // Handle edited video returned from edit page
-        if (result.containsKey('editedVideo')) {
-          File editedVideo = result['editedVideo'] as File;
-          videoFilePath.value = editedVideo.path;
-
-          // Navigate to post creation page
-          _navigateToPostPage();
-        }
-      }
-    });
+    // Skip video edit page and go directly to post creation page
+    videoFilePath.value = videoFile.path;
+    _navigateToPostPage();
   }
 
   // Navigate to post creation page
@@ -965,6 +960,11 @@ class CreateController extends GetxController {
         debugPrint(
           '📝 POST CREATION: Video file exists: ${await File(videoFilePath.value).exists()}',
         );
+
+        // Set upload status
+        isUploadingVideo.value = true;
+        uploadProgress.value = 0.0;
+        uploadStatus.value = 'Preparing video upload...';
       }
 
       // Set appropriate post type based on content
@@ -1049,6 +1049,9 @@ class CreateController extends GetxController {
 
           // Upload video file
           debugPrint('📝 POST CREATION: Starting video upload process');
+          uploadStatus.value = 'Uploading video...';
+          uploadProgress.value = 0.1;
+
           final videoFile = File(videoFilePath.value);
 
           // Check file properties before upload
@@ -1057,22 +1060,39 @@ class CreateController extends GetxController {
             debugPrint(
               '📝 POST CREATION: Video file size: ${videoSize ~/ 1024} KB',
             );
+
+            // Show estimated upload time for large files
+            if (videoSize > 10 * 1024 * 1024) {
+              // > 10MB
+              uploadStatus.value =
+                  'Uploading large video file... This may take a while.';
+            }
           } else {
             debugPrint(
               '📝 POST CREATION ERROR: Video file does not exist at path: ${videoFilePath.value}',
             );
+            uploadStatus.value = 'Error: Video file not found';
+            isUploadingVideo.value = false;
+            throw Exception(
+              'Video file not found at path: ${videoFilePath.value}',
+            );
           }
 
+          uploadProgress.value = 0.3;
           final videoUrl = await _postRepository.uploadPostVideo(
             videoFile,
             currentUser.id,
             postId,
           );
+          uploadProgress.value = 0.7;
 
           if (videoUrl != null) {
             debugPrint(
               '📝 POST CREATION: Video uploaded successfully with URL: $videoUrl',
             );
+            uploadStatus.value = 'Saving post...';
+            uploadProgress.value = 0.8;
+
             // Update post with video URL
             final success = await _postRepository.updatePostWithVideo(
               postId,
@@ -1083,11 +1103,14 @@ class CreateController extends GetxController {
               debugPrint(
                 '📝 POST CREATION: Post successfully updated with video URL',
               );
+              uploadStatus.value = 'Video post created successfully!';
+              uploadProgress.value = 1.0;
               postReady = true;
             } else {
               debugPrint(
                 '📝 POST CREATION ERROR: Failed to update post with video URL',
               );
+              uploadStatus.value = 'Error saving video post';
               // Clean up the empty post record to avoid ghost posts
               await _postRepository.deletePost(postId, currentUser.id);
               debugPrint(
@@ -1225,6 +1248,13 @@ class CreateController extends GetxController {
       }
     } catch (e) {
       debugPrint('Error creating post: $e');
+
+      // Reset upload progress on error
+      if (isUploadingVideo.value) {
+        uploadStatus.value = 'Upload failed: ${e.toString()}';
+        uploadProgress.value = 0.0;
+      }
+
       Get.snackbar(
         'Error',
         'Failed to create post: $e',
@@ -1234,6 +1264,11 @@ class CreateController extends GetxController {
       );
     } finally {
       isLoading.value = false;
+
+      // Reset video upload tracking
+      isUploadingVideo.value = false;
+      uploadProgress.value = 0.0;
+      uploadStatus.value = '';
     }
   }
 
@@ -1487,6 +1522,51 @@ class CreateController extends GetxController {
       }
     } catch (e) {
       debugPrint('Error uploading story image in background: $e');
+    }
+  }
+
+  /// Clean up incomplete video posts from previous sessions
+  /// This helps handle cases where the app was closed during video upload
+  Future<void> _cleanupIncompleteVideoPosts() async {
+    try {
+      final currentUser = _supabase.client.auth.currentUser;
+      if (currentUser == null) return;
+
+      debugPrint('🧹 CLEANUP: Checking for incomplete video posts...');
+
+      // Find posts created in the last hour that are video type but have no video_url
+      final now = DateTime.now();
+      final oneHourAgo = now.subtract(const Duration(hours: 1));
+
+      final incompletePosts = await _supabase.client
+          .from('posts')
+          .select('id, created_at')
+          .eq('user_id', currentUser.id)
+          .eq('post_type', 'video')
+          .isFilter('video_url', null)
+          .gte('created_at', oneHourAgo.toIso8601String())
+          .limit(10); // Limit to prevent too many deletes
+
+      if (incompletePosts.isNotEmpty) {
+        debugPrint(
+          '🧹 CLEANUP: Found ${incompletePosts.length} incomplete video posts',
+        );
+
+        for (final post in incompletePosts) {
+          try {
+            await _postRepository.deletePost(post['id'], currentUser.id);
+            debugPrint('🧹 CLEANUP: Deleted incomplete post ${post['id']}');
+          } catch (e) {
+            debugPrint('🧹 CLEANUP: Error deleting post ${post['id']}: $e');
+          }
+        }
+
+        debugPrint('🧹 CLEANUP: Finished cleaning up incomplete video posts');
+      } else {
+        debugPrint('🧹 CLEANUP: No incomplete video posts found');
+      }
+    } catch (e) {
+      debugPrint('🧹 CLEANUP: Error during cleanup: $e');
     }
   }
 }

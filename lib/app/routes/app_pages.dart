@@ -12,7 +12,6 @@ import 'package:yapster/app/modules/chat/views/chat_window_view.dart';
 import 'package:yapster/app/modules/chat/views/group_chat_window_view.dart';
 import 'package:yapster/app/modules/create/views/create_view.dart';
 import 'package:yapster/app/modules/create/views/image_edit_view.dart';
-import 'package:yapster/app/modules/create/views/video_edit_view.dart';
 import 'package:yapster/app/modules/create/views/post_create_view.dart';
 import 'package:yapster/app/modules/create/bindings/create_binding.dart';
 import 'package:yapster/app/modules/error/bindings/error_binding.dart';
@@ -196,13 +195,6 @@ class AppPages {
       name: _Paths.IMAGE_EDIT,
       page: () => const ImageEditView(),
       binding: ImageEditBinding(),
-      transition: Transition.fadeIn,
-      transitionDuration: const Duration(milliseconds: 300),
-    ),
-    GetPage(
-      name: _Paths.VIDEO_EDIT,
-      page: () => const VideoEditView(),
-      binding: VideoEditBinding(),
       transition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
     ),

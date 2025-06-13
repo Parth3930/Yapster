@@ -37,8 +37,7 @@ class UserInteractionService extends GetxService {
   void onInit() {
     super.onInit();
     _loadUserPreferences();
-    // Preload viewed posts for faster filtering
-    _batchLoadViewedPosts();
+    // No longer preloading viewed posts - using feed_queue instead
   }
 
   /// Load user preferences from local storage
@@ -51,11 +50,7 @@ class UserInteractionService extends GetxService {
         );
       }
 
-      final viewedData = _storage.getString(_viewedPostsKey);
-      if (viewedData != null) {
-        final viewedList = List<String>.from(json.decode(viewedData));
-        _viewedPosts.addAll(viewedList);
-      }
+      // No longer loading viewed posts from cache - using feed_queue instead
     } catch (e) {
       debugPrint('Error loading user preferences: $e');
     }
@@ -65,10 +60,7 @@ class UserInteractionService extends GetxService {
   Future<void> _saveUserPreferences() async {
     try {
       await _storage.saveString(_preferencesKey, json.encode(_userPreferences));
-      await _storage.saveString(
-        _viewedPostsKey,
-        json.encode(_viewedPosts.toList()),
-      );
+      // No longer saving viewed posts to cache - using feed_queue instead
     } catch (e) {
       debugPrint('Error saving user preferences: $e');
     }
@@ -80,9 +72,7 @@ class UserInteractionService extends GetxService {
     String postType,
     String authorId,
   ) async {
-    if (_viewedPosts.contains(postId)) return;
-
-    _viewedPosts.add(postId);
+    // Don't check cache, just track the view
     _postViewTimes[postId] = DateTime.now();
 
     // Update view preferences
@@ -95,6 +85,9 @@ class UserInteractionService extends GetxService {
       'author_id': authorId,
       'timestamp': DateTime.now().toIso8601String(),
     });
+
+    // Mark post as consumed in feed_queue since user viewed it
+    await _markPostConsumedInFeedQueue(postId);
 
     await _saveUserPreferences();
   }
@@ -290,6 +283,30 @@ class UserInteractionService extends GetxService {
     return 'view';
   }
 
+  /// Mark post as consumed in feed_queue table
+  Future<void> _markPostConsumedInFeedQueue(String postId) async {
+    try {
+      final supabase = _supabase;
+      if (supabase == null) {
+        debugPrint('SupabaseService not available, skipping feed_queue update');
+        return;
+      }
+
+      final userId = supabase.client.auth.currentUser?.id;
+      if (userId == null) return;
+
+      await supabase.client
+          .from('feed_queue')
+          .update({'consumed': true})
+          .eq('user_id', userId)
+          .eq('post_id', postId);
+
+      debugPrint('Marked post $postId as consumed in feed_queue');
+    } catch (e) {
+      debugPrint('Error marking post consumed in feed_queue: $e');
+    }
+  }
+
   /// Get user preference score for a post type
   double getContentTypePreference(String postType) {
     return _userPreferences['content_types']?[postType] ?? 0.0;
@@ -300,114 +317,50 @@ class UserInteractionService extends GetxService {
     return _userPreferences['authors']?[authorId] ?? 0.0;
   }
 
-  /// Check if user has viewed a post - checks both local cache and database
+  /// Check if user has viewed a post - now relies on feed_queue consumed status
+  /// This method is deprecated and should not be used for filtering
+  @deprecated
   Future<bool> hasViewedPost(String postId) async {
-    // First check local cache for quick response
-    if (_viewedPosts.contains(postId)) {
-      return true;
-    }
-
-    // Then check database for interactions
-    try {
-      final supabase = _supabase;
-      if (supabase == null) return false;
-
-      final userId = supabase.client.auth.currentUser?.id;
-      if (userId == null) return false;
-
-      final record =
-          await supabase.client
-              .from('user_interactions')
-              .select()
-              .eq('user_id', userId)
-              .eq('post_id', postId)
-              .maybeSingle();
-
-      if (record != null) {
-        // If we found an interaction record, add it to local cache
-        _viewedPosts.add(postId);
-        return true;
-      }
-
-      return false;
-    } catch (e) {
-      debugPrint('Error checking if post was viewed: $e');
-      return false;
-    }
+    debugPrint(
+      'hasViewedPost is deprecated - use feed_queue consumed status instead',
+    );
+    return false;
   }
 
-  /// Synchronous version that only checks local cache (for filtering operations)
+  /// Synchronous version - deprecated, use feed_queue instead
+  @deprecated
   bool hasViewedPostSync(String postId) {
-    return _viewedPosts.contains(postId);
+    debugPrint(
+      'hasViewedPostSync is deprecated - use feed_queue consumed status instead',
+    );
+    return false;
   }
 
-  /// Batch load viewed posts from database for faster filtering
+  /// Batch load viewed posts - deprecated, use feed_queue instead
+  @deprecated
   Future<void> _batchLoadViewedPosts() async {
-    if (_isLoadingViewedPosts) return;
-
-    // Check if we need to refresh the cache
-    if (_lastViewedPostsLoad != null) {
-      final timeSinceLastLoad = DateTime.now().difference(
-        _lastViewedPostsLoad!,
-      );
-      if (timeSinceLastLoad < _viewedPostsCacheDuration) {
-        return; // Cache is still valid
-      }
-    }
-
-    try {
-      _isLoadingViewedPosts = true;
-      final supabase = _supabase;
-      if (supabase == null) {
-        debugPrint('SupabaseService not available, skipping batch load');
-        return;
-      }
-
-      final userId = supabase.client.auth.currentUser?.id;
-      if (userId == null) return;
-
-      debugPrint('Batch loading viewed posts for faster filtering...');
-
-      // Load all user interactions to populate viewed posts cache
-      final response = await supabase.client
-          .from('user_interactions')
-          .select('post_id')
-          .eq('user_id', userId);
-
-      // Add all interacted posts to viewed posts cache
-      for (final record in response) {
-        final postId = record['post_id'] as String?;
-        if (postId != null) {
-          _viewedPosts.add(postId);
-        }
-      }
-
-      _lastViewedPostsLoad = DateTime.now();
-      debugPrint('Loaded ${_viewedPosts.length} viewed posts into cache');
-    } catch (e) {
-      debugPrint('Error batch loading viewed posts: $e');
-    } finally {
-      _isLoadingViewedPosts = false;
-    }
+    debugPrint(
+      '_batchLoadViewedPosts is deprecated - using feed_queue instead',
+    );
   }
 
-  /// Force refresh viewed posts cache
+  /// Force refresh viewed posts cache - deprecated, use feed_queue instead
+  @deprecated
   Future<void> refreshViewedPostsCache() async {
-    _lastViewedPostsLoad = null;
-    await _batchLoadViewedPosts();
+    debugPrint(
+      'refreshViewedPostsCache is deprecated - using feed_queue instead',
+    );
   }
 
   /// Get viewed posts count
   int get viewedPostsCount => _viewedPosts.length;
 
-  /// Clear old viewed posts (keep only recent ones)
+  /// Clear old viewed posts - deprecated, feed_queue handles this automatically
+  @deprecated
   Future<void> clearOldViewedPosts() async {
-    if (_viewedPosts.length > 1000) {
-      final postsToRemove =
-          _viewedPosts.take(_viewedPosts.length - 500).toList();
-      _viewedPosts.removeAll(postsToRemove);
-      await _saveUserPreferences();
-    }
+    debugPrint(
+      'clearOldViewedPosts is deprecated - feed_queue handles cleanup automatically',
+    );
   }
 
   /// Get user preferences summary with enhanced analytics

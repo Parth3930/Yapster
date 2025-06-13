@@ -82,6 +82,9 @@ class CreateView extends GetView<CreateController> {
 
             // Bottom controls (always visible)
             _buildBottomControls(context),
+
+            // Video upload progress overlay
+            _buildUploadProgressOverlay(context),
           ],
         ),
       ),
@@ -346,5 +349,69 @@ class CreateView extends GetView<CreateController> {
         );
       }),
     );
+  }
+
+  Widget _buildUploadProgressOverlay(BuildContext context) {
+    return Obx(() {
+      if (!controller.isUploadingVideo.value) {
+        return const SizedBox.shrink();
+      }
+
+      return Positioned.fill(
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.7),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              margin: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(
+                    controller.uploadStatus.value,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black87,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(
+                    value: controller.uploadProgress.value,
+                    backgroundColor: Colors.grey[300],
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${(controller.uploadProgress.value * 100).toInt()}%',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Please don\'t close the app during upload',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    });
   }
 }

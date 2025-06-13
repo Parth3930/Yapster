@@ -104,9 +104,29 @@ class ProfileView extends GetView<ProfileController> {
               countsLoaded.value = true;
             }
 
-            // CRITICAL FIX: Ensure posts are loaded
+            // CRITICAL FIX: Ensure posts are loaded and refresh profile posts controller
             if (accountDataProvider.posts.isEmpty) {
               await accountDataProvider.loadUserPosts(currentUserId);
+            }
+
+            // Refresh profile posts controller to ensure it has latest data
+            try {
+              final profilePostsController = Get.find<ProfilePostsController>(
+                tag: 'profile_posts_${userId ?? 'current'}',
+              );
+              // Force refresh if posts seem stale or empty
+              if (profilePostsController.profilePosts.isEmpty ||
+                  profilePostsController.profilePosts.length !=
+                      accountDataProvider.posts.length) {
+                debugPrint('Profile posts seem stale, refreshing...');
+                // Clear initialization cache to force rebuild
+                clearPostsInitialization(currentUserId);
+                await profilePostsController.invalidateAndReloadUserPosts(
+                  currentUserId,
+                );
+              }
+            } catch (e) {
+              debugPrint('ProfilePostsController not found during refresh: $e');
             }
           }
         } else {
@@ -712,12 +732,31 @@ class ProfileView extends GetView<ProfileController> {
 
     // Use cached state first
     final initialFollowState = exploreController.isFollowingUser(userId!);
+    final initialRequestState = exploreController.hasRequestedToFollow(
+      userId!,
+      forceRefresh: false,
+    );
     debugPrint(
-      'ProfileView: Initial follow state for $userId: $initialFollowState',
+      'ProfileView: Initial follow state for $userId: $initialFollowState, request state: $initialRequestState',
     );
 
     final RxBool isFollowing = RxBool(initialFollowState);
+    final RxBool hasRequestedToFollow = RxBool(false);
     final RxBool isLoadingFollow = RxBool(false);
+
+    // Initialize request state
+    Future.microtask(() async {
+      try {
+        final requestState = await exploreController.hasRequestedToFollow(
+          userId!,
+          forceRefresh: false,
+        );
+        hasRequestedToFollow.value = requestState;
+        debugPrint('ProfileView: Request state initialized to: $requestState');
+      } catch (e) {
+        debugPrint('Error checking request state: $e');
+      }
+    });
 
     // OPTIMIZATION: Only refresh follow state if absolutely necessary
     Future.microtask(() async {
@@ -751,8 +790,32 @@ class ProfileView extends GetView<ProfileController> {
       child: Row(
         children: [
           Expanded(
-            child: Obx(
-              () => ElevatedButton(
+            child: Obx(() {
+              // Determine button color based on state
+              Color backgroundColor;
+              if (isFollowing.value) {
+                backgroundColor = Colors.grey[800]!;
+              } else if (hasRequestedToFollow.value) {
+                backgroundColor = Colors.orange[600]!;
+              } else {
+                backgroundColor = Color(0xff0060FF);
+              }
+
+              // Determine button text based on state
+              final buttonText =
+                  isLoadingFollow.value
+                      ? "Processing..."
+                      : isFollowing.value
+                      ? "Following"
+                      : hasRequestedToFollow.value
+                      ? "Requested"
+                      : "Follow";
+
+              debugPrint(
+                'ProfileView: Button text for $userId: $buttonText (isFollowing: ${isFollowing.value}, hasRequested: ${hasRequestedToFollow.value})',
+              );
+
+              return ElevatedButton(
                 onPressed:
                     isLoadingFollow.value
                         ? null
@@ -760,32 +823,36 @@ class ProfileView extends GetView<ProfileController> {
                           if (userId == null) return;
                           isLoadingFollow.value = true;
 
-                          final initialState = isFollowing.value;
+                          final initialFollowState = isFollowing.value;
+                          final initialRequestState =
+                              hasRequestedToFollow.value;
                           debugPrint(
-                            'ProfileView: Follow button pressed. Initial state: $initialState',
+                            'ProfileView: Follow button pressed. Initial follow: $initialFollowState, request: $initialRequestState',
                           );
 
                           try {
-                            // Update local state immediately for better UX
-                            isFollowing.value = !isFollowing.value;
-                            debugPrint(
-                              'ProfileView: Optimistically updated to: ${isFollowing.value}',
-                            );
-
                             // Update follow status in database
                             await exploreController.toggleFollowUser(userId!);
 
-                            // After the operation, get the actual follow state from the controller
+                            // After the operation, get the actual states from the controller
                             final actualFollowState = exploreController
                                 .isFollowingUser(userId!);
+                            final actualRequestState = await exploreController
+                                .hasRequestedToFollow(
+                                  userId!,
+                                  forceRefresh: true,
+                                );
+
                             debugPrint(
-                              'ProfileView: Actual state after operation: $actualFollowState',
+                              'ProfileView: Actual states after operation - follow: $actualFollowState, request: $actualRequestState',
                             );
 
-                            // Update local state to match the actual state
+                            // Update local states to match the actual states
                             isFollowing.value = actualFollowState;
+                            hasRequestedToFollow.value = actualRequestState;
+
                             debugPrint(
-                              'ProfileView: Final state set to: ${isFollowing.value}',
+                              'ProfileView: Final states set - follow: ${isFollowing.value}, request: ${hasRequestedToFollow.value}',
                             );
 
                             // SMART CACHE MANAGEMENT: Counts will be updated automatically
@@ -794,9 +861,10 @@ class ProfileView extends GetView<ProfileController> {
                               'ProfileView: Follow action completed - cache updated automatically',
                             );
                           } catch (e) {
-                            // Revert local state if there was an error
+                            // Revert local states if there was an error
                             debugPrint('Error toggling follow: $e');
-                            isFollowing.value = !isFollowing.value;
+                            isFollowing.value = initialFollowState;
+                            hasRequestedToFollow.value = initialRequestState;
                             // Show error to user
                             Get.snackbar(
                               'Error',
@@ -809,37 +877,23 @@ class ProfileView extends GetView<ProfileController> {
                           }
                         },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      isFollowing.value ? Colors.grey[800] : Color(0xff0060FF),
+                  backgroundColor: backgroundColor,
                   minimumSize: Size(double.infinity, 40),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                child: Obx(() {
-                  final buttonText =
-                      isLoadingFollow.value
-                          ? "Processing..."
-                          : isFollowing.value
-                          ? "Following"
-                          : "Follow";
-
-                  debugPrint(
-                    'ProfileView: Button text for $userId: $buttonText (isFollowing: ${isFollowing.value})',
-                  );
-
-                  return Text(
-                    buttonText,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontFamily: GoogleFonts.inter().fontFamily,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  );
-                }),
-              ),
-            ),
+                child: Text(
+                  buttonText,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontFamily: GoogleFonts.inter().fontFamily,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            }),
           ),
           SizedBox(width: 10),
           Expanded(

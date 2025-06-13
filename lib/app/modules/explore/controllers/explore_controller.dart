@@ -695,6 +695,10 @@ class ExploreController extends GetxController {
   bool isFollowingUser(String userId) {
     if (userId.isEmpty) return false;
 
+    // Access the observable map directly to ensure GetX can track changes
+    // This line makes GetX aware that this method depends on _followStateCache
+    _followStateCache.keys; // Touch the observable to register dependency
+
     // First check our own follow state cache (most recent)
     if (_followStateCache.containsKey(userId)) {
       final cachedState = _followStateCache[userId] ?? false;
@@ -704,25 +708,14 @@ class ExploreController extends GetxController {
       return cachedState;
     }
 
-    // Then check in the AccountDataProvider for cached state (fast check)
-    if (_accountDataProvider.isFollowing(userId)) {
-      debugPrint('User $userId found in following cache - already following');
-      // Schedule the cache update for after the current build cycle
-      Future.microtask(() {
-        _followStateCache[userId] = true;
-      });
-      return true;
-    }
-
-    // If not found in either cache, we need to ensure we have the most up-to-date data
-    debugPrint(
-      'User $userId not found in following cache - not following or needs refresh',
-    );
-    // Schedule the cache update for after the current build cycle
-    Future.microtask(() {
-      _followStateCache[userId] = false;
-    });
-    return false;
+    // Check provider state and schedule cache update asynchronously
+    final following = _accountDataProvider.isFollowing(userId);
+    debugPrint(following
+        ? 'User $userId found in following cache - already following'
+        : 'User $userId not found in following cache - not following or needs refresh');
+    // Schedule cache update after build to avoid updating observable during build
+    Future.microtask(() => _followStateCache[userId] = following);
+    return following;
   }
 
   // Check if the selected user is following the current user

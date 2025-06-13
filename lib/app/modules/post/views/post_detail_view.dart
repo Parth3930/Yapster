@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/global_widgets/bottom_navigation.dart';
+import 'package:shimmer/shimmer.dart';
+import 'package:video_player/video_player.dart';
 import 'package:yapster/app/modules/post/controllers/post_detail_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_widget_factory.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/enhanced_comment_widget.dart';
-import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
-import 'package:yapster/app/modules/chat/controllers/chat_controller.dart';
 import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/enhanced_share_dialog.dart';
+import 'package:yapster/app/modules/home/widgets/post_widgets/comment_dialog.dart';
+import 'package:yapster/app/data/providers/account_data_provider.dart';
 
 class PostDetailView extends GetView<PostDetailController> {
   const PostDetailView({super.key});
@@ -25,7 +26,88 @@ class _PostDetailViewState extends StatefulWidget {
 
 class __PostDetailViewStateState extends State<_PostDetailViewState> {
   final PostDetailController controller = Get.find<PostDetailController>();
-  bool _showFullCaption = false;
+  VideoPlayerController? _videoPlayerController;
+  String? _currentPostId;
+  final AccountDataProvider _accountProvider = Get.find<AccountDataProvider>();
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPostId = controller.post.value?.id;
+    ever<PostModel?>(controller.post, (newPost) {
+      if (newPost?.id != _currentPostId) {
+        _currentPostId = newPost?.id;
+        _resetVideoPlayer();
+        controller.resetVideoState();
+        _initializeVideoController();
+      }
+    });
+    // Initialize video controller after first frame to avoid GetX listener error
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeVideoController();
+    });
+  }
+
+  @override
+  void dispose() {
+    _videoPlayerController?.dispose();
+    super.dispose();
+  }
+
+  void _resetVideoPlayer() {
+    if (_videoPlayerController != null) {
+      // Pause first to prevent audio overlap
+      _videoPlayerController!.pause();
+      _videoPlayerController!.dispose();
+      _videoPlayerController = null;
+
+      // Update controller state
+      controller.setVideoInitialized(false);
+    }
+  }
+
+  Future<void> _initializeVideoController() async {
+    final postModel = controller.post.value;
+    if (postModel == null) return;
+    String? videoUrl =
+        postModel.videoUrl?.isNotEmpty == true
+            ? postModel.videoUrl!
+            : postModel.metadata['video_url'] as String?;
+    if (videoUrl == null || videoUrl.isEmpty) {
+      debugPrint('PostDetailView: no video URL');
+      return;
+    }
+    try {
+      debugPrint('PostDetailView: initializing video for $videoUrl');
+      _videoPlayerController = VideoPlayerController.networkUrl(
+        Uri.parse(videoUrl),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+      );
+      await _videoPlayerController!.initialize();
+      _videoPlayerController!
+        ..setLooping(true)
+        ..setVolume(1.0)
+        ..play();
+      controller.setVideoInitialized(true);
+      debugPrint('PostDetailView: video initialized');
+      _videoPlayerController!.addListener(() {
+        final ctl = _videoPlayerController!;
+        if (ctl.value.isInitialized &&
+            ctl.value.position >=
+                ctl.value.duration - const Duration(milliseconds: 100)) {
+          ctl.seekTo(Duration.zero);
+        }
+        if (ctl.value.hasError) {
+          debugPrint(
+            'PostDetailView video error: ${ctl.value.errorDescription}',
+          );
+        }
+      });
+    } catch (e) {
+      debugPrint('PostDetailView init failed: $e');
+      controller.setVideoInitialized(false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,11 +115,8 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
       backgroundColor: Colors.black,
       body: Obx(() {
         if (controller.isLoading.value) {
-          return const Center(
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            ),
-          );
+          // Show fullscreen shimmer while the post data is loading
+          return _buildShimmerLoading(null);
         }
 
         if (controller.post.value == null) {
@@ -279,72 +358,27 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
   }
 
   Widget _buildVideoPostDetail(post) {
-    // Extract video URL
-    String? videoUrl = post.videoUrl;
-    if (videoUrl == null || videoUrl.isEmpty) {
-      videoUrl = post.metadata['video_url'] as String?;
-    }
-
-    // Extract thumbnail
-    final thumbnailUrl = post.metadata['video_thumbnail'] as String?;
-
     return Stack(
       fit: StackFit.expand,
       children: [
         // Video content (full screen)
-        GestureDetector(
-          onTap: () {
-            // Implement video play functionality
-            _playVideo(videoUrl ?? '');
-          },
-          child: Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: Colors.black,
-            child:
-                thumbnailUrl != null && thumbnailUrl.isNotEmpty
-                    ? Image.network(
-                      thumbnailUrl,
-                      fit: BoxFit.cover,
-                      height: double.infinity,
-                      width: double.infinity,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Container(
-                          color: Colors.black,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              value:
-                                  loadingProgress.expectedTotalBytes != null
-                                      ? loadingProgress.cumulativeBytesLoaded /
-                                          loadingProgress.expectedTotalBytes!
-                                      : null,
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return _buildVideoPlaceholder();
-                      },
-                    )
-                    : _buildVideoPlaceholder(),
-          ),
-        ),
-
-        // Play button overlay
-        Center(
-          child: Container(
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.5),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.play_arrow, color: Colors.white, size: 48),
-          ),
+        Container(
+          width: double.infinity,
+          height: double.infinity,
+          color: Colors.black,
+          child: Obx(() {
+            final isInitialized = controller.isVideoInitialized.value;
+            if (_videoPlayerController != null && isInitialized) {
+              return AspectRatio(
+                aspectRatio: _videoPlayerController!.value.aspectRatio,
+                child: VideoPlayer(_videoPlayerController!),
+              );
+            } else {
+              return _buildShimmerLoading(
+                post.metadata['video_thumbnail'] as String?,
+              );
+            }
+          }),
         ),
 
         // Bottom overlay for controls and caption
@@ -358,56 +392,14 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Caption (if any)
-                if (post.content.isNotEmpty)
-                  Padding(
-                    padding: EdgeInsets.only(bottom: 12, right: 60),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _showFullCaption
-                              ? post.content
-                              : (post.content.length > 50
-                                  ? '${post.content.substring(0, 50)}...'
-                                  : post.content),
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                        if (post.content.length > 50 && !_showFullCaption)
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _showFullCaption = true;
-                              });
-                            },
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: Size(40, 24),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: Text(
-                              'more',
-                              style: TextStyle(
-                                color: Colors.grey[400],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-
-                // Avatar and engagement buttons row
+                // Avatar and interaction buttons row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Avatar in bottom left
+                    // Avatar
                     GestureDetector(
-                      onTap: () {
-                        // Navigate to profile
-                        _navigateToUserProfile(post.userId);
-                      },
+                      onTap: () => _navigateToUserProfile(post.userId),
                       child: Container(
                         width: 40,
                         height: 40,
@@ -426,8 +418,49 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
                         ),
                       ),
                     ),
-
-                    // Interaction buttons in bottom right as column
+                    SizedBox(width: 8),
+                    // Username and follow button
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Follow button if not following
+                          Obx(() {
+                            if (!_accountProvider.isFollowing(post.userId)) {
+                              return ElevatedButton(
+                                onPressed: () => _accountProvider.followUser(post.userId),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red[300],
+                                ),
+                                child: Text('Follow'),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          }),
+                          SizedBox(height: 4),
+                          // Username
+                          Text(
+                            post.nickname?.isNotEmpty == true
+                                ? post.nickname!
+                                : post.username ?? '',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          // Content next to avatar
+                          Text(
+                            post.content,
+                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Interaction buttons column
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -466,8 +499,19 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
                           onTap: () {
                             // Track comment interaction
                             controller.feedController.trackPostComment(post.id);
-                            // Show comments in a bottom sheet
-                            _showCommentsBottomSheet();
+                            // Show enhanced comment dialog
+                            CommentDialog.show(
+                              postId: post.id,
+                              post: post,
+                              onCommentSubmit: (postId, text) async {
+                                // Refresh comments and update count
+                                await controller.loadComments();
+                                final current = controller.post.value!;
+                                controller.post.value = current.copyWith(
+                                  commentsCount: current.commentsCount + 1,
+                                );
+                              },
+                            );
                           },
                           child: Container(
                             margin: EdgeInsets.only(bottom: 16),
@@ -497,7 +541,7 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
                           onTap: () {
                             controller.feedController.trackPostShare(post.id);
                             // Use enhanced share dialog
-                            _showEnhancedShareDialog(post);
+                            EnhancedShareDialog(post: post);
                           },
                           child: Container(
                             margin: EdgeInsets.only(bottom: 16),
@@ -533,25 +577,61 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
     );
   }
 
-  Widget _buildVideoPlaceholder() {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      color: Colors.grey[900],
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.videocam, color: Colors.white.withOpacity(0.6), size: 64),
-          SizedBox(height: 16),
-          Text(
-            'Video Preview',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
-              fontSize: 16,
+  Widget _buildShimmerLoading(String? thumbnailUrl) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Background thumbnail (if available) with darkened effect
+        if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
+          Opacity(
+            opacity: 0.2,
+            child: Image.network(
+              thumbnailUrl,
+              fit: BoxFit.cover,
+              height: double.infinity,
+              width: double.infinity,
+              errorBuilder:
+                  (context, error, stackTrace) =>
+                      Container(color: Colors.black),
             ),
           ),
-        ],
-      ),
+
+        // Shimmer loading effect
+        Shimmer.fromColors(
+          baseColor: Colors.grey[900]!,
+          highlightColor: Colors.grey[800]!,
+          period: Duration(milliseconds: 800),
+          child: Container(
+            width: double.infinity,
+            height: double.infinity,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                SizedBox(height: 20),
+                Container(width: 200, height: 15, color: Colors.white),
+                SizedBox(height: 12),
+                Container(width: 150, height: 15, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
+
+        // Loading indicator
+        Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            strokeWidth: 3,
+          ),
+        ),
+      ],
     );
   }
 
@@ -619,163 +699,8 @@ class __PostDetailViewStateState extends State<_PostDetailViewState> {
     );
   }
 
-  void _playVideo(String videoUrl) {
-    // Implement video player
-    debugPrint('Play video: $videoUrl');
-
-    // For now, show a dialog indicating video would play
-    Get.dialog(
-      AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: Text('Video Player', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Video player would open here.\nURL: $videoUrl',
-          style: TextStyle(color: Colors.grey[300]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: Text('Close', style: TextStyle(color: Colors.red[300])),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _navigateToUserProfile(String userId) {
     // Navigate to user profile
     Get.toNamed('/profile/$userId');
-  }
-
-  void _showCommentsBottomSheet() {
-    Get.bottomSheet(
-      Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.grey[900],
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Comments',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Get.back(),
-                ),
-              ],
-            ),
-            Divider(color: Colors.grey[800]),
-            Expanded(
-              child: Obx(() {
-                if (controller.commentController.isLoading.value) {
-                  return Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  );
-                }
-
-                if (controller.commentController.comments.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No comments yet. Be the first to comment!',
-                      style: TextStyle(color: Colors.white54, fontSize: 14),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  itemCount: controller.commentController.comments.length,
-                  itemBuilder: (context, index) {
-                    final comment =
-                        controller.commentController.comments[index];
-                    return EnhancedCommentWidget(
-                      comment: comment,
-                      controller: controller.commentController,
-                    );
-                  },
-                );
-              }),
-            ),
-
-            // Comment input field
-            Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: TextField(
-                decoration: InputDecoration(
-                  hintText: 'Add a comment...',
-                  hintStyle: TextStyle(color: Colors.grey[400]),
-                  fillColor: Colors.grey[800],
-                  filled: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  suffixIcon: Icon(Icons.send, color: Colors.white),
-                ),
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      ),
-      isScrollControlled: true,
-      ignoreSafeArea: false,
-    );
-  }
-
-  void _showEnhancedShareDialog(PostModel post) {
-    try {
-      // Try to get chat controller or create it if not found
-      var chatController;
-      try {
-        chatController = Get.find<ChatController>();
-      } catch (e) {
-        // If not found, register it
-        debugPrint('ChatController not found, registering it now');
-        chatController = ChatController();
-        Get.put(chatController);
-      }
-
-      // Ensure recent chats are loaded
-      try {
-        if (chatController.recentChats.isEmpty) {
-          chatController.preloadRecentChats();
-        }
-      } catch (e) {
-        debugPrint('Error loading recent chats: $e');
-      }
-
-      // Show enhanced share dialog
-      Get.bottomSheet(
-        EnhancedShareDialog(
-          post: post,
-          onShareComplete: () {
-            // Optional callback when share is complete
-            debugPrint('Post shared successfully');
-          },
-        ),
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-      );
-    } catch (e) {
-      debugPrint('Error showing share dialog: $e');
-      // Fallback to simple share
-      controller.feedController.trackPostShare(post.id);
-    }
   }
 }

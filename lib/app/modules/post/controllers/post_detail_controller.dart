@@ -14,6 +14,10 @@ class PostDetailController extends GetxController {
   final RxBool isLoading = true.obs;
   final RxString error = ''.obs;
 
+  // Video-related reactive variables
+  final RxBool isVideoInitialized = false.obs;
+  final RxBool showFullCaption = false.obs;
+
   String? postId;
 
   // Create a feed controller adapter for post interactions
@@ -240,6 +244,22 @@ class PostDetailController extends GetxController {
       // Revert optimistic update
       post.value = currentPost;
     }
+  }
+
+  /// Set video initialization state
+  void setVideoInitialized(bool initialized) {
+    isVideoInitialized.value = initialized;
+  }
+
+  /// Toggle caption display
+  void toggleCaption() {
+    showFullCaption.value = !showFullCaption.value;
+  }
+
+  /// Reset video state when post changes
+  void resetVideoState() {
+    isVideoInitialized.value = false;
+    showFullCaption.value = false;
   }
 }
 

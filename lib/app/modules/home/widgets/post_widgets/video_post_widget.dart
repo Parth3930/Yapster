@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:yapster/app/core/utils/supabase_service.dart';
-import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
-import 'package:yapster/app/modules/home/widgets/post_widgets/post_avatar_widget.dart';
 import 'base_post_widget.dart';
 
 /// Widget for displaying video posts
@@ -14,28 +11,8 @@ class VideoPostWidget extends BasePostWidget {
     required super.controller,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return Container(
-      width: screenWidth * 0.95,
-      margin: EdgeInsets.symmetric(vertical: 8),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Color(0xFF101010),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPostHeader(),
-          SizedBox(height: 12),
-          buildPostContent(),
-          SizedBox(height: 12),
-        ],
-      ),
-    );
-  }
+  // Remove the build method override and use the base class implementation
+  // The base class already handles the layout properly
 
   @override
   Widget buildPostContent() {
@@ -290,157 +267,6 @@ class VideoPostWidget extends BasePostWidget {
         ],
       ),
     );
-  }
-
-  Widget _buildPostHeader() {
-    return Row(
-      mainAxisSize: MainAxisSize.min, // Set to min to prevent expanding
-      children: [
-        PostAvatarWidget(
-          post: post,
-          radius: 16,
-          onTap: () => _navigateToProfile(),
-        ),
-        SizedBox(width: 10),
-        Expanded(
-          // Changed from Flexible to Expanded to properly constrain inner layout
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min, // Set to min
-                children: [
-                  Flexible(
-                    fit: FlexFit.loose,
-                    child: GestureDetector(
-                      onTap: () => _navigateToProfile(),
-                      child: Text(
-                        _getTruncatedDisplayName(),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 4),
-                  if (_getMetadataValue(post.metadata, 'verified') == true)
-                    Icon(Icons.verified, color: Colors.blue, size: 16),
-                  SizedBox(width: 8),
-                  // Only show follow button if this is not the current user's post
-                  if (!_isCurrentUserPost())
-                    Obx(() {
-                      final exploreController = Get.find<ExploreController>();
-                      final isFollowing = exploreController.isFollowingUser(
-                        post.userId,
-                      );
-
-                      // Don't show follow button if already following
-                      if (isFollowing) {
-                        return SizedBox.shrink();
-                      }
-
-                      return TextButton(
-                        onPressed: () async {
-                          await exploreController.toggleFollowUser(post.userId);
-                        },
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: Text(
-                          'Follow',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      );
-                    }),
-                ],
-              ),
-              Text(
-                _formatTimeAgo(post.createdAt),
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 13,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _navigateToProfile() async {
-    // Navigate to profile page with user data
-    // Ensure ExploreController is available
-    ExploreController exploreController;
-    try {
-      exploreController = Get.find<ExploreController>();
-    } catch (e) {
-      debugPrint('ExploreController not found, registering it now');
-      exploreController = ExploreController();
-      Get.put(exploreController);
-    }
-
-    // Create user data object for profile loading
-    final userData = {
-      'user_id': post.userId,
-      'username': post.username ?? '',
-      'nickname': post.nickname ?? '',
-      'avatar': post.avatar ?? '',
-    };
-
-    // Use the same method as explore to properly load profile data
-    exploreController.openUserProfile(userData);
-  }
-
-  bool _isCurrentUserPost() {
-    final currentUserId = Get.find<SupabaseService>().currentUser.value?.id;
-    return currentUserId != null && currentUserId == post.userId;
-  }
-
-  String _formatTimeAgo(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'now';
-    }
-  }
-
-  String _getDisplayName() {
-    // Show nickname if available, otherwise show username, fallback to 'Yapper'
-    if (post.nickname != null && post.nickname!.isNotEmpty) {
-      return post.nickname!;
-    } else if (post.username != null && post.username!.isNotEmpty) {
-      return post.username!;
-    } else {
-      return 'Yapper';
-    }
-  }
-
-  String _getTruncatedDisplayName() {
-    final displayName = _getDisplayName();
-    // Truncate to 10 characters and add ellipsis if longer
-    if (displayName.length > 10) {
-      return '${displayName.substring(0, 10)}..';
-    }
-    return displayName;
   }
 
   // Helper method to safely access metadata values
