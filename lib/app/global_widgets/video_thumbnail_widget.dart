@@ -50,7 +50,7 @@ class _VideoThumbnailWidgetState extends State<VideoThumbnailWidget> {
       _thumb.value = data;
     } catch (e) {
       // Handle error
-      print('Error generating thumbnail: $e');
+      debugPrint('Error generating thumbnail: $e');
     }
   }
 

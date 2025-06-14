@@ -173,41 +173,35 @@ class PostRepository extends GetxService {
           position: 1000, // 1 second into the video
         );
 
-        if (thumbnailFile != null) {
-          debugPrint('🎬 VIDEO UPLOAD: Thumbnail generated successfully');
-          final thumbnailBytes = await thumbnailFile.readAsBytes();
+        debugPrint('🎬 VIDEO UPLOAD: Thumbnail generated successfully');
+        final thumbnailBytes = await thumbnailFile.readAsBytes();
 
-          if (thumbnailBytes.isNotEmpty) {
-            thumbnailUrl = await uploadPostThumbnail(
-              thumbnailBytes,
-              userId,
-              postId,
-            );
+        if (thumbnailBytes.isNotEmpty) {
+          thumbnailUrl = await uploadPostThumbnail(
+            thumbnailBytes,
+            userId,
+            postId,
+          );
 
-            if (thumbnailUrl != null) {
-              debugPrint(
-                '🎬 VIDEO UPLOAD: Thumbnail uploaded successfully: $thumbnailUrl',
-              );
-            } else {
-              debugPrint(
-                '🎬 VIDEO UPLOAD: Failed to upload thumbnail to storage',
-              );
-            }
-          } else {
-            debugPrint('🎬 VIDEO UPLOAD: Thumbnail file is empty');
-          }
-
-          // Clean up temporary thumbnail file
-          try {
-            await thumbnailFile.delete();
-          } catch (e) {
+          if (thumbnailUrl != null) {
             debugPrint(
-              '🎬 VIDEO UPLOAD: Warning - could not delete temp thumbnail: $e',
+              '🎬 VIDEO UPLOAD: Thumbnail uploaded successfully: $thumbnailUrl',
+            );
+          } else {
+            debugPrint(
+              '🎬 VIDEO UPLOAD: Failed to upload thumbnail to storage',
             );
           }
         } else {
+          debugPrint('🎬 VIDEO UPLOAD: Thumbnail file is empty');
+        }
+
+        // Clean up temporary thumbnail file
+        try {
+          await thumbnailFile.delete();
+        } catch (e) {
           debugPrint(
-            '🎬 VIDEO UPLOAD: Failed to generate thumbnail or file does not exist',
+            '🎬 VIDEO UPLOAD: Warning - could not delete temp thumbnail: $e',
           );
         }
       } catch (e) {

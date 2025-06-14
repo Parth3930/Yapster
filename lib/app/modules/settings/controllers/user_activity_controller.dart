@@ -71,9 +71,7 @@ class UserActivityController extends GetxController {
 
   bool _ensureServiceInitialized() {
     try {
-      if (_supabaseService == null) {
-        _supabaseService = Get.find<SupabaseService>();
-      }
+      _supabaseService = Get.find<SupabaseService>();
       return true;
     } catch (e) {
       debugPrint('SupabaseService not available: $e');

@@ -960,10 +960,6 @@ class PostsFeedController extends GetxController {
   Future<void> trackPostView(String postId) async {
     final postIndex = posts.indexWhere((post) => post.id == postId);
     if (postIndex != -1) {
-      final post = posts[postIndex];
-
-      // Post view tracking removed - using feed_queue consumed status instead
-
       // Update view count in database
       await updatePostEngagement(postId, 'views', 1);
     }

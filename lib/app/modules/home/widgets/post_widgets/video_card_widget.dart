@@ -5,7 +5,6 @@ import 'package:yapster/app/data/models/post_model.dart';
 import 'package:yapster/app/modules/explore/controllers/explore_controller.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_avatar_widget.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_interaction_buttons.dart';
-import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/home/widgets/post_widgets/post_view_tracker.dart'
     show VisibilityDetector, VisibilityInfo;
 import 'package:yapster/app/routes/app_pages.dart';
@@ -175,16 +174,6 @@ class VideoCardWidget extends StatelessWidget {
     return 'Yapper';
   }
 
-  String _truncatedName() {
-    final name = _displayName();
-    return name.length > 10 ? '${name.substring(0, 10)}..' : name;
-  }
-
-  bool _isCurrentUserPost() {
-    final uid = Get.find<SupabaseService>().currentUser.value?.id;
-    return uid != null && uid == post.userId;
-  }
-
   String _timeAgo(DateTime dt) {
     final diff = DateTime.now().difference(dt);
     if (diff.inDays > 0) return '${diff.inDays} Days ago';
@@ -206,26 +195,6 @@ class VideoCardWidget extends StatelessWidget {
           Text(
             'Loading video...',
             style: TextStyle(color: Colors.grey, fontSize: 14),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _errorPlaceholder() => Container(
-    width: double.infinity,
-    height: 400,
-    color: Colors.grey[900],
-    child: const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.movie_creation_outlined, size: 40, color: Colors.white70),
-          SizedBox(height: 8),
-          Text(
-            'Video processing... Please check back soon',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ],
       ),

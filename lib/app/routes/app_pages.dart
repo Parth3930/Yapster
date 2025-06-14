@@ -25,8 +25,6 @@ import 'package:yapster/app/modules/profile/views/follow_list_view.dart';
 import 'package:yapster/app/modules/profile/views/profile_view.dart';
 import 'package:yapster/app/modules/videos/views/videos_view.dart';
 import 'package:yapster/app/modules/videos/bindings/videos_binding.dart';
-import 'package:yapster/app/modules/videos/bindings/videos_player_binding.dart';
-
 import 'package:yapster/app/core/models/follow_type.dart';
 import 'package:yapster/app/core/utils/supabase_service.dart';
 import 'package:yapster/app/modules/stories/views/story_viewer_view.dart';

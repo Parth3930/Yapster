@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:shimmer/shimmer.dart';
+
 import 'package:cached_video_player_plus/cached_video_player_plus.dart';
 import 'package:yapster/app/global_widgets/bottom_navigation.dart';
 import '../controllers/videos_controller.dart';
@@ -269,44 +269,6 @@ class __VideosViewStateState extends State<_VideosViewState>
         // Silent cleanup
       }
     }
-  }
-
-  Widget _buildShimmerLoading(String? thumbnailUrl) {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[900]!,
-      highlightColor: Colors.grey[800]!,
-      period: const Duration(milliseconds: 800),
-      child: Container(
-        width: double.infinity,
-        height: double.infinity,
-        color: Colors.black,
-        child:
-            thumbnailUrl != null
-                ? Image.network(
-                  thumbnailUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: Colors.grey[900],
-                      child: const Center(
-                        child: Icon(
-                          Icons.play_circle_outline,
-                          color: Colors.white54,
-                          size: 64,
-                        ),
-                      ),
-                    );
-                  },
-                )
-                : const Center(
-                  child: Icon(
-                    Icons.play_circle_outline,
-                    color: Colors.white54,
-                    size: 64,
-                  ),
-                ),
-      ),
-    );
   }
 
   void _navigateToUserProfile(String userId) {

@@ -212,7 +212,6 @@ class ProfilePostsController extends GetxController {
     final postIndex = profilePosts.indexWhere((post) => post.id == postId);
     if (postIndex != -1) {
       final post = profilePosts[postIndex];
-      final isCurrentlyFavorited = post.metadata['isFavorited'] == true;
 
       // Update in database using the new toggle function
       final userId = _supabase.client.auth.currentUser?.id;

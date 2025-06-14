@@ -164,27 +164,55 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
   }) {
     return GestureDetector(
       onTap: onChanged != null ? () => onChanged(!value) : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 50,
-        height: 28,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: value ? Colors.green : Colors.grey[700],
-        ),
-        child: AnimatedAlign(
-          duration: const Duration(milliseconds: 200),
-          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            width: 24,
-            height: 24,
-            margin: const EdgeInsets.all(2),
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.black,
+      child: TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOutCubic,
+        tween: Tween<double>(begin: value ? 0.0 : 1.0, end: value ? 1.0 : 0.0),
+        builder: (context, animation, child) {
+          return Container(
+            width: 50,
+            height: 28,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: Color.lerp(Colors.grey[700]!, Colors.green, animation),
+              boxShadow: [
+                BoxShadow(
+                  color:
+                      value
+                          ? Colors.green.withOpacity(0.3 * animation)
+                          : Colors.transparent,
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ],
             ),
-          ),
-        ),
+            child: Stack(
+              children: [
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOutCubic,
+                  left: value ? 22 : 2,
+                  top: 2,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

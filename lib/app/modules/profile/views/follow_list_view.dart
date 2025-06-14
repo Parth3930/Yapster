@@ -675,30 +675,6 @@ class _FollowListViewState extends State<FollowListView> {
     );
   }
 
-  Future<void> _handleFollowAction(String userId, RxBool isLoading) async {
-    isLoading.value = true;
-    try {
-      await _exploreController.toggleFollowUser(userId);
-      await _exploreController.refreshFollowState(userId, forceRefresh: true);
-
-      final currentUserId = _supabaseService.currentUser.value?.id;
-      if (currentUserId != null) {
-        await _accountDataProvider.loadFollowing(currentUserId);
-        await _exploreController.verifyDatabaseCounts(currentUserId, userId);
-      }
-
-      // GETX REACTIVE UPDATE: No need to reload the entire list
-      // The GetX<ExploreController> widget will automatically update
-      // when the follow state changes
-      debugPrint('Follow action completed - UI will update reactively');
-    } catch (e) {
-      debugPrint('Error following user: $e');
-      Get.snackbar('Error', 'Failed to follow user');
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
   Future<void> _handleUnfollowAction(String userId, RxBool isLoading) async {
     isLoading.value = true;
     try {
