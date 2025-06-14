@@ -26,7 +26,8 @@ class _VideosViewState extends StatefulWidget {
   State<_VideosViewState> createState() => __VideosViewStateState();
 }
 
-class __VideosViewStateState extends State<_VideosViewState> {
+class __VideosViewStateState extends State<_VideosViewState>
+    with WidgetsBindingObserver {
   final VideosController controller = Get.find<VideosController>();
   final PostsFeedController feedController = Get.find<PostsFeedController>();
   final AccountDataProvider _accountProvider = Get.find<AccountDataProvider>();
@@ -35,12 +36,16 @@ class __VideosViewStateState extends State<_VideosViewState> {
   PageController? _pageController;
   List<PostModel> _videos = [];
   int _currentIndex = 0;
-  CachedVideoPlayerPlusController? _videoPlayerController;
+
+  // Video controllers cache for preloading
+  final Map<String, CachedVideoPlayerPlusController> _videoControllers = {};
+  final Map<String, bool> _videoInitialized = {};
   String? _currentVideoId;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeVideos();
   }
 
@@ -57,8 +62,7 @@ class __VideosViewStateState extends State<_VideosViewState> {
               .where(
                 (p) =>
                     p.postType.toLowerCase() == 'video' ||
-                    p.videoUrl != null ||
-                    p.metadata['video_url'] != null,
+                    (p.videoUrl != null && p.videoUrl!.isNotEmpty),
               )
               .toList();
       _currentIndex = 0;
@@ -75,23 +79,46 @@ class __VideosViewStateState extends State<_VideosViewState> {
 
   @override
   void dispose() {
-    _disposeVideoController();
+    WidgetsBinding.instance.removeObserver(this);
+    _disposeAllVideoControllers();
     _pageController?.dispose();
     super.dispose();
   }
 
-  void _disposeVideoController() {
-    if (_videoPlayerController != null) {
-      try {
-        _videoPlayerController!.pause();
-        _videoPlayerController!.dispose();
-      } catch (e) {
-        debugPrint('Error disposing video controller: $e');
-      } finally {
-        _videoPlayerController = null;
-        _currentVideoId = null;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    if (_currentVideoId != null) {
+      final controller = _videoControllers[_currentVideoId!];
+      if (controller != null && _videoInitialized[_currentVideoId!] == true) {
+        switch (state) {
+          case AppLifecycleState.paused:
+          case AppLifecycleState.inactive:
+            controller.pause();
+            break;
+          case AppLifecycleState.resumed:
+            controller.play();
+            break;
+          default:
+            break;
+        }
       }
     }
+  }
+
+  void _disposeAllVideoControllers() {
+    for (final controller in _videoControllers.values) {
+      try {
+        controller.pause();
+        controller.dispose();
+      } catch (e) {
+        // Silent cleanup
+      }
+    }
+    _videoControllers.clear();
+    _videoInitialized.clear();
+    _currentVideoId = null;
   }
 
   Future<void> _initializeVideoController(int index) async {
@@ -99,55 +126,99 @@ class __VideosViewStateState extends State<_VideosViewState> {
 
     final post = _videos[index];
     final videoId = post.id;
+    _currentVideoId = videoId;
 
-    // Don't reinitialize if it's the same video
-    if (_currentVideoId == videoId &&
-        _videoPlayerController != null &&
-        _videoPlayerController!.value.isInitialized) {
+    // Preload current, next, and previous videos
+    await _preloadVideos(index);
+
+    // Play current video
+    _playVideo(videoId);
+  }
+
+  Future<void> _preloadVideos(int currentIndex) async {
+    // Only preload current video and next video (not previous to save memory)
+    final indicesToPreload = <int>[];
+
+    // Current video (priority)
+    indicesToPreload.add(currentIndex);
+
+    // Next video only (for smooth forward scrolling)
+    if (currentIndex < _videos.length - 1) {
+      indicesToPreload.add(currentIndex + 1);
+    }
+
+    // Preload videos sequentially (current first, then next)
+    for (final index in indicesToPreload) {
+      await _preloadVideo(index);
+    }
+  }
+
+  Future<void> _preloadVideo(int index) async {
+    if (index >= _videos.length || index < 0) return;
+
+    final post = _videos[index];
+    final videoId = post.id;
+    final videoUrl = post.videoUrl;
+
+    // Skip if already initialized or no URL
+    if (_videoInitialized[videoId] == true ||
+        videoUrl == null ||
+        videoUrl.isEmpty) {
       return;
     }
 
-    // Dispose previous controller safely
-    _disposeVideoController();
-
-    _currentVideoId = videoId;
-    String? videoUrl =
-        post.videoUrl?.isNotEmpty == true
-            ? post.videoUrl!
-            : post.metadata['video_url'] as String?;
-
-    if (videoUrl == null || videoUrl.isEmpty) {
-      debugPrint('VideosView: no video URL for post ${post.id}');
+    // Skip if controller already exists
+    if (_videoControllers.containsKey(videoId)) {
       return;
     }
 
     try {
-      debugPrint('VideosView: initializing video for $videoUrl');
-      _videoPlayerController = CachedVideoPlayerPlusController.networkUrl(
+      final controller = CachedVideoPlayerPlusController.networkUrl(
         Uri.parse(videoUrl),
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
 
-      await _videoPlayerController!.initialize();
+      _videoControllers[videoId] = controller;
 
-      // Check if controller is still valid after initialization
-      if (_videoPlayerController != null &&
-          _videoPlayerController!.value.isInitialized &&
-          mounted) {
-        _videoPlayerController!
-          ..setLooping(true)
-          ..setVolume(1.0)
-          ..play();
+      await controller.initialize();
 
-        if (mounted) {
+      if (mounted && controller.value.isInitialized) {
+        controller.setLooping(true);
+        controller.setVolume(1.0);
+        _videoInitialized[videoId] = true;
+
+        // If this is the current video, start playing immediately and trigger rebuild
+        if (videoId == _currentVideoId && mounted) {
+          controller.play();
           setState(() {});
         }
-        debugPrint('VideosView: video initialized successfully');
       }
     } catch (e) {
-      debugPrint('VideosView init failed: $e');
-      // Clean up on error
-      _disposeVideoController();
+      _videoControllers.remove(videoId);
+      _videoInitialized[videoId] = false;
+    }
+  }
+
+  void _playVideo(String videoId) {
+    // Pause all other videos
+    for (final entry in _videoControllers.entries) {
+      if (entry.key != videoId) {
+        try {
+          entry.value.pause();
+        } catch (e) {
+          // Silent pause
+        }
+      }
+    }
+
+    // Play current video
+    final controller = _videoControllers[videoId];
+    if (controller != null && _videoInitialized[videoId] == true) {
+      try {
+        controller.play();
+      } catch (e) {
+        // Silent play error
+      }
     }
   }
 
@@ -159,7 +230,45 @@ class __VideosViewStateState extends State<_VideosViewState> {
       controller.currentVideo.value = _videos[index];
     });
 
-    _initializeVideoController(index);
+    final videoId = _videos[index].id;
+    _currentVideoId = videoId;
+
+    // Play current video immediately if already preloaded
+    _playVideo(videoId);
+
+    // Preload adjacent videos in background
+    _preloadVideos(index);
+
+    // Clean up distant videos to prevent memory leaks
+    _cleanupDistantVideos(index);
+  }
+
+  void _cleanupDistantVideos(int currentIndex) {
+    final videosToKeep = <String>{};
+
+    // Only keep current video and next video (more aggressive cleanup)
+    videosToKeep.add(_videos[currentIndex].id);
+    if (currentIndex + 1 < _videos.length) {
+      videosToKeep.add(_videos[currentIndex + 1].id);
+    }
+
+    // Dispose controllers that are not needed
+    final controllersToRemove = <String>[];
+    for (final videoId in _videoControllers.keys) {
+      if (!videosToKeep.contains(videoId)) {
+        controllersToRemove.add(videoId);
+      }
+    }
+
+    for (final videoId in controllersToRemove) {
+      try {
+        _videoControllers[videoId]?.dispose();
+        _videoControllers.remove(videoId);
+        _videoInitialized.remove(videoId);
+      } catch (e) {
+        // Silent cleanup
+      }
+    }
   }
 
   Widget _buildShimmerLoading(String? thumbnailUrl) {
@@ -205,21 +314,38 @@ class __VideosViewStateState extends State<_VideosViewState> {
   }
 
   Widget _buildVideoWidget(PostModel post) {
+    final videoId = post.id;
+    final controller = _videoControllers[videoId];
+
     try {
-      if (_videoPlayerController != null &&
-          _videoPlayerController!.value.isInitialized &&
-          !_videoPlayerController!.value.hasError) {
-        return AspectRatio(
-          aspectRatio: _videoPlayerController!.value.aspectRatio,
-          child: CachedVideoPlayerPlus(_videoPlayerController!),
+      if (controller != null &&
+          _videoInitialized[videoId] == true &&
+          controller.value.isInitialized &&
+          !controller.value.hasError) {
+        return SizedBox.expand(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: controller.value.size.width,
+              height: controller.value.size.height,
+              child: CachedVideoPlayerPlus(controller),
+            ),
+          ),
         );
       }
     } catch (e) {
-      debugPrint('Error building video widget: $e');
+      // Silent error handling
     }
 
-    // Fallback to shimmer loading
-    return _buildShimmerLoading(post.metadata['video_thumbnail'] as String?);
+    // Show black screen instead of shimmer for smoother transitions
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.black,
+      child: const Center(
+        child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
+      ),
+    );
   }
 
   String _getTimeAgo(DateTime dateTime) {
@@ -631,11 +757,13 @@ class __VideosViewStateState extends State<_VideosViewState> {
 
     return Scaffold(
       backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
       body: PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
         onPageChanged: _onPageChanged,
         itemCount: _videos.length,
+        physics: const BouncingScrollPhysics(),
         itemBuilder: (context, index) {
           return Obx(() {
             // Find the current post in the feed controller to get the latest state

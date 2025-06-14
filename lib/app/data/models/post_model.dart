@@ -1,4 +1,5 @@
-// Post model for Yapster
+import 'package:flutter/material.dart';
+
 class PostModel {
   final String id;
   final String userId;
@@ -203,6 +204,7 @@ class PostModel {
       content: content ?? this.content,
       postType: postType ?? this.postType,
       imageUrl: imageUrl ?? this.imageUrl,
+      videoUrl: videoUrl ?? this.videoUrl,
       gifUrl: gifUrl ?? this.gifUrl,
       stickerUrl: stickerUrl ?? this.stickerUrl,
       metadata: metadata ?? this.metadata,

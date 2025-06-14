@@ -23,9 +23,10 @@ class VideoCardController extends GetxController {
   }
 
   Future<void> initController(String url) async {
-    if (_controller != null) return;
+    if (_controller != null) {
+      return;
+    }
     try {
-      debugPrint('Initializing video controller for URL: $url');
       _controller = CachedVideoPlayerPlusController.networkUrl(
         Uri.parse(url),
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
@@ -47,47 +48,69 @@ class VideoCardController extends GetxController {
         }
       });
 
+      // Auto-start playback if visible during initialization
       if (isVisible.value) {
-        debugPrint('Video is visible, starting playback');
-        _controller!.play();
+        await _controller!.play();
       }
+
       isInitialized.value = true;
-      debugPrint('Video controller initialized successfully');
     } catch (e) {
-      debugPrint('Video init error: $e');
+      isInitialized.value = false;
     }
   }
 
   void handleVisibility(VisibilityInfo info, String url) {
     final frac = info.visibleFraction;
-    debugPrint('Video visibility changed: ${frac * 100}% visible');
 
-    if (frac >= 0.5) {
-      debugPrint('Video is now visible (>= 50%)');
-      isVisible.value = true;
-      if (_controller == null) {
-        debugPrint('No controller exists, initializing...');
-        initController(url);
-      } else if (_controller!.value.isInitialized) {
-        if (!_controller!.value.isPlaying) {
-          debugPrint('Controller exists but not playing, starting playback');
-          _controller!.play();
-        }
-        if (!_controller!.value.isLooping) {
-          _controller!.setLooping(true);
+    // Lower threshold for better auto-play experience
+    if (frac >= 0.2) {
+      // Reduced from 0.3 to 0.2 for even earlier auto-play
+      if (!isVisible.value) {
+        isVisible.value = true;
+
+        if (_controller == null) {
+          initController(url);
+        } else if (_controller!.value.isInitialized) {
+          if (!_controller!.value.isPlaying) {
+            _controller!.play();
+          }
+          if (!_controller!.value.isLooping) {
+            _controller!.setLooping(true);
+          }
         }
       }
-    } else if (frac < 0.5) {
-      debugPrint('Video is now hidden (< 50%)');
-      isVisible.value = false;
-      if (_controller != null && _controller!.value.isPlaying) {
-        debugPrint('Pausing video playback');
-        _controller!.pause();
+    } else if (frac < 0.2) {
+      // Consistent threshold for pause
+      if (isVisible.value) {
+        isVisible.value = false;
+        if (_controller != null &&
+            _controller!.value.isInitialized &&
+            _controller!.value.isPlaying) {
+          _controller!.pause();
+        }
       }
     }
   }
 
   CachedVideoPlayerPlusController? get videoController => _controller;
+
+  // Method to force play video (useful for debugging)
+  void forcePlay() {
+    if (_controller != null && _controller!.value.isInitialized) {
+      debugPrint('Force playing video');
+      _controller!.play();
+    }
+  }
+
+  // Method to force pause video
+  void forcePause() {
+    if (_controller != null &&
+        _controller!.value.isInitialized &&
+        _controller!.value.isPlaying) {
+      debugPrint('Force pausing video');
+      _controller!.pause();
+    }
+  }
 }
 
 /// Video card with identical aesthetics to ImagePostWidget
@@ -214,7 +237,31 @@ class VideoCardWidget extends StatelessWidget {
     final thumb = post.metadata['video_thumbnail'] as String?;
     final duration = post.metadata['video_duration'] as String?;
     final videoUrl = _getVideoUrl();
-    final videoController = Get.put(VideoCardController());
+    final videoController = Get.put(VideoCardController(), tag: post.id);
+
+    // Pre-initialize video if URL is available and not already initialized
+    if (videoUrl != null &&
+        videoUrl.isNotEmpty &&
+        !videoController.isInitialized.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Check if this is the first post in the feed
+        final isFirstPost =
+            controller.posts.isNotEmpty && controller.posts.first.id == post.id;
+
+        if (isFirstPost) {
+          // For the first post, mark as visible and initialize with a small delay
+          videoController.isVisible.value = true;
+          // Add a small delay to ensure the widget is fully rendered
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (!videoController.isInitialized.value) {
+              videoController.initController(videoUrl);
+            }
+          });
+        } else {
+          videoController.initController(videoUrl);
+        }
+      });
+    }
 
     return Container(
       width: MediaQuery.of(context).size.width * 0.95,

@@ -1,12 +1,10 @@
--- Migration: replace previous feed RPCs with single get_feed_for_user function
--- Drops old functions if they exist, then creates the new one.
+-- Migration: Fix video_url missing from get_feed_for_user function
+-- This migration updates the get_feed_for_user function to include video_url and other missing columns
 
--- 1. Drop legacy functions
-DROP FUNCTION IF EXISTS public.intelligent_feed(uuid, int);
-DROP FUNCTION IF EXISTS public.fallback_feed(uuid, int);
+-- Drop existing function
 DROP FUNCTION IF EXISTS public.get_feed_for_user(uuid, int);
 
--- 2. Create unified feed function
+-- Create updated function with all required columns
 CREATE OR REPLACE FUNCTION public.get_feed_for_user(
     _user uuid,
     _limit int DEFAULT 20
@@ -94,3 +92,9 @@ BEGIN
     LIMIT _limit;
 END;
 $$;
+
+-- Add comment to explain the function
+COMMENT ON FUNCTION public.get_feed_for_user IS 'Returns posts for user feed with proper visibility handling. Includes video_url and all post columns.';
+
+-- Grant execute permission to authenticated users
+GRANT EXECUTE ON FUNCTION public.get_feed_for_user TO authenticated;

@@ -61,21 +61,11 @@ class PostAvatarWidget extends StatelessWidget {
 
   /// Get the best available avatar URL with proper fallback logic
   String? _getBestAvatarUrl() {
-    // Debug: Log the current state of user data for this post
-    debugPrint(
-      'PostAvatar Debug - Post ID: ${post.id}, UserID: ${post.userId}',
-    );
-    debugPrint('  - avatar: ${post.avatar}');
-    debugPrint('  - googleAvatar: ${post.googleAvatar}');
-    debugPrint('  - username: ${post.username}');
-    debugPrint('  - nickname: ${post.nickname}');
-
     // First check if we have a regular avatar that's not "skiped" or "null"
     if (post.avatar != null &&
         post.avatar!.isNotEmpty &&
         post.avatar != "skiped" &&
         post.avatar != "null") {
-      debugPrint('  - Using regular avatar: ${post.avatar}');
       return post.avatar;
     }
 
@@ -87,9 +77,6 @@ class PostAvatarWidget extends StatelessWidget {
           post.googleAvatar!.isNotEmpty &&
           post.googleAvatar != "skiped" &&
           post.googleAvatar != "null") {
-        debugPrint(
-          '  - Avatar is skiped/empty, using google avatar: ${post.googleAvatar}',
-        );
         return post.googleAvatar;
       }
     }
@@ -129,7 +116,6 @@ class PostAvatarWidget extends StatelessWidget {
     }
 
     // No avatar found - this indicates missing user data
-    debugPrint('  - NO AVATAR FOUND - falling back to default icon');
     return null;
   }
 
@@ -158,8 +144,6 @@ class PostAvatarWidget extends StatelessWidget {
               .maybeSingle();
 
       if (response != null) {
-        debugPrint('  - Async fetched profile data: $response');
-
         // Try to update post in the feed controller
         try {
           final feedController = Get.find<PostsFeedController>();

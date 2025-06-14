@@ -114,10 +114,8 @@ class PostsFeedController extends GetxController {
               .eq('user_id', userId) // Changed from 'id' to 'user_id'
               .maybeSingle();
 
-      debugPrint('Fetched profile data for $userId: $response');
       return response;
     } catch (e) {
-      debugPrint('Error fetching profile data for user $userId: $e');
       return null;
     }
   }
@@ -280,6 +278,21 @@ class PostsFeedController extends GetxController {
 
           // Preserve existing profile data or fetch if missing
           final enrichedPostData = Map<String, dynamic>.from(postData);
+
+          // Preserve existing media URLs if not present in realtime update
+          if (enrichedPostData['video_url'] == null &&
+              existingPost.videoUrl != null) {
+            enrichedPostData['video_url'] = existingPost.videoUrl;
+          }
+          if (enrichedPostData['image_url'] == null &&
+              existingPost.imageUrl != null) {
+            enrichedPostData['image_url'] = existingPost.imageUrl;
+          }
+          if (enrichedPostData['gif_url'] == null &&
+              existingPost.gifUrl != null) {
+            enrichedPostData['gif_url'] = existingPost.gifUrl;
+          }
+
           if (existingPost.username != null || existingPost.avatar != null) {
             // Use existing profile data
             enrichedPostData['username'] = existingPost.username;
@@ -378,6 +391,13 @@ class PostsFeedController extends GetxController {
           'get_feed_for_user',
           params: {'_user': currentUserId.value, '_limit': _postsPerPage},
         );
+
+        // Debug: Print raw response to see what we're getting from database
+        debugPrint('Raw database response: ${response.toString()}');
+        if (response is List && response.isNotEmpty) {
+          debugPrint('First post raw data: ${response.first.toString()}');
+        }
+
         newPosts =
             (response as List).map((post) {
               // Safe type casting to handle Map<dynamic, dynamic> from Supabase RPC
@@ -470,22 +490,11 @@ class PostsFeedController extends GetxController {
                   .toList();
         }
 
-        debugPrint(
-          'Filtered ${newPosts.length - postsToShow.length} duplicate posts',
-        );
-
         if (forceRefresh) {
-          debugPrint(
-            'Refresh: Adding ${postsToShow.length} posts from feed_queue',
-          );
           posts.assignAll(postsToShow);
-          debugPrint('Refreshed posts list with ${postsToShow.length} posts');
         } else {
-          // Append posts from feed_queue
-          posts.addAll(postsToShow);
-          debugPrint(
-            'Added ${postsToShow.length} posts to existing list. Total: ${posts.length}',
-          );
+          // Prepend new posts to the beginning of the list (newest first)
+          posts.insertAll(0, postsToShow);
         }
       }
 
@@ -494,9 +503,6 @@ class PostsFeedController extends GetxController {
 
       hasLoadedOnce.value = true;
       _lastPostsLoad = DateTime.now();
-      debugPrint(
-        'Posts loading completed. hasLoadedOnce: ${hasLoadedOnce.value}, total posts: ${posts.length}',
-      );
 
       // Refresh any missing profile data and preload avatars
       if (posts.isNotEmpty) {
@@ -599,14 +605,7 @@ class PostsFeedController extends GetxController {
                 .where((post) => !existingPostIds.contains(post.id))
                 .toList();
 
-        debugPrint(
-          'Filtered ${newPosts.length - uniquePostsToShow.length} duplicate posts from pagination',
-        );
-
         posts.addAll(uniquePostsToShow);
-        debugPrint(
-          'Added ${uniquePostsToShow.length} more posts. Total: ${posts.length}',
-        );
       }
 
       // Check if there are more posts

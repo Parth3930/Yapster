@@ -702,17 +702,17 @@ class ExploreController extends GetxController {
     // First check our own follow state cache (most recent)
     if (_followStateCache.containsKey(userId)) {
       final cachedState = _followStateCache[userId] ?? false;
-      debugPrint(
-        'Following check for $userId: $cachedState (map size: ${_followStateCache.length})',
-      );
+
       return cachedState;
     }
 
     // Check provider state and schedule cache update asynchronously
     final following = _accountDataProvider.isFollowing(userId);
-    debugPrint(following
-        ? 'User $userId found in following cache - already following'
-        : 'User $userId not found in following cache - not following or needs refresh');
+    debugPrint(
+      following
+          ? 'User $userId found in following cache - already following'
+          : 'User $userId not found in following cache - not following or needs refresh',
+    );
     // Schedule cache update after build to avoid updating observable during build
     Future.microtask(() => _followStateCache[userId] = following);
     return following;

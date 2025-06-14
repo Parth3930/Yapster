@@ -132,7 +132,6 @@ class AvatarUtils {
     }
 
     if (url == "skiped" || url == "null") {
-      debugPrint('Avatar URL is explicitly marked as skipped: $url');
       return false;
     }
 
@@ -478,15 +477,12 @@ class AvatarUtils {
         !isValidUrl(avatarUrl)) {
       // Use Google avatar as fallback
       if (isValidUrl(googleAvatarUrl)) {
-        debugPrint('Using Google avatar as fallback: $googleAvatarUrl');
         return googleAvatarUrl;
       }
     } else if (isValidUrl(avatarUrl)) {
-      debugPrint('Using regular avatar: $avatarUrl');
       return avatarUrl;
     }
 
-    debugPrint('No valid avatar found, returning empty string');
     return '';
   }
 }

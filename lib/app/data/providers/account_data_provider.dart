@@ -102,9 +102,6 @@ class AccountDataProvider extends GetxController {
     }
 
     final result = _followingMap[userId] ?? false;
-    debugPrint(
-      'Following check for $userId: $result (map size: ${_followingMap.length})',
-    );
     return result;
   }
 

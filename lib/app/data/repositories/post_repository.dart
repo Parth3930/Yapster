@@ -595,17 +595,19 @@ class PostRepository extends GetxService {
         );
         return (response as List).map((post) {
           // Safe type casting to handle Map<dynamic, dynamic> from Supabase RPC
+          Map<String, dynamic> safeMap;
           if (post is Map<String, dynamic>) {
-            return PostModel.fromMap(post);
+            safeMap = post;
           } else if (post is Map) {
-            final safeMap = <String, dynamic>{};
+            safeMap = <String, dynamic>{};
             post.forEach((key, value) {
               safeMap[key.toString()] = value;
             });
-            return PostModel.fromMap(safeMap);
           } else {
             throw Exception('Invalid post data format from get_posts_feed RPC');
           }
+
+          return PostModel.fromMap(safeMap);
         }).toList();
       } catch (rpcError) {
         debugPrint(
@@ -932,6 +934,19 @@ class PostRepository extends GetxService {
     try {
       final columnName = '${engagementType}_count';
 
+      // First, check if the post exists
+      final postExists =
+          await _supabase.client
+              .from('posts')
+              .select('id')
+              .eq('id', postId)
+              .maybeSingle();
+
+      if (postExists == null) {
+        debugPrint('Post not found: $postId - cannot update engagement');
+        return false;
+      }
+
       // Try RPC function first, fallback to direct update if it fails
       try {
         await _supabase.client.rpc(
@@ -945,6 +960,7 @@ class PostRepository extends GetxService {
         debugPrint(
           'Successfully updated $columnName for post $postId using RPC',
         );
+        return true;
       } catch (rpcError) {
         debugPrint('RPC function failed, using direct update: $rpcError');
 
@@ -955,7 +971,12 @@ class PostRepository extends GetxService {
                   .from('posts')
                   .select(columnName)
                   .eq('id', postId)
-                  .single();
+                  .maybeSingle();
+
+          if (currentPost == null) {
+            debugPrint('Post not found during fallback: $postId');
+            return false;
+          }
 
           final currentValue = currentPost[columnName] as int? ?? 0;
           final newValue = (currentValue + increment).clamp(
@@ -974,22 +995,30 @@ class PostRepository extends GetxService {
           debugPrint(
             'Successfully updated $columnName for post $postId using direct update: $currentValue -> $newValue',
           );
+          return true;
         } catch (fallbackError) {
           debugPrint('Fallback update also failed: $fallbackError');
 
           // Last resort: try a simple update without getting current value
-          await _supabase.client.rpc(
-            'increment_post_engagement_simple',
-            params: {
-              'p_post_id': postId,
-              'p_column': columnName,
-              'p_increment': increment,
-            },
-          );
+          try {
+            await _supabase.client.rpc(
+              'increment_post_engagement_simple',
+              params: {
+                'p_post_id': postId,
+                'p_column': columnName,
+                'p_increment': increment,
+              },
+            );
+            debugPrint(
+              'Successfully updated $columnName for post $postId using simple RPC',
+            );
+            return true;
+          } catch (simpleRpcError) {
+            debugPrint('Simple RPC also failed: $simpleRpcError');
+            return false;
+          }
         }
       }
-
-      return true;
     } catch (e) {
       debugPrint('Error updating post engagement: $e');
       return false;

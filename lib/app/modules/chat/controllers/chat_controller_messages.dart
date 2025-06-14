@@ -1028,11 +1028,6 @@ mixin ChatControllerMessages {
                 chat['other_google_avatar']?.toString() ??
                 '';
 
-            // Debug print the avatar URLs
-            debugPrint('Setting avatar for user ${chat['other_username']}:');
-            debugPrint('- Avatar: ${chat['other_avatar']}');
-            debugPrint('- Google Avatar: ${chat['other_google_avatar']}');
-
             // Set current user info
             chat['current_id'] = currentUserId;
             chat['current_username'] = chat['username'] ?? 'You';

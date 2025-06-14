@@ -14,11 +14,19 @@ RETURNS TABLE (
     user_id uuid,
     content text,
     image_url text,
+    video_url text,
     gif_url text,
     sticker_url text,
     post_type text,
     metadata jsonb,
     created_at timestamptz,
+    updated_at timestamptz,
+    likes_count int,
+    comments_count int,
+    views_count int,
+    shares_count int,
+    star_count int,
+    engagement_data jsonb,
     score numeric
 )
 LANGUAGE plpgsql SECURITY DEFINER AS
@@ -62,11 +70,19 @@ BEGIN
         p.user_id,
         p.content,
         p.image_url,
+        p.video_url,
         p.gif_url,
         p.sticker_url,
         p.post_type,
         p.metadata,
         p.created_at,
+        p.updated_at,
+        p.likes_count,
+        p.comments_count,
+        p.views_count,
+        p.shares_count,
+        p.star_count,
+        p.engagement_data,
         fq.score
     FROM public.feed_queue fq
     JOIN public.posts p ON p.id = fq.post_id
