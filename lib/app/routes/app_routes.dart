@@ -27,6 +27,13 @@ abstract class Routes {
   static const VIEW_STORIES = _Paths.VIEW_STORIES;
   static const POST_DETAIL = _Paths.POST_DETAIL;
   static const STORY_EDIT = _Paths.STORY_EDIT;
+  static const SETTINGS = _Paths.SETTINGS;
+  static const SETTINGS_LIKES = _Paths.SETTINGS_LIKES;
+  static const SETTINGS_COMMENTS = _Paths.SETTINGS_COMMENTS;
+  static const SETTINGS_FAVOURITES = _Paths.SETTINGS_FAVOURITES;
+  static const SETTINGS_PRIVACY = _Paths.SETTINGS_PRIVACY;
+  static const SETTINGS_ABOUT = _Paths.SETTINGS_ABOUT;
+  static const SETTINGS_NOTIFICATIONS = _Paths.SETTINGS_NOTIFICATIONS;
 }
 
 abstract class _Paths {
@@ -54,4 +61,11 @@ abstract class _Paths {
   static const VIEW_STORIES = '/view-stories';
   static const POST_DETAIL = '/post';
   static const STORY_EDIT = '/story-edit';
+  static const SETTINGS = '/settings';
+  static const SETTINGS_LIKES = '/settings/likes';
+  static const SETTINGS_COMMENTS = '/settings/comments';
+  static const SETTINGS_FAVOURITES = '/settings/favourites';
+  static const SETTINGS_PRIVACY = '/settings/privacy';
+  static const SETTINGS_ABOUT = '/settings/about';
+  static const SETTINGS_NOTIFICATIONS = '/settings/notifications';
 }

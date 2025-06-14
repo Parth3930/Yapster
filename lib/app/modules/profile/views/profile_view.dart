@@ -243,6 +243,39 @@ class ProfileView extends GetView<ProfileController> {
                     );
                   }),
                 ),
+                // Settings button positioned in top right corner
+                if (isCurrentUser)
+                  Positioned(
+                    top: 50,
+                    right: 20,
+                    child: GestureDetector(
+                      onTap: () => Get.toNamed(Routes.SETTINGS),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.3),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.settings,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
                 // Avatar section positioned 100px from top
                 Container(
                   margin: EdgeInsets.only(top: 100), // Position 100px from top

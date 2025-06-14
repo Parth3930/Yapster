@@ -34,6 +34,14 @@ import 'package:yapster/app/modules/stories/views/story_edit_view.dart';
 import 'package:yapster/app/modules/stories/bindings/stories_binding.dart';
 import 'package:yapster/app/modules/post/views/post_detail_view.dart';
 import 'package:yapster/app/modules/post/bindings/post_detail_binding.dart';
+import 'package:yapster/app/modules/settings/views/settings_view.dart';
+import 'package:yapster/app/modules/settings/bindings/settings_binding.dart';
+import 'package:yapster/app/modules/settings/views/settings_pages/likes_page.dart';
+import 'package:yapster/app/modules/settings/views/settings_pages/comments_page.dart';
+import 'package:yapster/app/modules/settings/views/settings_pages/favourites_page.dart';
+import 'package:yapster/app/modules/settings/views/settings_pages/privacy_page.dart';
+import 'package:yapster/app/modules/settings/views/settings_pages/about_page.dart';
+import 'package:yapster/app/modules/settings/views/settings_pages/notifications_settings_page.dart';
 import '../modules/home/views/home_view.dart';
 import '../modules/login/bindings/login_binding.dart';
 import '../modules/login/views/login_view.dart';
@@ -328,6 +336,68 @@ class AppPages {
       opaque: true,
       preventDuplicates: true,
       popGesture: true,
+    ),
+    // Settings page
+    GetPage(
+      name: _Paths.SETTINGS,
+      page: () => const SettingsView(),
+      binding: SettingsBinding(),
+      transition: Transition.rightToLeft,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      fullscreenDialog: false,
+      opaque: true,
+      preventDuplicates: true,
+      popGesture: true,
+    ),
+    // Settings subpages
+    GetPage(
+      name: _Paths.SETTINGS_LIKES,
+      page: () => const LikesPage(),
+      binding: SettingsBinding(),
+      transition: Transition.rightToLeft,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ),
+    GetPage(
+      name: _Paths.SETTINGS_COMMENTS,
+      page: () => const CommentsPage(),
+      binding: SettingsBinding(),
+      transition: Transition.rightToLeft,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ),
+    GetPage(
+      name: _Paths.SETTINGS_FAVOURITES,
+      page: () => const FavouritesPage(),
+      binding: SettingsBinding(),
+      transition: Transition.rightToLeft,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ),
+    GetPage(
+      name: _Paths.SETTINGS_PRIVACY,
+      page: () => const PrivacyPage(),
+      binding: SettingsBinding(),
+      transition: Transition.rightToLeft,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ),
+    GetPage(
+      name: _Paths.SETTINGS_ABOUT,
+      page: () => const AboutPage(),
+      binding: SettingsBinding(),
+      transition: Transition.rightToLeft,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ),
+    GetPage(
+      name: _Paths.SETTINGS_NOTIFICATIONS,
+      page: () => const NotificationsSettingsPage(),
+      binding: SettingsBinding(),
+      transition: Transition.rightToLeft,
+      transitionDuration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
     ),
   ];
 }

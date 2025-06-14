@@ -63,6 +63,7 @@ flutter:
     - assets/postIcons/
     - assets/social/
     - assets/uploadIcons/
+    - assets/settingsIcons/
 
   # fonts:
   #   - family: Poppins
