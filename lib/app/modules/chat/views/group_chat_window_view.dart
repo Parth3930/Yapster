@@ -7,7 +7,6 @@ import '../controllers/group_controller.dart';
 import '../controllers/chat_controller.dart';
 import 'dart:async';
 import 'components/message_input.dart';
-import 'components/chat_timer_banner.dart';
 import 'components/editing_message_banner.dart';
 import 'components/messages_list.dart';
 import 'components/encryption_dialog.dart';
@@ -182,10 +181,7 @@ class _GroupChatWindowViewState extends State<GroupChatWindowView>
       body: KeyboardDismissOnTap(
         child: Column(
           children: [
-            // Chat countdown timer - shows how long until messages expire
-            ChatTimerBanner(),
-
-            // Messages list
+            // Messages list (banner is now integrated inside)
             Expanded(
               child: Obx(() {
                 if (chatController.isSendingMessage.value &&

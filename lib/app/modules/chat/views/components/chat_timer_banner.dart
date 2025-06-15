@@ -11,37 +11,26 @@ class ChatTimerBanner extends StatelessWidget {
 
     // Check if user has already dismissed the banner
     if (controller.hasUserDismissedExpiryBanner.value) {
-      return const SizedBox.shrink(); // Don't show banner if dismissed
+      return const SizedBox.shrink();
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      color: Colors.amber.withValues(alpha: 0.2),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      child: Column(
         children: [
-          const Icon(Icons.timer, color: Colors.amber, size: 18),
-          const SizedBox(width: 8),
-          const Expanded(
+          Center(
             child: Text(
-              'Messages will disappear after 24 hours',
+              'Messages will disappear after 24 hrs',
               style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.amber,
+                fontSize: 11,
+                fontWeight: FontWeight.w400,
+                color: Colors.grey.shade500,
+                letterSpacing: 0.5,
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          InkWell(
-            onTap: () {},
-            child: const Icon(
-              Icons.check_circle_outline,
-              color: Colors.amber,
-              size: 16,
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.info_outline, color: Colors.amber, size: 16),
+          const SizedBox(height: 4),
+          const Divider(thickness: 0.1, height: 0.1, color: Colors.grey),
         ],
       ),
     );

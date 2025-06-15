@@ -6,7 +6,6 @@ import '../controllers/chat_controller.dart';
 import 'dart:async';
 import 'package:yapster/app/routes/app_pages.dart';
 import 'components/message_input.dart';
-import 'components/chat_timer_banner.dart';
 import 'components/editing_message_banner.dart';
 import 'components/messages_list.dart';
 import 'components/encryption_dialog.dart';
@@ -174,10 +173,7 @@ class ChatWindowView extends GetView<ChatController> {
       body: KeyboardDismissOnTap(
         child: Column(
           children: [
-            // Chat countdown timer - shows how long until messages expire
-            ChatTimerBanner(),
-
-            // Messages list
+            // Messages list (banner is now integrated inside)
             Expanded(
               child: Obx(() {
                 if (controller.isSendingMessage.value &&

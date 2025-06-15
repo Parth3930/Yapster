@@ -4,6 +4,7 @@ import 'package:yapster/app/core/utils/supabase_service.dart';
 import '../../controllers/chat_controller.dart';
 import '../../controllers/group_controller.dart';
 import 'message_bubble.dart';
+import 'chat_timer_banner.dart';
 
 class MessagesList extends StatelessWidget {
   const MessagesList({super.key});
@@ -88,12 +89,18 @@ class MessagesList extends StatelessWidget {
       }
 
       // Use ListView.builder with cacheExtent and keep-alive
+      // Add 1 to itemCount for the banner (which appears at the top due to reverse: true)
       return ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        itemCount: messageCount,
+        itemCount: messageCount + 1, // +1 for the banner
         reverse: true,
         cacheExtent: 1000, // keep items alive off-screen
         itemBuilder: (context, index) {
+          // The banner is the last item (appears at top due to reverse: true)
+          if (index == messageCount) {
+            return const ChatTimerBanner();
+          }
+
           final msg = messages[index];
           final isMe =
               isGroupChat
