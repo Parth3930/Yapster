@@ -1,7 +1,13 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../routes/app_pages.dart';
+import '../core/utils/storage_service.dart';
+import '../core/values/constants.dart';
+import '../data/models/user_model.dart';
+import '../core/utils/avatar_utils.dart';
+import '../data/providers/account_data_provider.dart';
 
 // Controller to manage bottom navigation animations globally
 class BottomNavAnimationController extends GetxController {
@@ -10,6 +16,20 @@ class BottomNavAnimationController extends GetxController {
 
   // Observable to control bottom nav visibility globally
   final RxBool showBottomNav = true.obs;
+
+  // Get user data from storage
+  UserModel? get currentUser {
+    try {
+      final storageService = Get.find<StorageService>();
+      final userData = storageService.getObject(AppConstants.userDataKey);
+      if (userData != null) {
+        return UserModel.fromMap(userData);
+      }
+    } catch (e) {
+      // Return null if no user data found
+    }
+    return null;
+  }
 
   // Trigger animation for specific icon
   void triggerAnimation(String route) {
@@ -253,6 +273,8 @@ class _BottomNavigationState extends State<BottomNavigation>
 
   // Build the home icon with wobble and rotation animation
   Widget _buildHomeIcon() {
+    final isActive = Get.currentRoute == Routes.HOME;
+
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.HOME),
       child: Container(
@@ -273,10 +295,11 @@ class _BottomNavigationState extends State<BottomNavigation>
             );
           },
           child: Image.asset(
-            'assets/icons/home.png',
+            isActive
+                ? 'assets/navigation/home_active.png'
+                : 'assets/navigation/home.png',
             width: 28, // Increased icon size
             height: 28,
-            color: Colors.white,
           ),
         ),
       ),
@@ -285,6 +308,8 @@ class _BottomNavigationState extends State<BottomNavigation>
 
   // Build the videos icon with simple bounce animation
   Widget _buildVideosIcon() {
+    final isActive = Get.currentRoute == Routes.VIDEOS;
+
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.VIDEOS),
       child: Container(
@@ -305,10 +330,11 @@ class _BottomNavigationState extends State<BottomNavigation>
             );
           },
           child: Image.asset(
-            'assets/icons/videos.png',
+            isActive
+                ? 'assets/navigation/videos_active.png'
+                : 'assets/navigation/videos.png',
             width: 28, // Increased icon size
             height: 28,
-            color: Colors.white,
           ),
         ),
       ),
@@ -317,6 +343,9 @@ class _BottomNavigationState extends State<BottomNavigation>
 
   // Build the chat icon with rotational shake animation
   Widget _buildChatIcon() {
+    final isActive =
+        Get.currentRoute == Routes.CHAT || Get.currentRoute.startsWith('/chat');
+
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.CHAT),
       child: Container(
@@ -332,18 +361,22 @@ class _BottomNavigationState extends State<BottomNavigation>
             return Transform.rotate(angle: rotationValue, child: child);
           },
           child: Image.asset(
-            'assets/icons/chat.png',
+            isActive
+                ? 'assets/navigation/message_active.png'
+                : 'assets/navigation/chat.png',
             width: 28, // Increased icon size
             height: 28,
-            color: Colors.white,
           ),
         ),
       ),
     );
   }
 
-  // Build the profile icon with improved squeeze animation
+  // Build the profile icon with user avatar and improved squeeze animation
   Widget _buildProfileIcon() {
+    final isActive = Get.currentRoute == Routes.PROFILE;
+    final user = _animationController.currentUser;
+
     return GestureDetector(
       onTap: () => _navigateToPage(Routes.PROFILE),
       child: Container(
@@ -367,12 +400,103 @@ class _BottomNavigationState extends State<BottomNavigation>
               child: child,
             );
           },
-          child: Image.asset(
-            'assets/icons/profile.png',
-            width: 28, // Increased icon size
-            height: 28,
-            color: Colors.white,
+          child: _buildUserAvatar(user, isActive),
+        ),
+      ),
+    );
+  }
+
+  // Build user avatar with fallback options using AvatarUtils
+  Widget _buildUserAvatar(UserModel? user, bool isActive) {
+    try {
+      // Try to get AccountDataProvider for AvatarUtils
+      final accountDataProvider = Get.find<AccountDataProvider>();
+
+      // Get the best avatar URL using AvatarUtils logic
+      String? avatarUrl = AvatarUtils.getAvatarUrl(
+        isCurrentUser: true,
+        accountDataProvider: accountDataProvider,
+      );
+
+      // If AvatarUtils doesn't return a valid URL, fall back to user model data
+      if (avatarUrl.isNotEmpty ||
+          avatarUrl.isEmpty ||
+          avatarUrl == "skiped" ||
+          avatarUrl == "null") {
+        if (user != null) {
+          // Check if avatar is "skiped", use google_avatar
+          if (user.avatar == "skiped" && user.googleAvatar.isNotEmpty) {
+            avatarUrl = user.googleAvatar;
+          } else if (user.avatar.isNotEmpty && user.avatar != "skiped") {
+            avatarUrl = user.avatar;
+          }
+        }
+      }
+
+      // If we have a valid avatar URL, show it with cached network image
+      if (avatarUrl.isNotEmpty &&
+          avatarUrl.isNotEmpty &&
+          AvatarUtils.isValidUrl(avatarUrl)) {
+        return Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: isActive ? Border.all(color: Colors.white, width: 1) : null,
           ),
+          child: ClipOval(
+            child: CachedNetworkImage(
+              imageUrl: avatarUrl,
+              width: 28,
+              height: 28,
+              fit: BoxFit.cover,
+              fadeInDuration: Duration.zero, // Instant display
+              fadeOutDuration: Duration.zero,
+              placeholder:
+                  (context, url) => Container(
+                    width: 28,
+                    height: 28,
+                    color: Colors.grey[800],
+                    child: const Icon(
+                      Icons.person,
+                      size: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+              errorWidget:
+                  (context, url, error) => Container(
+                    width: 28,
+                    height: 28,
+                    color: Colors.grey[800],
+                    child: const Icon(
+                      Icons.person,
+                      size: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error getting avatar from AccountDataProvider: $e');
+    }
+
+    // Final fallback to default profile icon
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: isActive ? Border.all(color: Colors.white, width: 2.5) : null,
+      ),
+      child: CircleAvatar(
+        radius: 14,
+        backgroundColor: Colors.grey[800],
+        child: Icon(
+          Icons.person,
+          size: 16,
+          color: isActive ? Colors.white : Colors.grey[400],
         ),
       ),
     );
