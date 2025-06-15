@@ -163,14 +163,6 @@ class AvatarUtils {
     final profileAvatarUrl = provider.avatar.value;
     final googleAvatarUrl = provider.googleAvatar.value;
 
-    // CRITICAL DEBUG: Log both avatar URLs to diagnose issues after hot restart
-    debugPrint(
-      'AVATAR GET - Profile avatar: $profileAvatarUrl (${isValidUrl(profileAvatarUrl) ? 'valid' : 'invalid'})',
-    );
-    debugPrint(
-      'AVATAR GET - Google avatar: $googleAvatarUrl (${isValidUrl(googleAvatarUrl) ? 'valid' : 'invalid'})',
-    );
-
     // Check if profile avatar is valid and not "skiped"
     if (isValidUrl(profileAvatarUrl)) {
       // Use cached image if available
@@ -179,7 +171,6 @@ class AvatarUtils {
           profileAvatarUrl,
         );
       }
-      debugPrint('Using profile avatar: $profileAvatarUrl');
       return _imageCache[profileAvatarUrl];
     }
 
@@ -191,12 +182,9 @@ class AvatarUtils {
           googleAvatarUrl,
         );
       }
-      debugPrint('Using Google avatar fallback: $googleAvatarUrl');
       return _imageCache[googleAvatarUrl];
     }
 
-    // No valid avatar found - return null instead of asset image
-    // Callers should handle null by showing a default icon
     debugPrint('No valid avatar found, returning null');
     return null;
   }
@@ -484,5 +472,18 @@ class AvatarUtils {
     }
 
     return '';
+  }
+
+  /// Gets initials from a name for avatar display
+  static String getInitials(String name) {
+    if (name.isEmpty) return 'U';
+
+    final words = name.trim().split(' ');
+    if (words.length == 1) {
+      return words[0].substring(0, 1).toUpperCase();
+    } else {
+      return (words[0].substring(0, 1) + words[1].substring(0, 1))
+          .toUpperCase();
+    }
   }
 }

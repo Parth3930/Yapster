@@ -1080,10 +1080,6 @@ mixin ChatControllerMessages {
           continue;
         }
 
-        // Debug print the chat data
-        debugPrint('Processing chat: ${chat['chat_id']}');
-        debugPrint('Available keys: ${chat.keys.join(', ')}');
-
         // Skip if we can't identify the chat
         if (chat['chat_id'] == null) {
           debugPrint('Skipping chat with missing chat_id: $chat');
@@ -1097,9 +1093,6 @@ mixin ChatControllerMessages {
         chat['last_message_time'] ??= DateTime.now().toIso8601String();
         chat['unread_count'] ??= 0;
 
-        debugPrint(
-          'Added chat with ID: ${chat['chat_id']}, other_id: ${chat['other_id']}',
-        );
         validChats.add(chat);
       }
 

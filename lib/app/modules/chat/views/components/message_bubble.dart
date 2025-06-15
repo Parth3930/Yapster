@@ -545,13 +545,28 @@ class _MessageBubbleState extends State<MessageBubble>
           ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: widget.isMe ? Colors.blue : Colors.grey.shade800,
+            gradient:
+                widget.isMe
+                    ? const LinearGradient(
+                      colors: [
+                        Colors.purpleAccent,
+                        Colors.blueAccent, // Light blue
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                    : null,
+            color: widget.isMe ? null : Colors.grey.shade800,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black,
-                blurRadius: 4,
-                offset: const Offset(0, 2),
+                color:
+                    widget.isMe
+                        ? const Color(0xFF667eea).withValues(alpha: 0)
+                        : Colors.black.withValues(alpha: 120),
+                blurRadius: 8,
+                offset: const Offset(0, 1),
+                spreadRadius: 1,
               ),
             ],
           ),

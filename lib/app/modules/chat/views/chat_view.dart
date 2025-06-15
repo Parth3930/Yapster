@@ -10,6 +10,10 @@ import '../../../core/utils/supabase_service.dart';
 import '../controllers/chat_controller.dart';
 import '../controllers/group_controller.dart';
 import 'components/create_group_dialog.dart';
+import '../pages/yap_connect_page.dart';
+import '../pages/create_group_page.dart';
+import '../bindings/yap_connect_binding.dart';
+import '../bindings/create_group_binding.dart';
 
 class ChatView extends StatefulWidget {
   const ChatView({super.key});
@@ -101,7 +105,24 @@ class _ChatViewState extends State<ChatView> {
 
   // Show create group dialog
   void _showCreateGroupDialog() {
-    CreateGroupDialog.show(context: context);
+    Get.to(
+      () => const CreateGroupPage(),
+      binding: CreateGroupBinding(),
+      transition: Transition.rightToLeftWithFade,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  // Show YapConnect page as right-to-left drawer
+  void _showYapConnectPage() {
+    Get.to(
+      () => const YapConnectPage(),
+      binding: YapConnectBinding(),
+      transition: Transition.rightToLeftWithFade,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOutCubic,
+    );
   }
 
   @override
@@ -123,7 +144,7 @@ class _ChatViewState extends State<ChatView> {
             Row(
               children: [
                 GestureDetector(
-                  onTap: () => _showCreateGroupDialog(),
+                  onTap: () => _showYapConnectPage(),
                   child: Container(
                     decoration: BoxDecoration(
                       color: Color(0xFf171717),
